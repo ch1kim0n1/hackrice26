@@ -317,6 +317,7 @@ public struct NQCheckmarkDraw: View {
     private var color: Color
     private var size: CGFloat
     @State private var drawn = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(color: Color = NQTheme.success, size: CGFloat = 48) {
         self.color = color
@@ -338,6 +339,7 @@ public struct NQCheckmarkDraw: View {
         }
         .frame(width: size, height: size)
         .onAppear {
+            guard !reduceMotion else { drawn = true; return }
             withAnimation(.spring(response: 0.4, dampingFraction: 0.7)) { drawn = true }
         }
         .accessibilityElement(children: .ignore)

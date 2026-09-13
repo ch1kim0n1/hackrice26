@@ -440,6 +440,7 @@ public struct NQConfetti: View {
     private var trigger: Int
     @State private var pieces: [ConfettiPiece] = []
     @State private var cleanupTrigger = 0
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     public init(trigger: Int) {
         self.trigger = trigger
@@ -480,6 +481,10 @@ public struct NQConfetti: View {
     }
 
     private func fire() {
+        // A screenful of falling pieces is exactly the motion Reduce Motion
+        // asks to skip, and confetti's resting state is "no confetti" — so the
+        // instant equivalent here is to not fire at all.
+        guard !reduceMotion else { return }
         #if canImport(UIKit)
         guard let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
               let window = scene.windows.first(where: \.isKeyWindow) else { return }
