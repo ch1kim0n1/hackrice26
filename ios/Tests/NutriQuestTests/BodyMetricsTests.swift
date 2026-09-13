@@ -91,6 +91,15 @@ final class BodyMetricsTests: XCTestCase {
         XCTAssertEqual(plan.fatsG, Int((calories * 0.30 / 9).rounded()))
     }
 
+    func testCutSplitsThirtyFiveThirtyFiveThirty() {
+        let m = metrics(goal: .lose, pace: 0.5)
+        let plan = m.targets
+        let calories = m.calorieTarget
+        XCTAssertEqual(plan.proteinG, Int((calories * 0.35 / 4).rounded()))
+        XCTAssertEqual(plan.carbsG, Int((calories * 0.35 / 4).rounded()))
+        XCTAssertEqual(plan.fatsG, Int((calories * 0.30 / 9).rounded()))
+    }
+
     func testFibreScalesWithCalories() {
         let m = metrics()
         XCTAssertEqual(m.fiberTargetG, 25 * (m.calorieTarget / 2000), accuracy: 0.001)

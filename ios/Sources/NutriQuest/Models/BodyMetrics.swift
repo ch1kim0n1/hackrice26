@@ -219,15 +219,23 @@ struct BodyMetrics: Codable, Equatable {
         25 * (calorieTarget / 2000)
     }
 
-    /// The calorie and macro targets the home screen and dashboard show, split
-    /// 30% protein / 40% carbs / 30% fat.
+    /// Share of calories from protein, carbs and fat. A cut runs 35/35/30:
+    /// the extra protein protects muscle and keeps a deficit filling, while
+    /// fat stays well inside the healthy range. Maintain and gain keep 30/40/30.
+    var macroSplit: (protein: Double, carbs: Double, fat: Double) {
+        goal == .lose ? (0.35, 0.35, 0.30) : (0.30, 0.40, 0.30)
+    }
+
+    /// The calorie and macro targets the home screen and dashboard show,
+    /// divided by `macroSplit`.
     var targets: DailyPlan {
         let calories = calorieTarget
+        let split = macroSplit
         return DailyPlan(
             calories: Int(calories.rounded()),
-            proteinG: Int((calories * 0.30 / 4).rounded()),
-            carbsG: Int((calories * 0.40 / 4).rounded()),
-            fatsG: Int((calories * 0.30 / 9).rounded())
+            proteinG: Int((calories * split.protein / 4).rounded()),
+            carbsG: Int((calories * split.carbs / 4).rounded()),
+            fatsG: Int((calories * split.fat / 9).rounded())
         )
     }
 
