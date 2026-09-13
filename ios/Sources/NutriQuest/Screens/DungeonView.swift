@@ -9,6 +9,8 @@ struct DungeonView: View {
 
     @Environment(\.nqAccent) private var accent
     @State private var running = false
+    /// Floors descended so far this run — drives the descent track.
+    @State private var descentFloor = 0
 
     /// Spec §5: a dungeon run fields exactly three monsters — the player's
     /// top three unlocked, non-fainted cards, same rule as ranked.
@@ -22,6 +24,7 @@ struct DungeonView: View {
                 stateCard
                 partyCard
                 descendButton
+                if running { descentTrack }
                 if let run = gameState.lastDungeonRun {
                     runFeed(run)
                 }
@@ -97,9 +100,10 @@ struct DungeonView: View {
         Button {
             NQJuice.tap()
             running = true
+            descentFloor = 0
             Task {
                 _ = await gameState.runDungeon()
-                running = false
+                withAnimation(NQMotion.snappy) { running = false }
                 if let run = gameState.lastDungeonRun, run.floorsCleared > 0 {
                     NQJuice.success()
                 }
@@ -119,6 +123,50 @@ struct DungeonView: View {
         .buttonStyle(NQPressableStyle(scale: 0.97, ledge: 5))
         .disabled(running || partyPreview.count < 3)
         .accessibilityLabel("Start a dungeon run with your top three monsters")
+    }
+
+    // MARK: - Descent animation
+
+    /// While the server resolves the run, the party visibly walks the path:
+    /// a scrolling strip of floor nodes with the party marching down it
+    /// (#22 — the screen was a dead button before). The node count advances
+    /// on a timer so the descent reads as endless until the result lands.
+    private var descentTrack: some View {
+        VStack(spacing: 2) {
+            ForEach(0..<6, id: \.self) { row in
+                let floor = descentFloor + row + 1
+                HStack(spacing: NQTheme.spaceS) {
+                    NQAssetImage(floor % 10 == 0 ? "dungeon-boss-door" : "dungeon-floor-node-cleared")
+                        .frame(width: 24, height: 24)
+                        .opacity(row == 0 ? 1 : 0.55)
+                    Text(floor % 10 == 0 ? "BOSS F\(floor)" : "F\(floor)")
+                        .font(NQText.microXS.font.weight(.heavy))
+                        .foregroundStyle(floor % 10 == 0 ? NQTheme.gold : NQTheme.battleInkMuted)
+                    Spacer()
+                    if row == 0 {
+                        HStack(spacing: -NQTheme.spaceS) {
+                            ForEach(partyPreview.prefix(3)) { c in
+                                CharacterArtwork(character: c, expression: .happy)
+                                    .frame(width: 30, height: 38)
+                            }
+                        }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                    }
+                }
+                .padding(.vertical, 3)
+            }
+        }
+        .nqPadding(.card)
+        .background(NQTheme.battleSurface)
+        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusL))
+        .task {
+            while running {
+                try? await Task.sleep(nanoseconds: 420_000_000)
+                withAnimation(NQMotion.quick) { descentFloor += 1 }
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Descending the dungeon")
     }
 
     // MARK: - Run feed

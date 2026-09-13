@@ -96,11 +96,11 @@ describe("lootbox — unbiased selection", () => {
   it("no roll becomes an index via % N — floor(unit * N) is the only path", () => {
     // pickDesign is the one roll -> integer-index conversion in the engine.
     // Probe both ends of the unit interval and the boundary cells.
-    const pool = mintPool();
-    expect(pickDesign(0)).toBe(pool[0]);
-    expect(pickDesign(1 - Number.EPSILON)).toBe(pool[pool.length - 1]);
+    const pool = mintPool("rare");
+    expect(pickDesign(0, "rare")).toBe(pool[0]);
+    expect(pickDesign(1 - Number.EPSILON, "rare")).toBe(pool[pool.length - 1]);
     for (let i = 0; i < pool.length; i++) {
-      expect(pickDesign((i + 0.5) / pool.length)).toBe(pool[i]);
+      expect(pickDesign((i + 0.5) / pool.length, "rare")).toBe(pool[i]);
     }
   });
 

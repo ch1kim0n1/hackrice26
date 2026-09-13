@@ -102,18 +102,18 @@ public enum NQText {
 
     public var size: CGFloat {
         switch self {
-        case .displayL: return 30
-        case .display: return 24
-        case .headingL: return 18
-        case .heading: return 16
-        case .bodyL: return 13
-        case .body: return 13
-        case .caption: return 12
-        case .captionS: return 12
-        case .tagBold: return 12
-        case .micro: return 10
-        case .microS: return 10
-        case .microXS: return 10
+        case .displayL: return 40
+        case .display: return 32
+        case .headingL: return 24
+        case .heading: return 20
+        case .bodyL: return 17
+        case .body: return 16
+        case .caption: return 15
+        case .captionS: return 14
+        case .tagBold: return 14
+        case .micro: return 13
+        case .microS: return 12
+        case .microXS: return 11
         }
     }
 
@@ -150,7 +150,9 @@ public enum NQText {
             // falls back to SF.
             return .custom("Quicksand Light", size: size, relativeTo: textStyle).weight(.semibold)
         case .micro, .microS, .microXS:
-            return .system(.caption2, design: .rounded).weight(.heavy)
+            // Baloo keeps the tiny labels on-theme too — rounded system type
+            // read as a different, more minimal font family next to it.
+            return .custom("Baloo 2", size: size, relativeTo: textStyle).weight(.heavy)
         }
     }
 }

@@ -77,7 +77,9 @@ struct ShopView: View {
     // MARK: - Cookbooks
 
     private func bookRow(_ book: CookbookDTO) -> some View {
-        let floor = Rarity(rawValue: book.odds.last?.rarity ?? "") ?? .common
+        // Odds arrive sorted likeliest-first — `first` is the book's modal
+        // tier, which is what distinguishes the four books at a glance.
+        let floor = Rarity(rawValue: book.odds.first?.rarity ?? "") ?? .common
         let affordable = gameState.coinBalance >= book.price
 
         return Button {
@@ -125,7 +127,7 @@ struct ShopView: View {
     /// The book's three likeliest tiers, as the server published them — the
     /// full table lives on the book's own page.
     private func oddsLine(_ book: CookbookDTO) -> String {
-        book.odds.prefix(3)
+        book.odds.sorted { $0.tierChance > $1.tierChance }.prefix(3)
             .map { "\(percent($0.tierChance)) \($0.label)" }
             .joined(separator: " · ")
     }

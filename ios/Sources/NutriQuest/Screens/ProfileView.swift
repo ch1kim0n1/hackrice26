@@ -27,6 +27,7 @@ struct ProfileView: View {
     @State private var showWatchQA = ProcessInfo.processInfo.arguments.contains("-uiWatch")
     /// QA hook: `-uiBodyMetrics` opens the body-and-goals editor directly.
     @State private var showBodyMetrics = ProcessInfo.processInfo.arguments.contains("-uiBodyMetrics")
+    @State private var showAccount = false
 
     var body: some View {
         ScrollView {
@@ -60,7 +61,14 @@ struct ProfileView: View {
             JourneyView()
                 .environmentObject(gameState)
         }
-        .fullScreenCover(isPresented: $showHumanGate) {
+        .fullScreenCover(isPresented: $showHumanGate, onDismiss: {
+            // Auth swaps the player identity — reload everything keyed on it.
+            Task {
+                await gameState.loadProfile()
+                await gameState.refreshTasks()
+                await gameState.refreshInventory(limit: 200)
+            }
+        }) {
             HumanGateView()
         }
         .fullScreenCover(isPresented: $showWatchQA) {
@@ -73,6 +81,11 @@ struct ProfileView: View {
                     }
             }
             .environmentObject(gameState)
+        }
+        .sheet(isPresented: $showAccount) {
+            AccountSheet(displayName: displayName)
+                .environmentObject(gameState)
+                .presentationDetents([.medium])
         }
         .fullScreenCover(isPresented: $showBodyMetrics) {
             NavigationStack {
@@ -382,10 +395,10 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.nqPressable(scale: 0.98, haptic: false))
                 Divider().foregroundStyle(NQTheme.hairline)
-                NavigationLink {
-                    GymCheckView(stage: .capture)
+                Button {
+                    showAccount = true
                 } label: {
-                    rowContent(ProfileSettingsRow(label: "Gym check", systemImage: "dumbbell.fill"))
+                    rowContent(ProfileSettingsRow(label: "Account & info", systemImage: "person.text.rectangle.fill"))
                 }
                 .buttonStyle(.nqPressable(scale: 0.98, haptic: false))
                 Divider().foregroundStyle(NQTheme.hairline)
@@ -507,5 +520,53 @@ struct ProfileView: View {
         .padding(.horizontal, 2)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Read-only account card — identity + watch link state (#31: a way into
+/// "user info" from the profile).
+private struct AccountSheet: View {
+    var displayName: String
+    @EnvironmentObject private var gameState: GameState
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(spacing: NQTheme.spaceL) {
+            HStack {
+                NQSectionHeader("Account")
+                Spacer()
+                Button("Done") { dismiss() }
+                    .font(NQText.heading.font.weight(.bold))
+                    .foregroundStyle(NQTheme.ink)
+            }
+            VStack(spacing: 0) {
+                infoRow("Name", displayName)
+                Divider().foregroundStyle(NQTheme.hairline)
+                infoRow("Username", SessionStore.shared.username ?? "—")
+                Divider().foregroundStyle(NQTheme.hairline)
+                infoRow("Player ID", gameState.playerID)
+                Divider().foregroundStyle(NQTheme.hairline)
+                infoRow("Apple Watch", gameState.watchLinked ? "Linked" : "Not linked")
+            }
+            .nqElevation(.card)
+            Spacer()
+        }
+        .nqPadding(.screen)
+        .background(NQTheme.inkFaint.opacity(0.4).ignoresSafeArea())
+    }
+
+    private func infoRow(_ label: String, _ value: String) -> some View {
+        HStack {
+            Text(label.uppercased())
+                .font(NQText.body.font)
+                .foregroundStyle(NQTheme.inkMuted)
+            Spacer()
+            Text(value)
+                .font(NQText.body.font.weight(.semibold))
+                .foregroundStyle(NQTheme.inkFaint)
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .nqPadding(.card)
     }
 }

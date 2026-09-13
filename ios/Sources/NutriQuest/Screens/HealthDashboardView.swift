@@ -18,6 +18,7 @@ struct HealthDashboardView: View {
                 calorieCard
                 macroRow
                 diversityCard
+                funStatsCard
                 multiplierCard
                 todayLogCard
             }
@@ -186,6 +187,50 @@ struct HealthDashboardView: View {
             .background(
                 Capsule().fill(hit ? accent.accent : NQTheme.hairline)
             )
+    }
+
+    // MARK: - Fun stats
+
+    /// The game side of eating: what today's tracking has earned — streak,
+    /// boosts, mints and battles. All live GameState values, not samples.
+    private var funStatsCard: some View {
+        VStack(alignment: .leading, spacing: NQTheme.spaceS + 2) {
+            Text("Player Stats")
+                .font(NQText.heading.font)
+                .foregroundStyle(NQTheme.ink)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: NQTheme.spaceS) {
+                funStat(icon: "flame.fill", tint: NQTheme.warning, value: "\(gameState.streakCount)d", label: "Nutrition streak")
+                funStat(icon: "bolt.fill", tint: accent.accentDark, value: "\(gameState.profile?.cookbookBoosts ?? 0)", label: "Cookbook Boosts")
+                funStat(icon: "barcode", tint: NQTheme.info, value: "\(gameState.todayEntries.count)", label: "Foods logged today")
+                funStat(icon: "trophy.fill", tint: NQTheme.success, value: "\(gameState.profile?.rankedWins ?? 0)", label: "Ranked wins")
+                funStat(icon: "bitcoinsign.circle.fill", tint: NQTheme.gold, value: "\(gameState.coinBalance)", label: "Coins")
+                funStat(icon: "fork.knife", tint: NQTheme.inkMuted, value: "\(gameState.profile?.battlesWon ?? 0)", label: "Battles won")
+            }
+        }
+        .nqPadding(.card)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .soft)
+    }
+
+    private func funStat(icon: String, tint: Color, value: String, label: String) -> some View {
+        HStack(spacing: NQTheme.spaceS) {
+            Image(systemName: icon)
+                .font(.system(size: NQText.body.size, weight: .bold))
+                .foregroundStyle(tint)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value)
+                    .font(NQText.body.font.weight(.heavy))
+                    .foregroundStyle(NQTheme.ink)
+                    .lineLimit(1)
+                Text(label)
+                    .font(NQText.microS.font)
+                    .foregroundStyle(NQTheme.inkFaint)
+            }
+            Spacer(minLength: 0)
+        }
+        .nqPadding(.card)
+        .background(NQTheme.hairline.opacity(0.5), in: RoundedRectangle(cornerRadius: NQTheme.radiusM))
     }
 
     // MARK: - Multiplier tie-in

@@ -35,6 +35,7 @@ struct CharacterDetailView: View {
                         displayCharacterButton
                         if let stats {
                             statBlock(stats)
+                            movesBlock(stats.moves)
                         }
                     }
                 }
@@ -144,7 +145,7 @@ struct CharacterDetailView: View {
     /// Effective (rarity × star scaled) combat figures — what the unit
     /// actually fights with, matching the server engine's scaling.
     private func statBlock(_ unit: BattleUnitSpec) -> some View {
-        let maxValue = max(unit.maxHP, unit.effectiveAttack, 1)
+        let maxValue = max(unit.maxHP, unit.effectiveAttack, Double(unit.startingMana), 1)
 
         return VStack(alignment: .leading, spacing: NQTheme.spaceM - 2) {
             Text("Battle Stats")
@@ -153,9 +154,12 @@ struct CharacterDetailView: View {
             VStack(spacing: NQTheme.spaceS + 2) {
                 statRow("Health", unit.maxHP, maxValue, NQTheme.success)
                 statRow("Attack", unit.effectiveAttack, maxValue, NQTheme.warning)
+                if unit.baseMana != nil {
+                    statRow("Mana", Double(unit.startingMana), maxValue, NQTheme.info)
+                }
             }
             if unit.baseMana != nil {
-                Text("Mana \(unit.startingMana) — Special Ability available")
+                Text("Special Ability available")
                     .font(NQText.captionS.font.weight(.bold))
                     .foregroundStyle(NQTheme.info)
             }
@@ -172,6 +176,70 @@ struct CharacterDetailView: View {
         .nqPadding(.card)
         .frame(maxWidth: .infinity, alignment: .leading)
         .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .soft)
+    }
+
+    /// The authored moveset — three standards, then the Mana Special for
+    /// Epic+. Each row carries the numbers a player needs to choose a move
+    /// mid-battle: power, accuracy, mana cost, status, and the description.
+    private func movesBlock(_ moves: [BattleMoveSpec]) -> some View {
+        VStack(alignment: .leading, spacing: NQTheme.spaceM - 2) {
+            Text("Moves")
+                .font(NQText.heading.font)
+                .foregroundStyle(NQTheme.ink)
+            ForEach(moves) { move in
+                moveRow(move)
+            }
+        }
+        .nqPadding(.card)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .soft)
+    }
+
+    private func moveRow(_ move: BattleMoveSpec) -> some View {
+        VStack(alignment: .leading, spacing: NQTheme.spaceXS) {
+            HStack(spacing: NQTheme.spaceS) {
+                Text(move.name)
+                    .font(NQText.body.font.weight(.bold))
+                    .foregroundStyle(NQTheme.ink)
+                if move.kind == .special {
+                    NQChip("Special", icon: .sparkle, tint: NQTheme.info, filled: true)
+                }
+                Spacer(minLength: 0)
+            }
+            HStack(spacing: NQTheme.spaceS) {
+                if move.power > 0 {
+                    moveTag("Pow \(Int(move.power))")
+                }
+                moveTag("Acc \(Int(move.accuracy))%")
+                if move.manaCost > 0 {
+                    moveTag("\(Int(move.manaCost)) mana")
+                }
+                if let effect = move.statusEffect {
+                    moveTag(effectLabel(effect, chance: move.statusChance))
+                }
+            }
+            if let description = move.description, !description.isEmpty {
+                Text(description)
+                    .font(NQText.captionS.font)
+                    .foregroundStyle(NQTheme.inkMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, NQTheme.spaceXS)
+    }
+
+    private func moveTag(_ text: String) -> some View {
+        Text(text)
+            .font(NQText.micro.font.weight(.bold))
+            .foregroundStyle(NQTheme.inkMuted)
+            .nqPadding(.badge)
+            .background(Capsule().fill(NQTheme.hairline))
+    }
+
+    private func effectLabel(_ effect: StatusEffectID, chance: Double?) -> String {
+        let name = effect.rawValue.replacingOccurrences(of: "_", with: " ")
+        guard let chance, chance > 0 else { return name }
+        return "\(name) \(Int(chance))%"
     }
 
     private func statRow(_ label: String, _ value: Double, _ maxValue: Double, _ color: Color) -> some View {

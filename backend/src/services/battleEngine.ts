@@ -87,8 +87,11 @@ export const STATUS_PARAMS = {
   accDownMult: 0.75,
   /** Instant self-heal as a fraction of the user's max HP. */
   healFraction: 0.15,
-  /** Instant self-heal as a fraction of the damage just dealt. */
-  leechFraction: 0.5
+  /** Leech heals this fraction of damage dealt… */
+  leechFraction: 0.5,
+  /** …but never more than this fraction of max HP — two leech-spammers
+   *  trading the same hit must still make progress toward a finish. */
+  leechCapFraction: 0.25
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -600,7 +603,10 @@ export class Battle {
         return;
       }
       case "leech": {
-        const amount = damageDealt * STATUS_PARAMS.leechFraction;
+        const amount = Math.min(
+          damageDealt * STATUS_PARAMS.leechFraction,
+          attacker.maxHP * STATUS_PARAMS.leechCapFraction
+        );
         attacker.hp = Math.min(attacker.maxHP, attacker.hp + amount);
         this.events.push({ event: "heal", unit: attacker.spec.id, amount, kind: "leech" });
         return;

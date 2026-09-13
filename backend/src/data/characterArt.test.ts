@@ -5,7 +5,7 @@ import { ROSTER } from "./roster";
 import { sampleCharacters } from "./sampleCharacters";
 import { spriteRelPath } from "./characterArt";
 
-const ART_DIR = join(__dirname, "..", "..", "..", "game-assets");
+const ART_DIR = join(__dirname, "..", "..", "game-assets");
 
 describe("character cartoon sprites", () => {
   const ids = [

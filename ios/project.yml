@@ -24,7 +24,9 @@ targets:
       - path: Resources/Fonts
         type: folder
         buildPhase: resources
-      - path: ../game-assets
+      # Shared art folder lives in backend/ so the Railway service root ships
+      # it; the app still bundles the same PNGs as folder resources.
+      - path: ../backend/game-assets
         type: folder
         buildPhase: resources
         excludes:

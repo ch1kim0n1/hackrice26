@@ -143,7 +143,7 @@ class GameState {
             `SELECT drop_id, payload, locked_by FROM lootbox_drop
              WHERE player_id = ? AND overflow = ? ORDER BY seq DESC LIMIT ?`
           )
-          .all(id, overflow, overflow ? MAX_MAILBOX : INVENTORY_CAP * 2) as any[])
+          .all(id, overflow, overflow ? MAX_MAILBOX : -1) as any[])
           // The columns, not the payload, are the authority on a drop's id and
           // lock state: rows written before ids existed were backfilled there.
           // Rows written before baseMintValue existed get it recovered from
@@ -341,14 +341,19 @@ class GameState {
   // -- inventory ------------------------------------------------------------
 
   /**
-   * Store a minted drop. If the player's unlocked inventory is already at the
+   * Store a minted drop. If the player's inventory is already at the
    * 200-monster cap, the drop goes to the mailbox instead — the spec's
    * checklist forbids silently discarding a reward, and the old "delete the
    * oldest unlocked row" behaviour did exactly that.
+   *
+   * The cap counts every owned row, locked or not: a staked monster still
+   * occupies its slot. Measuring only `availableDrops()` let locked stakes
+   * push the inventory past 200, after which the paginated /inventory
+   * response truncated the oldest rows and clients pruned them.
    */
   record(drop: StoredDrop | Omit<StoredDrop, "id">): RecordResult {
     const stored: StoredDrop = "id" in drop && drop.id ? drop : { ...drop, id: randomUUID() };
-    const overflowed = this.availableDrops().length >= INVENTORY_CAP;
+    const overflowed = this.inventory.length >= INVENTORY_CAP;
     if (overflowed) {
       this.mailbox.push(stored);
     } else {
@@ -373,7 +378,7 @@ class GameState {
    * promise.
    */
   claimMailbox(ids: string[]): { claimed: string[]; remaining: number } {
-    const free = INVENTORY_CAP - this.availableDrops().length;
+    const free = INVENTORY_CAP - this.inventory.length;
     const claimable = ids.filter((id) => this.mailbox.some((d) => d.id === id)).slice(0, Math.max(0, free));
     const statement = db.prepare(
       `UPDATE lootbox_drop SET overflow = 0 WHERE player_id = ? AND drop_id = ? AND overflow = 1`

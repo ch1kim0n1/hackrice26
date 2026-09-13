@@ -8,7 +8,7 @@
 
 import { Cookbook, Rarity, RarityTier } from "../types";
 import { COOKBOOKS as COOKBOOK_SPECS } from "../game/spec";
-import { ROSTER, RosterCharacter } from "./roster";
+import { ROSTER, RosterCharacter, rosterFor } from "./roster";
 
 /**
  * Weights are integers out of RARITY_TOTAL so the distribution stays exact.
@@ -53,12 +53,13 @@ export const RARITY_ORDER: Rarity[] = (Object.keys(RARITY_TIERS) as Rarity[]).so
 // parallel coin-shop pricing table that used to live here.
 
 /**
- * The pool every mint draws its character design from — the whole 14-design
- * catalog, because rarity is a property of the instance, not the design
- * (spec §2). A cookbook case rolls rarity first, then a uniform design.
+ * The pool a mint draws its character design from. Rarity is a property of
+ * the instance, not the design (spec §2) — but designs may whitelist the
+ * rarities they can mint at via `rarityEligibility`, and the brainrot set
+ * is Secret-only, so the pool depends on the rolled rarity.
  */
-export function mintPool(): RosterCharacter[] {
-  return ROSTER;
+export function mintPool(rarity?: Rarity): RosterCharacter[] {
+  return rarity === undefined ? ROSTER : rosterFor(rarity);
 }
 
 // ---------------------------------------------------------------------------

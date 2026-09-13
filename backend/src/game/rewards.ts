@@ -31,10 +31,11 @@ export interface MonsterReward {
   stars: number;
 }
 
-/** Designs a reward can mint, in a stable order — the whole catalog, since
- *  rarity is a property of the instance the budget bought, not of the design. */
-export function rewardPool(): RosterCharacter[] {
-  return [...mintPool()].sort((a, b) => a.id.localeCompare(b.id));
+/** Designs a reward can mint at the bought rarity, in a stable order —
+ *  rarity is a property of the instance the budget bought, not of the
+ *  design, but the pool honours rarityEligibility (Secret = brainrot). */
+export function rewardPool(rarity: Rarity): RosterCharacter[] {
+  return [...mintPool(rarity)].sort((a, b) => a.id.localeCompare(b.id));
 }
 
 /**
@@ -47,7 +48,7 @@ export function rewardPool(): RosterCharacter[] {
  */
 export function rewardFor(budget: number, characterRoll: number, positionRoll: number): MonsterReward {
   const rarity = rarityForValue(budget);
-  const pool = rewardPool();
+  const pool = rewardPool(rarity);
   const character = asCharacter(
     pool[Math.min(Math.floor(characterRoll * pool.length), pool.length - 1)],
     rarity

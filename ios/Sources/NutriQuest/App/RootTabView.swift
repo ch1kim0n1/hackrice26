@@ -132,6 +132,23 @@ struct RootTabView: View {
                 }
             }
             .animation(NQMotion.springy, value: gameState.streakMilestone)
+            .overlay {
+                // #19: a GameState update that runs past ~0.2 s covers the
+                // screen rather than leaving it looking frozen.
+                if gameState.loadingVisible {
+                    ZStack {
+                        NQTheme.inkDeep.opacity(0.55).ignoresSafeArea()
+                        VStack(spacing: NQTheme.spaceM) {
+                            NQDotsLoader(color: NQTheme.gold)
+                            Text("Loading…")
+                                .font(NQText.heading.font.weight(.heavy))
+                                .foregroundStyle(NQTheme.ink)
+                        }
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .animation(NQMotion.quick, value: gameState.loadingVisible)
         }
         .nqAccentContext(accentContext)
         .onChange(of: selectedTab) { _ in

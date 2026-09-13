@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ROSTER, ROSTER_SIZE, rosterCharacter, rosterCharacterSchema, asCharacter } from "./roster";
+import { ROSTER, ROSTER_SIZE, rosterCharacter, rosterCharacterSchema, asCharacter, rosterFor } from "./roster";
 import { attacksFor } from "./attacks";
 import { RARITY_ORDER } from "./lootTable";
 
@@ -13,9 +13,14 @@ import { RARITY_ORDER } from "./lootTable";
 // ============================================================================
 
 describe("master catalog", () => {
-  it("has exactly 14 characters with unique permanent ids", () => {
-    expect(ROSTER_SIZE).toBe(14);
-    expect(new Set(ROSTER.map((c) => c.id)).size).toBe(14);
+  it("has 14 standard-pool + secret-only designs with unique permanent ids", () => {
+    expect(ROSTER_SIZE).toBe(ROSTER.length);
+    expect(new Set(ROSTER.map((c) => c.id)).size).toBe(ROSTER.length);
+    // The 14 food designs mint common..mythic; Secret pulls only brainrot.
+    expect(rosterFor("common")).toHaveLength(14);
+    expect(rosterFor("secret").length).toBeGreaterThan(0);
+    expect(rosterFor("secret").every((c) => c.rarityEligibility?.includes("secret"))).toBe(true);
+    expect(rosterFor("secret").some((c) => c.rarityEligibility === undefined)).toBe(false);
     for (const c of ROSTER) {
       // Lower-kebab, never derived from the display name.
       expect(c.id).toMatch(/^[a-z][a-z0-9-]{2,39}$/);

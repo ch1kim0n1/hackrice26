@@ -175,7 +175,7 @@ struct CasinoHubView: View {
             HStack(spacing: NQTheme.spaceM) {
                 NQIconView(icon: .crown, tint: NQTheme.gold)
                     .frame(width: NQLayout.iconXL, height: NQLayout.iconXL)
-                Text("Coin shop")
+                Text("Shop")
                     .font(NQText.headingL.font.weight(.heavy))
                     .foregroundStyle(NQTheme.ink)
                 Spacer(minLength: 0)
@@ -191,7 +191,7 @@ struct CasinoHubView: View {
             }
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Opens the coin shop")
+        .accessibilityHint("Opens the shop")
     }
 
     // MARK: - Games floor

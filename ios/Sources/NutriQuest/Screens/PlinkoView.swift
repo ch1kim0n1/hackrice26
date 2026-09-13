@@ -516,7 +516,9 @@ struct PlinkoBoardView: View {
                 let x = (centre + CGFloat(peg) - CGFloat(pegCount - 1) / 2 + 0.5) * slotWidth
                 let struck = isStruck(row: row, x: x, slotWidth: slotWidth, fall: fall)
                 Circle()
-                    .fill(struck ? orbTint : NQTheme.inkFaint.opacity(0.4))
+                    // Dark navy pegs against the mid-blue board — the faint
+                    // light pegs read as holes, not obstacles (#18).
+                    .fill(struck ? orbTint : NQTheme.inkDeep.opacity(0.8))
                     .frame(width: pegSize(slotWidth, struck: struck),
                            height: pegSize(slotWidth, struck: struck))
                     .position(x: x, y: rowHeight * CGFloat(row + 1))

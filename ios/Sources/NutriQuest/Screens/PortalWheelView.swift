@@ -346,15 +346,19 @@ struct PortalWheelView: View {
             if colors.isEmpty {
                 NQEmptyState(message: "Couldn't reach the wheel's odds.", icon: .wifiOff)
             } else {
-                ForEach(colors) { option in
-                    colorRow(option, wager: monster.netWorth)
+                // Four square buttons in one row (#18b) — same information as
+                // the old full-width rows, no scrolling past the wheel.
+                HStack(spacing: NQTheme.spaceS) {
+                    ForEach(colors) { option in
+                        colorSquare(option, wager: monster.netWorth)
+                    }
                 }
             }
         }
         .padding(.horizontal, NQTheme.spaceL)
     }
 
-    private func colorRow(_ option: PortalColorDTO, wager: Int) -> some View {
+    private func colorSquare(_ option: PortalColorDTO, wager: Int) -> some View {
         let isPicked = pick == option.color
         let tint = Color(hex: option.colorHex)
         let payout = Int((Double(wager) * option.multiplier).rounded(.down))
@@ -363,41 +367,33 @@ struct PortalWheelView: View {
             NQJuice.tap()
             withAnimation(NQMotion.snappy) { pick = isPicked ? nil : option.color }
         } label: {
-            HStack(spacing: NQTheme.spaceM) {
+            VStack(spacing: NQTheme.spaceXS + 2) {
                 ZStack {
                     Circle()
                         .fill(tint.opacity(0.2))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 34, height: 34)
                     Circle()
                         .strokeBorder(tint, lineWidth: isPicked ? 3 : 1.5)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 34, height: 34)
                     Text("\(option.sections)")
-                        .font(NQText.heading.font.weight(.heavy))
+                        .font(NQText.captionS.font.weight(.heavy))
                         .foregroundStyle(tint)
                 }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(option.label.uppercased())
-                        .font(NQText.heading.font.weight(.heavy))
-                        .tracking(0.8)
-                        .foregroundStyle(NQTheme.ink)
-                    Text("\(option.sections)/\(option.totalSections) sections · \(percent(option.probability))")
-                        .font(NQText.microXS.font)
-                        .foregroundStyle(NQTheme.inkMuted)
-                }
-
-                Spacer(minLength: NQTheme.spaceS)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(String(format: "%.2fx", option.multiplier))
-                        .font(NQText.headingL.font.weight(.heavy))
-                        .foregroundStyle(tint)
-                    Text("\(payout.formatted()) NW")
-                        .font(NQText.microXS.font)
-                        .foregroundStyle(NQTheme.inkMuted)
-                }
+                Text(option.label.uppercased())
+                    .font(NQText.micro.font.weight(.heavy))
+                    .tracking(0.4)
+                    .foregroundStyle(NQTheme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(String(format: "%.2fx", option.multiplier))
+                    .font(NQText.captionS.font.weight(.heavy))
+                    .foregroundStyle(tint)
+                Text("\(payout.formatted()) NW")
+                    .font(NQText.microXS.font)
+                    .foregroundStyle(NQTheme.inkMuted)
             }
-            .nqPadding(.card)
+            .padding(.vertical, NQTheme.spaceS)
+            .padding(.horizontal, NQTheme.spaceXS)
             .frame(maxWidth: .infinity)
             .background(NQTheme.background)
             .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusL))

@@ -20,6 +20,14 @@ struct HomeView: View {
     /// harder than NQTheme.warning's terracotta so "over" is unmistakable.
     private let overRed = Color(hex: 0xD9453A)
 
+    /// The character the profile is currently showcasing — server value,
+    /// starter fallback while it loads (same resolution RootTabView uses).
+    private var activeCharacter: Character? {
+        let id = gameState.profile?.activeCharacterId
+        return gameState.collection.first { $0.id == id }
+            ?? gameState.collection.first { !$0.isLocked }
+    }
+
     var body: some View {
         ScrollView {
             VStack(spacing: NQTheme.spaceL) {
@@ -27,7 +35,7 @@ struct HomeView: View {
                     .nqSlideUp(delay: 0.02)
                 weekStrip
                     .nqSlideUp(delay: 0.05)
-                nutritionCard
+                heroCard
                     .nqSlideUp(delay: 0.1)
                 activityRow
                     .nqSlideUp(delay: 0.15)
@@ -38,6 +46,72 @@ struct HomeView: View {
         }
         .nqSceneBackground(GameArt.scene("home"))
         .task { await gameState.refreshTasks() }
+    }
+
+    // MARK: - Hero card: display character + nutrition (#28)
+
+    /// The display character stands centre-stage with today's calorie budget
+    /// wrapped as a progress ring around its base; the three macro tiles sit
+    /// underneath. One card, same daily plan numbers as before.
+    private var heroCard: some View {
+        let target = max(Double(gameState.dailyPlan.calories), 1)
+        let consumed = gameState.todayCalories
+        let over = consumed > target
+        let progress = min(consumed / target, 1)
+        let remaining = Int(abs(target - consumed).rounded())
+
+        return VStack(spacing: NQTheme.spaceM) {
+            ZStack {
+                // The ring wraps the character's base — consumed calories
+                // sweep it in the accent colour, red once over budget.
+                Circle()
+                    .stroke(NQTheme.hairline, lineWidth: 12)
+                Circle()
+                    .trim(from: 0, to: max(0.02, progress))
+                    .stroke(
+                        over ? AnyShapeStyle(overRed)
+                             : AnyShapeStyle(LinearGradient(colors: [accent.accent, accent.accentDark],
+                                                            startPoint: .topLeading, endPoint: .bottomTrailing)),
+                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeOut(duration: 0.4), value: progress)
+                if let character = activeCharacter, !character.isLocked {
+                    CharacterArtwork(character: character)
+                        .frame(width: 118, height: 148)
+                        .modifier(MascotIdleBob(enabled: true))
+                } else {
+                    NQIcon.sparkle.view
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(NQTheme.inkFaint)
+                }
+            }
+            .frame(width: 190, height: 190)
+            .padding(.top, NQTheme.spaceS)
+
+            VStack(spacing: 2) {
+                Text("\(remaining.formatted())")
+                    .font(NQFont.display.font(34))
+                    .foregroundStyle(over ? overRed : NQTheme.ink)
+                    .monospacedDigit()
+                Text(over ? "Calories over" : "Calories left")
+                    .font(NQText.caption.font.weight(.bold))
+                    .foregroundStyle(over ? overRed : NQTheme.inkMuted)
+            }
+
+            Rectangle()
+                .fill(NQTheme.hairline)
+                .frame(height: 1.5)
+            macroRow
+        }
+        .nqPadding(.card)
+        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            over
+            ? "\(remaining) calories over today's \(gameState.dailyPlan.calories) calorie budget"
+            : "\(remaining) calories left of today's \(gameState.dailyPlan.calories) calorie budget"
+        )
     }
 
     // MARK: - Section 4: daily tasks (spec §6)
@@ -210,89 +284,6 @@ struct HomeView: View {
         }
         .nqPadding(.card)
         .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
-    }
-
-    // MARK: - Section 2: nutrition card
-
-    /// Combined nutrition card: the calorie gauge on top and the three macro
-    /// allowances below a hairline divider, sharing one sticker card.
-    private var nutritionCard: some View {
-        VStack(alignment: .leading, spacing: NQTheme.spaceM) {
-            calorieSection
-            Rectangle()
-                .fill(NQTheme.hairline)
-                .frame(height: 1.5)
-            macroRow
-        }
-        .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
-    }
-
-    /// Calorie gauge: today's remaining budget as the headline, a rounded
-    /// 0-to-target bar underneath, red once the budget is exceeded.
-    private var calorieSection: some View {
-        let target = max(Double(gameState.dailyPlan.calories), 1)
-        let consumed = gameState.todayCalories
-        let over = consumed > target
-        let fraction = min(consumed / target, 1)
-        let headline = Int(abs(target - consumed).rounded())
-
-        return VStack(alignment: .leading, spacing: NQTheme.spaceM) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(headline.formatted())")
-                        .font(NQFont.display.font(34))
-                        .foregroundStyle(over ? overRed : NQTheme.ink)
-                        .monospacedDigit()
-                    Text(over ? "Calories over" : "Calories left")
-                        .font(NQText.caption.font.weight(.bold))
-                        .foregroundStyle(over ? overRed : NQTheme.inkMuted)
-                }
-                Spacer()
-                ZStack {
-                    Circle()
-                        .fill((over ? overRed : accent.accent).opacity(0.14))
-                        .frame(width: 44, height: 44)
-                    NQIcon.flame.view
-                        .frame(width: 20, height: 20)
-                        .foregroundStyle(over ? overRed : accent.accentDark)
-                }
-            }
-
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(NQTheme.surface)
-                    Capsule()
-                        .strokeBorder(NQTheme.hairline, lineWidth: 1.5)
-                    if fraction > 0 {
-                        Capsule()
-                            .fill(over
-                                  ? AnyShapeStyle(overRed)
-                                  : AnyShapeStyle(LinearGradient(
-                                        colors: [accent.accent, accent.accentDark],
-                                        startPoint: .leading, endPoint: .trailing)))
-                            .frame(width: max(18, geo.size.width * fraction))
-                            .animation(.easeOut(duration: 0.4), value: fraction)
-                    }
-                }
-            }
-            .frame(height: 18)
-
-            HStack {
-                Text("0")
-                Spacer()
-                Text("\(gameState.dailyPlan.calories.formatted()) cal")
-            }
-            .font(NQText.captionS.font.weight(.bold))
-            .foregroundStyle(NQTheme.inkFaint)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            over
-            ? "\(headline) calories over today's \(gameState.dailyPlan.calories) calorie budget"
-            : "\(headline) calories left of today's \(gameState.dailyPlan.calories) calorie budget"
-        )
     }
 
     /// The three macro columns — protein, carbs, and fats — sized by the plan

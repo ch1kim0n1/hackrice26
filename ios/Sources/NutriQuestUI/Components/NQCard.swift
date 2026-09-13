@@ -158,11 +158,14 @@ public struct NQCharacterCard: View {
             // Locked cards still need a rarity-neutral ring (there's no
             // artwork frame to draw when there's nothing to frame). Unlocked
             // cards get their rarity color from the octagonal `-frame` art
-            // around the portrait now — an outer card-wide stroke on top of
-            // that was two borders doing the same job.
+            // around the portrait now — except Secret, whose identity is the
+            // black card edge.
             if state == .locked {
                 NQPanelShape(cut: NQTheme.radiusM)
                     .strokeBorder(NQTheme.inkRule, style: StrokeStyle(lineWidth: 2, dash: [4, 3]))
+            } else if rarity == .secret {
+                NQPanelShape(cut: NQTheme.radiusM)
+                    .strokeBorder(Color.black, lineWidth: rarity.outlineWidth)
             }
         }
         .overlay(alignment: .top) {

@@ -164,14 +164,18 @@ struct BodyMetricsView: View {
     }
 
     /// Imperial/metric switch. Only changes how the numbers are shown — the
-    /// stored values stay metric.
+    /// stored values stay metric. Persists on tap: a display preference
+    /// shouldn't wait on the Save button at the bottom of the form.
     private var unitToggle: some View {
         HStack(spacing: NQTheme.spaceM) {
             Text("Units")
                 .font(NQText.bodyL.font)
                 .foregroundStyle(NQTheme.ink)
             Spacer()
-            Picker("Units", selection: $draft.usesMetric) {
+            Picker("Units", selection: Binding(
+                get: { draft.usesMetric },
+                set: { draft.usesMetric = $0; gameState.setUnitsPreference($0) }
+            )) {
                 Text("Imperial").tag(false)
                 Text("Metric").tag(true)
             }

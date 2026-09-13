@@ -507,24 +507,36 @@ struct KitchenMinesView: View {
     private func dish(tile: Int, round: MinesRoundDTO) -> some View {
         let safeHere = uncovered[tile]
         let isBurnt = burntTile == tile
-        let lifted = safeHere != nil || isBurnt
+        // Once the round is over the server publishes the full layout —
+        // show every mine so a loss reads as "here's where they were" (#17).
+        let revealedMine = !round.isActive && (round.layout?.contains(tile) ?? false)
+        let lifted = safeHere != nil || isBurnt || revealedMine
 
         return Button {
             Task { await lift(tile: tile, round: round) }
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: NQTheme.radiusM, style: .continuous)
-                    .fill(lifted ? (isBurnt ? NQTheme.warning.opacity(0.22) : NQTheme.success.opacity(0.18)) : NQTheme.surface)
+                    .fill(lifted ? (isBurnt ? NQTheme.warning.opacity(0.22)
+                                         : revealedMine ? NQTheme.warning.opacity(0.08)
+                                         : NQTheme.success.opacity(0.18)) : NQTheme.surface)
                     .overlay {
                         RoundedRectangle(cornerRadius: NQTheme.radiusM, style: .continuous)
                             .strokeBorder(
-                                isBurnt ? NQTheme.warning : (lifted ? NQTheme.success.opacity(0.5) : NQTheme.inkDeep.opacity(0.12)),
+                                isBurnt ? NQTheme.warning
+                                    : (revealedMine ? NQTheme.warning.opacity(0.4)
+                                       : lifted ? NQTheme.success.opacity(0.5)
+                                       : NQTheme.inkDeep.opacity(0.12)),
                                 lineWidth: isBurnt ? 2.5 : 1.5
                             )
                     }
 
                 if isBurnt {
                     Text("🔥").font(.system(size: 26))
+                } else if revealedMine {
+                    // The mine that was hiding here — dimmer than the one
+                    // that actually burnt the dish so the losing tile pops.
+                    Text("💣").font(.system(size: 22))
                 } else if safeHere != nil {
                     Text(ingredient(for: tile)).font(.system(size: 24))
                 } else {
@@ -542,6 +554,7 @@ struct KitchenMinesView: View {
         .disabled(lifted || gameState.minesBusy || !round.isActive)
         .accessibilityLabel(
             isBurnt ? "Burnt dish"
+                : revealedMine ? "Hidden mine"
                 : safeHere != nil ? "Safe ingredient"
                 : "Covered dish \(tile + 1)"
         )

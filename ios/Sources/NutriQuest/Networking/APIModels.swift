@@ -555,6 +555,12 @@ struct CharacterCatalogEntryDTO: Decodable, Sendable {
     let moves: [CatalogMoveDTO]
     let special: CatalogMoveDTO?
     let image: CatalogImageDTO?
+
+    /// The moveset as the engine consumes it: three standards, Special last.
+    var engineMoves: [BattleMoveSpec] {
+        moves.map { $0.engineMove(kind: .standard) }
+            + (special.map { [$0.engineMove(kind: .special)] } ?? [])
+    }
 }
 
 /// An authored move as the catalog serves it (backend moveSchema).
@@ -568,6 +574,16 @@ struct CatalogMoveDTO: Decodable, Sendable {
     let duration: Int?
     let manaCost: Double
     let description: String?
+
+    /// Same move in the engine's shape — identical fields on the wire.
+    func engineMove(kind: BattleMoveSpec.Kind) -> BattleMoveSpec {
+        BattleMoveSpec(
+            id: id, name: name, kind: kind, power: power, accuracy: accuracy,
+            manaCost: manaCost,
+            statusEffect: statusEffect.flatMap(StatusEffectID.init(rawValue:)),
+            statusChance: statusChance, duration: duration, description: description
+        )
+    }
 }
 
 /// Art resolution from `imageFor()` — a file under /assets when it exists,

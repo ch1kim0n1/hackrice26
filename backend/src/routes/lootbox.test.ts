@@ -281,6 +281,35 @@ describe("mailbox overflow", () => {
       expect(body.remaining).toBe(1);
     });
   });
+
+  it("locked stakes still occupy their slot — the cap counts every row", async () => {
+    await withPlayer(0, async (call, playerId) => {
+      const { stateFor } = await import("../services/lootboxState");
+      const { testDrop } = await import("../testkit");
+      const { INVENTORY_CAP } = await import("../game/spec");
+      const session = stateFor(playerId);
+
+      // Fill to the cap, then lock a stake: available drops dip under 200
+      // but the inventory rows still count.
+      for (let i = session.inventory.length; i < INVENTORY_CAP; i++) {
+        session.record(testDrop());
+      }
+      const staked = session.inventory[session.inventory.length - 1];
+      session.lockDrop(staked.id, "cauldron");
+
+      const mint = session.record(testDrop());
+      expect(mint.overflowed).toBe(true);
+      expect(session.inventory.length).toBe(INVENTORY_CAP);
+      expect(session.mailbox).toHaveLength(1);
+
+      // The full inventory still fits the /inventory page — no row is
+      // truncated out of the payload.
+      const response = await call("GET", "/lootbox/inventory?limit=200");
+      const body = (await response.json()) as { count: number; items: unknown[] };
+      expect(body.count).toBe(INVENTORY_CAP);
+      expect(body.items).toHaveLength(INVENTORY_CAP);
+    });
+  });
 });
 
 describe("verification", () => {

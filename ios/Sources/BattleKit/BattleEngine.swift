@@ -46,7 +46,11 @@ public final class Battle {
         public static let guardUpMult = 0.7
         public static let accDownMult = 0.75
         public static let healFraction = 0.15
+        /// Leech heals this fraction of damage dealt…
         public static let leechFraction = 0.5
+        /// …but never more than this fraction of max HP — two leech-spammers
+        /// trading the same hit must still make progress toward a finish.
+        public static let leechCapFraction = 0.25
     }
 
     // MARK: - Input / options
@@ -369,7 +373,10 @@ public final class Battle {
             sides[attackerSide][attackerIndex].hp = min(slot.maxHP, slot.hp + amount)
             events.append(.heal(unit: slot.spec.id, amount: amount, kind: nil))
         case .leech:
-            let amount = damageDealt * StatusParams.leechFraction
+            let amount = min(
+                damageDealt * StatusParams.leechFraction,
+                sides[attackerSide][attackerIndex].maxHP * StatusParams.leechCapFraction
+            )
             let slot = sides[attackerSide][attackerIndex]
             sides[attackerSide][attackerIndex].hp = min(slot.maxHP, slot.hp + amount)
             events.append(.heal(unit: slot.spec.id, amount: amount, kind: .leech))

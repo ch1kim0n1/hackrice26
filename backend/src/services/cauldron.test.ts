@@ -227,15 +227,18 @@ describe("reward selection", () => {
 
   it("can mint something for every bracket", () => {
     for (const rarity of RARITY_ORDER as Rarity[]) {
-      expect(rewardPool().length).toBeGreaterThan(0);
+      expect(rewardPool(rarity).length).toBeGreaterThan(0);
       const budget = RARITY_BANDS[rarity].min + 1;
       expect(rewardFor(budget, 0.5, 0.5).rarity).toBe(rarity);
     }
   });
 
-  it("mints casino rewards from the whole catalog — rarity is on the instance", () => {
-    // No separate secret pool: the budget bought the rarity, and any of the
-    // 14 designs can be the monster that carries it (spec §2).
-    expect([...rewardPool().map((c) => c.id)].sort()).toEqual([...ROSTER.map((c) => c.id)].sort());
+  it("mints casino rewards from the rarity's pool — Secret draws brainrot", () => {
+    // The 14 food designs mint common..mythic; Secret rewards come from the
+    // secret-only brainrot set, so a big cash-out never produces food art.
+    expect([...rewardPool("common").map((c) => c.id)].sort())
+      .toEqual([...ROSTER.filter((c) => c.rarityEligibility?.includes("common")).map((c) => c.id)].sort());
+    expect(rewardPool("secret").every((c) => c.rarityEligibility?.includes("secret"))).toBe(true);
+    expect(rewardPool("secret").length).toBeGreaterThan(0);
   });
 });

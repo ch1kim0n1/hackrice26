@@ -8,54 +8,68 @@ struct CollectionView: View {
     @ObservedObject var gameState: GameState
 
     @State private var selectedFilter: String = "All"
+    /// What the carousel orders by — net worth is the spec's "power level"
+    /// (a monster's current worth IS its strength).
+    @State private var sortKey: SortKey = .power
+
+    private enum SortKey: String, CaseIterable {
+        case power = "Power"
+        case level = "Level"
+        case rarity = "Rarity"
+        case name = "Name"
+    }
     @State private var selectedCharacter: Character?
-    @State private var carouselIndex = 0
-    /// "Sell" mode: tapping the centered card toggles it into the sale
-    /// instead of opening its detail sheet.
+    /// "Sell" mode: tapping a card toggles it into the sale instead of
+    /// opening its detail sheet.
     @State private var sellMode = false
     @State private var sellSelection: Set<String> = []
     /// "Merge" mode: tapping a card with three matching copies fuses them
     /// into the next star. Mutually exclusive with sell mode.
     @State private var mergeMode = false
-    @Environment(\.nqAccent) private var accent
+    /// The fusion ceremony: three copies converge while the server fuses,
+    /// then the result card reveals — a merge is never silent.
+    @State private var mergeFX: MergeFX?
+    /// Drives the converge loop while the merge call is in flight.
+    @State private var mergeFXSpin = false
 
-    /// Hero card width — roughly 62% of the screen so neighbors peek at
-    /// the sides, capped for larger devices.
-    private var carouselCardWidth: CGFloat {
-        #if canImport(UIKit)
-        return min(UIScreen.main.bounds.width * 0.62, 280)
-        #else
-        return 240
-        #endif
+    /// One in-flight fusion: which character, which star group, and the
+    /// server's answer once it lands.
+    private struct MergeFX {
+        let character: Character
+        let fromStar: Int
+        var phase: Phase = .fusing
+        var result: MergeResponseDTO?
+        enum Phase { case fusing, done, failed }
     }
+    @Environment(\.nqAccent) private var accent
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NQTheme.spaceM - 2) {
                 filterPills
+                sortPills
                 if displayCharacters.isEmpty {
-                    NQEmptyState(message: "No characters discovered yet. Scan food to summon your first one!")
+                    NQEmptyState(message: mergeMode
+                        ? "Nothing to merge — fusion needs three unlocked copies at the same rarity and star."
+                        : "No characters discovered yet. Scan food to summon your first one!")
                         .padding(.top, NQTheme.spaceXL)
                 } else {
-                    NQCoverFlowCarousel(
-                        items: displayCharacters,
-                        selection: $carouselIndex,
-                        cardWidth: carouselCardWidth
-                    ) { character, index in
-                        carouselCard(for: character, at: index)
+                    // A real grid (#15): every monster visible at once, two
+                    // columns like a pokédex page — not a one-card carousel.
+                    LazyVGrid(columns: [
+                        GridItem(.flexible(), spacing: NQTheme.spaceM),
+                        GridItem(.flexible(), spacing: NQTheme.spaceM)
+                    ], spacing: NQTheme.spaceM) {
+                        ForEach(displayCharacters) { character in
+                            gridCard(for: character)
+                        }
                     }
-                    .padding(.top, NQTheme.spaceL)
+                    .padding(.top, NQTheme.spaceS)
                 }
             }
             .padding(NQTheme.spaceL)
         }
         .onAppear(perform: applyLaunchSelection)
-        .onChange(of: selectedFilter) { _ in
-            // Each collection starts at its first card.
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-                carouselIndex = 0
-            }
-        }
         .nqSceneBackground(GameArt.scene("home"))
         .navigationTitle("My Collection")
         .navigationBarTitleDisplayMode(.inline)
@@ -74,6 +88,7 @@ struct CollectionView: View {
             CharacterDetailView(character: character, gameState: gameState)
                 .nqAccentContext(NQAccentContext(mode: .active, character: character.kitColor))
         }
+        .overlay { mergeOverlay }
         .task {
             // The collection shouldn't depend on some other screen having
             // already loaded the crate half — refresh it here so a card is
@@ -109,6 +124,10 @@ struct CollectionView: View {
             if mergeMode {
                 sellMode = false
                 sellSelection.removeAll()
+                // Merge mode narrows the grid to cards that can actually
+                // fuse — the rarity pills reset so a remembered filter can't
+                // hide an eligible group.
+                selectedFilter = "All"
             }
         }
     }
@@ -147,30 +166,25 @@ struct CollectionView: View {
             : displayCharacters.first { $0.id == wanted || $0.baseID == wanted }
     }
 
-    /// A hero-sized character card for the carousel. Outside the action
-    /// modes, tapping the centered card opens its detail sheet and tapping a
-    /// peeking side card scrolls the carousel to it. In sell mode, tapping
-    /// the centered card toggles it into the sale; in merge mode, tapping a
-    /// card with three matching copies fuses them.
-    private func carouselCard(for character: Character, at index: Int) -> some View {
-        let isCentered = index == carouselIndex
+    /// One grid cell (#14, #29): compact card, star badge pinned top-left
+    /// (#16), faint marker top-right. Taps open the detail sheet; in sell
+    /// mode a tap toggles the card into the sale, in merge mode it fuses a
+    /// three-copy group — no "centred card" concept any more.
+    private func gridCard(for character: Character) -> some View {
         let isSelected = sellSelection.contains(character.id)
         return Button {
             if mergeMode {
-                guard isCentered, let group = character.mergeableGroup else { scrollTo(index) ; return }
+                guard let group = character.mergeableGroup else { return }
                 merge(character, group: group)
             } else if sellMode {
-                guard isCentered else { scrollTo(index); return }
                 guard character.isSellable else { return }
                 NQHaptic.selection()
                 withAnimation(NQMotion.snappy) {
                     if isSelected { sellSelection.remove(character.id) } else { sellSelection.insert(character.id) }
                 }
-            } else if isCentered {
+            } else {
                 NQJuice.tap()
                 selectedCharacter = character
-            } else {
-                scrollTo(index)
             }
         } label: {
             NQCharacterCard(
@@ -181,15 +195,17 @@ struct CollectionView: View {
                 state: state(for: character),
                 artwork: character.isLocked ? nil : AnyView(
                     CharacterArtwork(character: character)
-                        .frame(width: 128, height: 166)
+                        .frame(width: 96, height: 124)
                 ),
-                artworkSize: CGSize(width: 128, height: 166)
+                artworkSize: CGSize(width: 96, height: 124)
             )
             .overlay {
                 rarityAura(for: character)
             }
-            .overlay(alignment: .bottomTrailing) {
-                if character.starLevel > 1 && !character.isLocked {
+            .overlay(alignment: .topLeading) {
+                // Star count lives top-left on every owned card (#16) —
+                // ★1 included, so an unfused card still reads its level.
+                if !character.isLocked {
                     Text("★\(character.starLevel)")
                         .font(NQText.captionS.font.weight(.heavy))
                         .foregroundStyle(NQTheme.gold.readableTextColor())
@@ -200,10 +216,10 @@ struct CollectionView: View {
                         .allowsHitTesting(false)
                 }
             }
-            .overlay(alignment: .top) {
-                if sellMode && !character.isLocked && isCentered {
+            .overlay(alignment: .topTrailing) {
+                if sellMode && !character.isLocked {
                     sellIndicator(character: character, isSelected: isSelected)
-                } else if mergeMode && !character.isLocked && isCentered {
+                } else if mergeMode && !character.isLocked {
                     mergeBadge(character: character)
                 } else if gameState.faintedIds.contains(character.id) && !character.isLocked {
                     // Fainted monsters can't be fielded until the daily reset
@@ -223,33 +239,23 @@ struct CollectionView: View {
         .buttonStyle(NQPressableStyle(scale: 0.96, haptic: false))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(character.name), \(character.rarity.label) rarity\(character.isLocked ? "" : ", \(character.starLevel) star\(character.starLevel == 1 ? "" : "s")")")
-        .accessibilityHint(cardHint(for: character, isSelected: isSelected, isCentered: isCentered))
+        .accessibilityHint(cardHint(for: character, isSelected: isSelected))
         .nqShineSweep(active: character.rarity >= .legendary)
     }
 
-    private func scrollTo(_ index: Int) {
-        NQHaptic.selection()
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
-            carouselIndex = index
-        }
-    }
-
-    private func cardHint(for character: Character, isSelected: Bool, isCentered: Bool) -> String {
+    private func cardHint(for character: Character, isSelected: Bool) -> String {
         if mergeMode {
             return character.mergeableGroup != nil
                 ? "Double tap to fuse three copies into the next star."
                 : "Needs three unlocked copies at the same rarity and star."
         }
-        guard sellMode else {
-            return isCentered ? "View character details" : "Show this card"
-        }
+        guard sellMode else { return "View character details" }
         guard character.isSellable else { return "Not sellable — never picked up as a real drop" }
         return isSelected ? "Selected. Double tap to remove from the sale." : "Double tap to add to the sale."
     }
 
-    /// Overlaid on the centered card: a checkmark toggle when the monster is
-    /// a real, sellable drop, a lock when it isn't (an undiscovered
-    /// placeholder with no instance behind it).
+    /// Sell mode's card corner: a checkmark toggle when the monster is a
+    /// real, sellable drop, a lock when it isn't.
     private func sellIndicator(character: Character, isSelected: Bool) -> some View {
         Group {
             if character.isSellable {
@@ -273,11 +279,11 @@ struct CollectionView: View {
                 .frame(width: 26, height: 26)
             }
         }
-        .padding(.top, NQTheme.spaceL)
+        .padding(NQTheme.spaceS)
         .allowsHitTesting(false)
     }
 
-    /// Merge mode's card overlay: a star-up badge when the card holds a
+    /// Merge mode's card corner: a star-up badge when the card holds a
     /// fusable group ("★1 ×3 → ★2"), a lock when it doesn't.
     private func mergeBadge(character: Character) -> some View {
         Group {
@@ -298,17 +304,120 @@ struct CollectionView: View {
                 .frame(width: 26, height: 26)
             }
         }
-        .padding(.top, NQTheme.spaceL)
+        .padding(NQTheme.spaceS)
         .allowsHitTesting(false)
     }
 
-    /// Fire one fusion for the card's lowest eligible group. The inventory
-    /// refresh inside mergeCharacters rebuilds the card with the new star.
+    /// Fire one fusion for the card's lowest eligible group. The ceremony
+    /// overlay plays while the server fuses — three copies converge, then
+    /// the refreshed card reveals itself a star up.
     private func merge(_ character: Character, group: (star: Int, rarity: String, dropIDs: [String])) {
-        NQJuice.success()
-        Task {
-            _ = await gameState.mergeCharacters(group.dropIDs)
+        NQJuice.tap()
+        mergeFXSpin = false
+        withAnimation(NQMotion.quick) {
+            mergeFX = MergeFX(character: character, fromStar: group.star)
         }
+        Task {
+            async let call = gameState.mergeCharacters(group.dropIDs)
+            async let beat: Void = Task.sleep(nanoseconds: 1_100_000_000)
+            let (result, _) = await (call, (try? beat) as Void?)
+            withAnimation(NQMotion.springy) {
+                mergeFX?.result = result
+                mergeFX?.phase = result == nil ? .failed : .done
+            }
+            if result == nil { NQJuice.error() } else { NQJuice.success() }
+        }
+    }
+
+    /// Full-screen fusion feedback: converge loop while in flight, reveal
+    /// card on success, retry affordance on failure.
+    @ViewBuilder private var mergeOverlay: some View {
+        if let fx = mergeFX {
+            ZStack {
+                NQTheme.inkDeep.opacity(0.72).ignoresSafeArea()
+                if fx.phase == .fusing {
+                    fusingStage(fx)
+                } else {
+                    fusionResult(fx)
+                }
+            }
+            .transition(.opacity)
+            .zIndex(30)
+        }
+    }
+
+    /// The three copies orbit into the centre in a loop until the server
+    /// answers — the glow sells "something is happening".
+    private func fusingStage(_ fx: MergeFX) -> some View {
+        let offsets: [CGSize] = [
+            CGSize(width: -96, height: 40),
+            CGSize(width: 96, height: 40),
+            CGSize(width: 0, height: -100)
+        ]
+        return VStack(spacing: NQTheme.spaceL) {
+            ZStack {
+                Circle()
+                    .fill(accent.accent.opacity(mergeFXSpin ? 0.5 : 0.15))
+                    .frame(width: 200, height: 200)
+                    .blur(radius: 40)
+                ForEach(0..<3, id: \.self) { i in
+                    CharacterArtwork(character: fx.character)
+                        .frame(width: 84, height: 108)
+                        .offset(mergeFXSpin ? .zero : offsets[i])
+                        .rotationEffect(.degrees(mergeFXSpin ? 360 : 0))
+                        .scaleEffect(mergeFXSpin ? 0.4 : 1)
+                        .opacity(mergeFXSpin ? 0.2 : 1)
+                }
+            }
+            Text("Fusing ★\(fx.fromStar) ×3…")
+                .font(NQText.heading.font.weight(.heavy))
+                .foregroundStyle(NQTheme.ink)
+        }
+        .onAppear {
+            withAnimation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true)) {
+                mergeFXSpin = true
+            }
+        }
+    }
+
+    /// The reveal: fused artwork big, the star ladder it climbed, and what
+    /// it's now worth. The collection refresh already rebuilt the card —
+    /// this is the confirmation it actually happened.
+    private func fusionResult(_ fx: MergeFX) -> some View {
+        let fused = gameState.collection.first { $0.id == fx.character.id } ?? fx.character
+        return VStack(spacing: NQTheme.spaceM) {
+            if fx.phase == .done {
+                Text("FUSION COMPLETE")
+                    .font(NQText.heading.font.weight(.heavy))
+                    .foregroundStyle(NQTheme.gold)
+                CharacterArtwork(character: fused)
+                    .frame(width: 140, height: 180)
+                    .shadow(color: accent.accent.opacity(0.85), radius: 24)
+                Text("★\(fx.fromStar) ×3 → ★\(fx.result?.to.star ?? fx.fromStar + 1)")
+                    .font(NQText.display.font)
+                    .foregroundStyle(NQTheme.ink)
+                if let value = fx.result?.to.value {
+                    Text("Now worth \(value.formatted()) coins")
+                        .font(NQText.captionS.font)
+                        .foregroundStyle(NQTheme.inkMuted)
+                }
+            } else {
+                Text("FUSION FAILED")
+                    .font(NQText.heading.font.weight(.heavy))
+                    .foregroundStyle(NQTheme.error)
+                Text(gameState.backendError ?? "The server refused the merge.")
+                    .font(NQText.captionS.font)
+                    .foregroundStyle(NQTheme.inkMuted)
+                    .multilineTextAlignment(.center)
+            }
+            NQButton("Done", icon: .checkCircle) {
+                withAnimation(NQMotion.quick) { mergeFX = nil }
+            }
+        }
+        .padding(NQTheme.spaceL)
+        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .raised)
+        .padding(NQTheme.spaceXL)
+        .transition(.scale.combined(with: .opacity))
     }
 
     // MARK: - Sell bar
@@ -414,19 +523,69 @@ struct CollectionView: View {
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// Unlocked before locked, then rarest first — raw collection order was
-    /// whatever order things were scanned/pulled in, which reads as random
-    /// once you have more than a handful of characters.
+    /// Sort row — same pill shape as the filters, fixed to the sort keys.
+    private var sortPills: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: NQTheme.spaceS) {
+                Text("Sort")
+                    .font(NQText.micro.font.weight(.bold))
+                    .foregroundStyle(NQTheme.inkFaint)
+                ForEach(SortKey.allCases, id: \.self) { key in
+                    sortPill(key)
+                }
+            }
+        }
+    }
+
+    private func sortPill(_ key: SortKey) -> some View {
+        let selected = sortKey == key
+        return Button {
+            NQHaptic.selection()
+            sortKey = key
+        } label: {
+            Text(key.rawValue)
+                .font(NQText.caption.font.weight(.bold))
+                .foregroundStyle(selected ? accent.accent.readableTextColor() : NQTheme.inkMuted)
+                .lineLimit(1)
+                .padding(.horizontal, NQTheme.spaceM)
+                .frame(height: 34)
+                .background(
+                    Capsule()
+                        .fill(selected ? accent.accent : NQTheme.background)
+                )
+        }
+        .buttonStyle(NQPressableStyle(scale: 0.95, haptic: false))
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityLabel("Sort by \(key.rawValue)")
+    }
+
+    /// Unlocked before locked, then by the chosen sort key — raw collection
+    /// order was whatever order things were scanned/pulled in, which reads
+    /// as random once you have more than a handful of characters.
     private var displayCharacters: [Character] {
         var list = colorMode == .none
             ? characters.map { var c = $0; c.isLocked = true; return c }
             : characters
+        if mergeMode {
+            list = list.filter { $0.mergeableGroup != nil }
+        }
         if selectedFilter != "All" {
             list = list.filter { $0.rarity.label == selectedFilter }
         }
         return list.sorted { a, b in
             if a.isLocked != b.isLocked { return !a.isLocked }
-            if a.rarity != b.rarity { return a.rarity > b.rarity }
+            switch sortKey {
+            case .power:
+                if a.netWorth != b.netWorth { return a.netWorth > b.netWorth }
+                if a.rarity != b.rarity { return a.rarity > b.rarity }
+            case .level:
+                if a.starLevel != b.starLevel { return a.starLevel > b.starLevel }
+                if a.rarity != b.rarity { return a.rarity > b.rarity }
+            case .rarity:
+                if a.rarity != b.rarity { return a.rarity > b.rarity }
+            case .name:
+                return a.name < b.name
+            }
             return a.name < b.name
         }
     }
