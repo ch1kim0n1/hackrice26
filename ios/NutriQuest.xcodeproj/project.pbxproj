@@ -47,6 +47,7 @@
 		6B842BBD9BDE955B6C3A7504 /* CharacterBios.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA38B012E57749DC07E99993 /* CharacterBios.swift */; };
 		757C655FBEFE2632208627F1 /* LANTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB077BE598A1019959EF64F5 /* LANTestSupport.swift */; };
 		78C9C65BCDC91D9B1E68602D /* BattleKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6C4642CADC1838D0387C7BF8 /* BattleKit */; };
+		795B9A261F386F22DC7D1595 /* GuidedTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2D72F87F60BCBF813FB7A3 /* GuidedTourView.swift */; };
 		7B93FED2EEC0D911006208E3 /* BarcodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EE1172B559382ABFAD76939 /* BarcodeUtils.swift */; };
 		7DD51A43094A15FBA71D4806 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 3179FA7282219DAAB0FE3C85 /* Assets.xcassets */; };
 		7DFE640900C4F63DF44DBBA4 /* GameArt.swift in Sources */ = {isa = PBXBuildFile; fileRef = D8768A5DA1CF563EA0B0E887 /* GameArt.swift */; };
@@ -167,6 +168,7 @@
 		97CA1129653E7E25D7307C6A /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
 		99A3574F110807E98AD10ED7 /* Character.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Character.swift; sourceTree = "<group>"; };
 		9B32FE00FCF3110C4CF6CA4F /* CauldronClock.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CauldronClock.swift; sourceTree = "<group>"; };
+		9E2D72F87F60BCBF813FB7A3 /* GuidedTourView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GuidedTourView.swift; sourceTree = "<group>"; };
 		A895E0E755FBC76AA59CACBB /* RootTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootTabView.swift; sourceTree = "<group>"; };
 		AD52285DC114B6B2660F977D /* BattleHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleHubView.swift; sourceTree = "<group>"; };
 		AD6E67C745E454F1A74AFDFF /* NQNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NQNotifications.swift; sourceTree = "<group>"; };
@@ -465,6 +467,7 @@
 				617FC9309807B399B25A73A5 /* CrateOpeningView.swift */,
 				27A178BC1BCAAA42B0EE0DD8 /* DishReviewView.swift */,
 				5B50EEE2B0F8FAAF470C99CB /* DungeonView.swift */,
+				9E2D72F87F60BCBF813FB7A3 /* GuidedTourView.swift */,
 				7AB602D2B3D6DBF6725D2720 /* HealthDashboardView.swift */,
 				F64CE10476129B1ED098A63A /* HomeView.swift */,
 				39D1677FC4D6136C587AA8EA /* HumanGateView.swift */,
@@ -648,6 +651,7 @@
 				52DB4149B9A9CEA5889E1A16 /* FoodProduct.swift in Sources */,
 				7DFE640900C4F63DF44DBBA4 /* GameArt.swift in Sources */,
 				9DE7D4A7F8EA165ABE69CFCC /* GameState.swift in Sources */,
+				795B9A261F386F22DC7D1595 /* GuidedTourView.swift in Sources */,
 				8F88172B7F72EC5200D5E82C /* HealthDashboardView.swift in Sources */,
 				2C603B97017B76B6A4424FCC /* HealthKitManager.swift in Sources */,
 				D5D7EED529F03A9576289678 /* HealthKitSnapshot.swift in Sources */,

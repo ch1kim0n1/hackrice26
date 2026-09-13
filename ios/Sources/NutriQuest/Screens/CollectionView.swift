@@ -50,7 +50,7 @@ struct CollectionView: View {
                 sortPills
                 if displayCharacters.isEmpty {
                     NQEmptyState(message: mergeMode
-                        ? "Nothing to merge — fusion needs three unlocked copies at the same rarity and star."
+                        ? "Nothing to merge: fusion needs three unlocked copies at the same rarity and star."
                         : "No characters discovered yet. Scan food to summon your first one!")
                         .padding(.top, NQTheme.spaceXL)
                 } else {
@@ -60,8 +60,9 @@ struct CollectionView: View {
                         GridItem(.flexible(), spacing: NQTheme.spaceM),
                         GridItem(.flexible(), spacing: NQTheme.spaceM)
                     ], spacing: NQTheme.spaceM) {
-                        ForEach(displayCharacters) { character in
+                        ForEach(Array(displayCharacters.enumerated()), id: \.element.id) { index, character in
                             gridCard(for: character)
+                                .nqCascade(index: min(index, 7))
                         }
                     }
                     .padding(.top, NQTheme.spaceS)
@@ -71,9 +72,13 @@ struct CollectionView: View {
         }
         .onAppear(perform: applyLaunchSelection)
         .nqSceneBackground(GameArt.scene("home"))
-        .navigationTitle("My Collection")
+        .navigationTitle("Squad")
         .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
         .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle("Squad")
+            }
             ToolbarItem(placement: .navigationBarTrailing) {
                 HStack(spacing: NQTheme.spaceS) {
                     mergeModeButton
@@ -103,6 +108,7 @@ struct CollectionView: View {
     private var sellModeButton: some View {
         modeButton(
             title: sellMode ? "Cancel" : "Sell",
+            symbol: "dollarsign",
             active: sellMode,
             accessibilityLabel: sellMode ? "Cancel selling" : "Sell monsters"
         ) {
@@ -117,6 +123,7 @@ struct CollectionView: View {
     private var mergeModeButton: some View {
         modeButton(
             title: mergeMode ? "Cancel" : "Merge",
+            symbol: "square.stack.3d.up.fill",
             active: mergeMode,
             accessibilityLabel: mergeMode ? "Cancel merging" : "Merge monsters"
         ) {
@@ -134,22 +141,29 @@ struct CollectionView: View {
 
     private func modeButton(
         title: String,
+        symbol: String,
         active: Bool,
         accessibilityLabel: String,
         action: @escaping () -> Void
     ) -> some View {
-        Button {
+        let fill = active ? NQTheme.warning : NQTheme.gold
+        return Button {
             NQHaptic.selection()
             withAnimation(NQMotion.snappy) { action() }
         } label: {
-            Text(title)
-                .font(NQText.captionS.font.weight(.heavy))
-                .foregroundStyle((active ? NQTheme.warning : accent.accent).readableTextColor())
-                .nqPadding(.badge)
-                .padding(.horizontal, NQTheme.spaceXS)
-                .background(Capsule().fill(active ? NQTheme.warning : accent.accent))
+            VStack(spacing: 2) {
+                Image(systemName: symbol)
+                    .font(.system(size: 15, weight: .heavy))
+                Text(title)
+                    .font(NQText.microXS.font)
+                    .lineLimit(1)
+            }
+            .foregroundStyle(fill.readableTextColor())
+            .frame(width: 48, height: 48)
+            .background(NQTicketShape().fill(fill))
+            .overlay { NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2.5) }
         }
-        .buttonStyle(NQPressableStyle(scale: 0.95, haptic: false))
+        .buttonStyle(NQPressableStyle(scale: 0.94, haptic: false, ledge: 4))
         .accessibilityLabel(accessibilityLabel)
     }
 
@@ -194,7 +208,9 @@ struct CollectionView: View {
                 statType: character.statType.kitStatType,
                 state: state(for: character),
                 artwork: character.isLocked ? nil : AnyView(
-                    CharacterArtwork(character: character)
+                    // Fainted monsters wear the hurt sprite on their card —
+                    // the FAINTED badge alone was too easy to miss.
+                    CharacterArtwork(character: character, hurt: gameState.faintedIds.contains(character.id))
                         .frame(width: 96, height: 124)
                 ),
                 artworkSize: CGSize(width: 96, height: 124),
@@ -222,13 +238,12 @@ struct CollectionView: View {
                 } else if gameState.faintedIds.contains(character.id) && !character.isLocked {
                     // Fainted monsters can't be fielded until the daily reset
                     // or a nutrition-task revive (spec §6).
-                    Text("FAINTED")
+                    Text("Fainted")
                         .font(NQText.microS.font.weight(.heavy))
-                        .tracking(1)
                         .foregroundStyle(NQTheme.inkFaint.readableTextColor())
                         .nqPadding(.badge)
                         .padding(.horizontal, NQTheme.spaceXS)
-                        .background(Capsule().fill(NQTheme.inkFaint))
+                        .background(NQPanelShape(cut: NQTheme.radiusStamp).fill(NQTheme.inkFaint))
                         .padding(NQTheme.spaceS)
                         .allowsHitTesting(false)
                 }
@@ -244,16 +259,15 @@ struct CollectionView: View {
     /// Mastery as drawn stars — ★★★ reads at a glance where "3 stars" text
     /// did not. Five max, so the row never wraps on a card.
     private func starBadge(_ stars: Int) -> some View {
-        HStack(spacing: 2) {
+        HStack(spacing: 1) {
             ForEach(0..<max(1, stars), id: \.self) { _ in
                 Image(systemName: "star.fill")
-                    .font(.system(size: 10, weight: .bold))
-                    .foregroundStyle(NQTheme.gold.readableTextColor())
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(NQTheme.gold)
+                    .shadow(color: NQTheme.inkDeep, radius: 0, y: 1)
             }
         }
-        .nqPadding(.badge)
-        .padding(.horizontal, NQTheme.spaceXS)
-        .background(Capsule().fill(NQTheme.gold))
+        .padding(NQTheme.spaceS)
     }
 
     private func cardHint(for character: Character, isSelected: Bool) -> String {
@@ -263,7 +277,7 @@ struct CollectionView: View {
                 : "Needs three unlocked copies at the same rarity and star."
         }
         guard sellMode else { return "View character details" }
-        guard character.isSellable else { return "Not sellable — never picked up as a real drop" }
+        guard character.isSellable else { return "Not sellable: never picked up as a real drop" }
         return isSelected ? "Selected. Double tap to remove from the sale." : "Double tap to add to the sale."
     }
 
@@ -277,7 +291,7 @@ struct CollectionView: View {
                     Circle().strokeBorder(.white.opacity(0.85), lineWidth: 2)
                     if isSelected {
                         Image(systemName: "checkmark")
-                            .font(.system(size: 14, weight: .heavy))
+                            .font(.system(size: NQLayout.iconS, weight: .heavy))
                             .foregroundStyle(accent.accent.readableTextColor())
                     }
                 }
@@ -286,7 +300,7 @@ struct CollectionView: View {
                 ZStack {
                     Circle().fill(Color.black.opacity(0.45))
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: NQLayout.iconS, weight: .bold))
                         .foregroundStyle(.white.opacity(0.85))
                 }
                 .frame(width: 26, height: 26)
@@ -306,12 +320,15 @@ struct CollectionView: View {
                     .foregroundStyle(accent.accent.readableTextColor())
                     .nqPadding(.badge)
                     .padding(.horizontal, NQTheme.spaceXS)
-                    .background(Capsule().fill(accent.accent))
+                    .background(NQTicketShape().fill(accent.accent))
+                    .overlay {
+                        NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2)
+                    }
             } else {
                 ZStack {
                     Circle().fill(Color.black.opacity(0.45))
                     Image(systemName: "lock.fill")
-                        .font(.system(size: 12, weight: .bold))
+                        .font(.system(size: NQLayout.iconS, weight: .bold))
                         .foregroundStyle(.white.opacity(0.85))
                 }
                 .frame(width: 26, height: 26)
@@ -400,7 +417,7 @@ struct CollectionView: View {
         let fused = gameState.collection.first { $0.id == fx.character.id } ?? fx.character
         return VStack(spacing: NQTheme.spaceM) {
             if fx.phase == .done {
-                Text("FUSION COMPLETE")
+                Text("Fusion complete")
                     .font(NQText.heading.font.weight(.heavy))
                     .foregroundStyle(NQTheme.gold)
                 CharacterArtwork(character: fused)
@@ -415,7 +432,7 @@ struct CollectionView: View {
                         .foregroundStyle(NQTheme.inkMuted)
                 }
             } else {
-                Text("FUSION FAILED")
+                Text("Fusion failed")
                     .font(NQText.heading.font.weight(.heavy))
                     .foregroundStyle(NQTheme.error)
                 Text(gameState.backendError ?? "The server refused the merge.")
@@ -501,10 +518,10 @@ struct CollectionView: View {
         }
     }
 
-    /// Filters the grid by rarity tier. "All" shows every character.
+    /// Filters the grid by rarity tier. Underline tabs, not filled capsules.
     private var filterPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: NQTheme.spaceS) {
+            HStack(spacing: NQTheme.spaceM) {
                 ForEach(["All"] + Rarity.allCases.map(\.label), id: \.self) { filter in
                     filterPill(filter, selected: selectedFilter == filter)
                 }
@@ -512,34 +529,28 @@ struct CollectionView: View {
         }
     }
 
-    /// Fixed size for every filter pill so the row reads as a uniform
-    /// grid instead of pills that shrink/grow with their label length.
-    private let filterPillSize = CGSize(width: 96, height: 44)
-
     private func filterPill(_ title: String, selected: Bool) -> some View {
         Button {
             NQHaptic.selection()
             selectedFilter = title
         } label: {
-            Text(title)
-                .font(NQText.caption.font.weight(.bold))
-                .foregroundStyle(selected ? accent.accent.readableTextColor() : NQTheme.inkMuted)
-                .lineLimit(1)
-                .minimumScaleFactor(0.8)
-                .frame(width: filterPillSize.width, height: filterPillSize.height)
-                .background(
-                    RoundedRectangle(cornerRadius: NQTheme.radiusM)
-                        .fill(selected ? accent.accent : NQTheme.background)
-                )
+            VStack(spacing: 5) {
+                Text(title)
+                    .font(NQText.caption.font.weight(.heavy))
+                    .foregroundStyle(selected ? NQTheme.gold : NQTheme.inkMuted)
+                Rectangle()
+                    .fill(selected ? NQTheme.gold : Color.clear)
+                    .frame(height: 3)
+            }
         }
-        .buttonStyle(NQPressableStyle(scale: 0.95, haptic: false))
+        .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
-    /// Sort row — same pill shape as the filters, fixed to the sort keys.
+    /// Sort as underlined keys, matching the rarity tabs.
     private var sortPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: NQTheme.spaceS) {
+            HStack(spacing: NQTheme.spaceM) {
                 Text("Sort")
                     .font(NQText.micro.font.weight(.bold))
                     .foregroundStyle(NQTheme.inkFaint)
@@ -556,18 +567,16 @@ struct CollectionView: View {
             NQHaptic.selection()
             sortKey = key
         } label: {
-            Text(key.rawValue)
-                .font(NQText.caption.font.weight(.bold))
-                .foregroundStyle(selected ? accent.accent.readableTextColor() : NQTheme.inkMuted)
-                .lineLimit(1)
-                .padding(.horizontal, NQTheme.spaceM)
-                .frame(height: 34)
-                .background(
-                    Capsule()
-                        .fill(selected ? accent.accent : NQTheme.background)
-                )
+            VStack(spacing: 5) {
+                Text(key.rawValue)
+                    .font(NQText.caption.font.weight(.heavy))
+                    .foregroundStyle(selected ? NQTheme.gold : NQTheme.inkMuted)
+                Rectangle()
+                    .fill(selected ? NQTheme.gold : Color.clear)
+                    .frame(height: 3)
+            }
         }
-        .buttonStyle(NQPressableStyle(scale: 0.95, haptic: false))
+        .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
         .accessibilityLabel("Sort by \(key.rawValue)")
     }

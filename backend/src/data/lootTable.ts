@@ -67,7 +67,7 @@ export function mintPool(rarity?: Rarity): RosterCharacter[] {
 // ---------------------------------------------------------------------------
 
 const COOKBOOK_DESCRIPTIONS: Record<string, string> = {
-  "home-cookbook": "Weeknight staples. Every tier is reachable — even Secret — but the odds favour the everyday.",
+  "home-cookbook": "Weeknight staples. Every tier is reachable, even Secret, but the odds favour the everyday.",
   "chefs-cookbook": "A working kitchen's shelf. Better table, better pulls.",
   "master-cookbook": "Technique and patience. Epic and Legendary are realistic goals here.",
   "forbidden-cookbook": "No Commons at all. The book nobody was supposed to publish."

@@ -278,3 +278,106 @@ public struct NQLockedShimmer: ViewModifier {
 public extension View {
     func nqLockedShimmer() -> some View { modifier(NQLockedShimmer()) }
 }
+
+// MARK: - Cartoon nav title
+
+/// Chunky Baloo title for the nav bar — replaces the thin system label so
+/// hub screens still read as the game, not Settings.
+public struct NQGameTitle: View {
+    private let title: String
+
+    public init(_ title: String) {
+        self.title = title
+    }
+
+    public var body: some View {
+        Text(title)
+            .font(NQText.headingL.font.weight(.heavy))
+            .foregroundStyle(NQTheme.ink)
+            .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
+            .accessibilityAddTraits(.isHeader)
+    }
+}
+
+// MARK: - Speech bubble (invite)
+
+/// Comic bubble that hops. One inviting cue — "Scan a snack!" — not a
+/// loop on every card.
+public struct NQSpeechBubble: View {
+    private let text: String
+    @State private var hop = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(_ text: String) {
+        self.text = text
+    }
+
+    public var body: some View {
+        VStack(spacing: 0) {
+            Text(text)
+                .font(NQText.caption.font.weight(.heavy))
+                .foregroundStyle(NQTheme.inkDeep)
+                .nqPadding(.chip)
+                .background(NQPanelShape(cut: NQTheme.radiusS).fill(NQTheme.ink))
+                .overlay {
+                    NQPanelShape(cut: NQTheme.radiusS)
+                        .strokeBorder(NQTheme.inkDeep, lineWidth: 2.5)
+                }
+            NQBubbleTail()
+                .fill(NQTheme.ink)
+                .frame(width: 16, height: 9)
+                .overlay {
+                    NQBubbleTail()
+                        .stroke(NQTheme.inkDeep, lineWidth: 2)
+                }
+                .offset(y: -2)
+        }
+        .offset(y: hop && !reduceMotion ? -6 : 0)
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.75).repeatForever(autoreverses: true)) {
+                hop = true
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Down-pointing comic tail for `NQSpeechBubble`.
+struct NQBubbleTail: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        path.addLine(to: CGPoint(x: rect.midX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
+        path.closeSubpath()
+        return path
+    }
+}
+
+// MARK: - Invite pulse
+
+/// Slow breathe-scale for the one control we want the player to tap next
+/// (claim, scan crest). Off under Reduce Motion.
+public struct NQInvitePulse: ViewModifier {
+    @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init() {}
+
+    public func body(content: Content) -> some View {
+        content
+            .scaleEffect(pulse && !reduceMotion ? 1.07 : 1)
+            .animation(
+                reduceMotion ? nil : .easeInOut(duration: 0.85).repeatForever(autoreverses: true),
+                value: pulse
+            )
+            .onAppear { pulse = true }
+    }
+}
+
+public extension View {
+    func nqInvitePulse() -> some View { modifier(NQInvitePulse()) }
+}

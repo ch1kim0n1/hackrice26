@@ -3,26 +3,28 @@ import NutriQuestUI
 
 // MARK: - Welcome
 
-/// First screen of the flow: phone hero, headline, Get Started, Sign In.
+/// First screen of the flow: hero art, headline, enter-the-game CTA.
 struct OBWelcomeStep: View {
     let onGetStarted: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            
-
             Spacer(minLength: 16)
             NQAssetImage("onboarding-hero")
                 .frame(maxHeight: 440)
+                .nqPopIn()
             Spacer(minLength: 20)
 
-            Text("Calorie tracking\nmade easy")
-                .font(NQFont.display.font(30))
-                .foregroundStyle(OBTheme.ink)
+            Text("Scan a meal.\nSummon a monster.")
+                .font(NQText.display.font)
+                .foregroundStyle(NQTheme.ink)
                 .multilineTextAlignment(.center)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
+                .nqSlideUp(delay: 0.08)
 
-            OBPrimaryButton(title: "Get Started", action: onGetStarted)
+            OBPrimaryButton(title: "Build your squad", action: onGetStarted)
                 .padding(.top, 22)
+                .nqSlideUp(delay: 0.14)
         }
     }
 }

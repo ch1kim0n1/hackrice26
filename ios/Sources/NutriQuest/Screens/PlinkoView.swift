@@ -777,7 +777,7 @@ struct PlinkoRulesView: View {
                             .accessibilityElement(children: .combine)
                         }
 
-                        Text("Across the whole board the table pays back about \(String(format: "%.1f", config.expectedMultiplier * 100))% — a \(String(format: "%.0f", config.actualHouseEdge * 100))% house edge, the same as the other games.")
+                        Text("Across the whole board the table pays back about \(String(format: "%.1f", config.expectedMultiplier * 100))%: a \(String(format: "%.0f", config.actualHouseEdge * 100))% house edge, the same as the other games.")
                             .font(NQText.microXS.font)
                             .foregroundStyle(NQTheme.inkFaint)
                             .fixedSize(horizontal: false, vertical: true)

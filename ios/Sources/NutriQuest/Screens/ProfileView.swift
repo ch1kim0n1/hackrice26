@@ -19,7 +19,7 @@ struct ProfileView: View {
     var rows: [ProfileSettingsRow]
 
     @Environment(\.nqAccent) private var accent
-    @State private var showJourney = false
+    @State private var showJourney = ProcessInfo.processInfo.arguments.contains("-uiJourney")
     /// QA hook, matching RootTabView's `-uiTab`: `-uiHumanGate` launches
     /// straight into the human-gate web game for screenshots/demo.
     @State private var showHumanGate = ProcessInfo.processInfo.arguments.contains("-uiHumanGate")
@@ -53,9 +53,15 @@ struct ProfileView: View {
             }
             .padding(NQTheme.spaceL)
         }
-        .nqPageBackground()
+        .nqSceneBackground(GameArt.scene("home"))
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle("Trainer")
+            }
+        }
         .task { await gameState.refreshBattleHistory() }
         .fullScreenCover(isPresented: $showJourney) {
             JourneyView()
@@ -82,10 +88,9 @@ struct ProfileView: View {
             }
             .environmentObject(gameState)
         }
-        .sheet(isPresented: $showAccount) {
+        .fullScreenCover(isPresented: $showAccount) {
             AccountSheet(displayName: displayName)
                 .environmentObject(gameState)
-                .presentationDetents([.medium])
         }
         .fullScreenCover(isPresented: $showBodyMetrics) {
             NavigationStack {
@@ -167,14 +172,14 @@ struct ProfileView: View {
     private var recentBattlesCard: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
             Text("Recent battles")
-                .font(NQText.microXS.font)
-                .tracking(0.4)
-                .foregroundStyle(NQTheme.inkMuted)
+                .font(NQText.heading.font)
+                .foregroundStyle(NQTheme.ink)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
                 .padding(.leading, 4)
 
             VStack(spacing: 0) {
                 if gameState.battleHistory.isEmpty {
-                    Text("No battles yet — ranked, friendly and dungeon fights land here.")
+                    Text("No battles yet: ranked, friendly and dungeon fights land here.")
                         .font(NQText.captionS.font)
                         .foregroundStyle(NQTheme.inkMuted)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -272,9 +277,9 @@ struct ProfileView: View {
         let unlocked = Achievements.unlockedIDs()
         return VStack(alignment: .leading, spacing: NQTheme.spaceS) {
             Text("Trophy case")
-                .font(NQText.microXS.font)
-                .tracking(0.4)
-                .foregroundStyle(NQTheme.inkMuted)
+                .font(NQText.heading.font)
+                .foregroundStyle(NQTheme.ink)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
                 .padding(.leading, 4)
             VStack(spacing: 0) {
                 ForEach(Array(Achievements.all.enumerated()), id: \.element.id) { index, achievement in
@@ -365,9 +370,9 @@ struct ProfileView: View {
     private var settingsList: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
             Text("Settings")
-                .font(NQText.microXS.font)
-                .tracking(0.4)
-                .foregroundStyle(NQTheme.inkMuted)
+                .font(NQText.heading.font)
+                .foregroundStyle(NQTheme.ink)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
                 .padding(.leading, 4)
             VStack(spacing: 0) {
                 soundToggle
@@ -445,7 +450,7 @@ struct ProfileView: View {
                     .fill(accent.accentSoft)
                     .frame(width: 32, height: 32)
                 Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: NQLayout.iconM, weight: .bold))
                     .foregroundStyle(accent.accentDark)
             }
             .accessibilityHidden(true)
@@ -469,7 +474,7 @@ struct ProfileView: View {
                     .fill(accent.accentSoft)
                     .frame(width: 32, height: 32)
                 Image(systemName: "iphone.radiowaves.left.and.right")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: NQLayout.iconM, weight: .bold))
                     .foregroundStyle(accent.accentDark)
             }
             .accessibilityHidden(true)
@@ -496,7 +501,7 @@ struct ProfileView: View {
                     .fill(row.isDestructive ? NQTheme.warning.opacity(0.15) : accent.accentSoft)
                     .frame(width: 32, height: 32)
                 Image(systemName: row.systemImage)
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: NQLayout.iconM, weight: .bold))
                     .foregroundStyle(row.isDestructive ? NQTheme.warning : accent.accentDark)
             }
             .accessibilityHidden(true)
@@ -510,10 +515,7 @@ struct ProfileView: View {
                     .foregroundStyle(NQTheme.inkFaint)
             }
             if !row.isDestructive {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: NQText.caption.size, weight: .semibold))
-                    .foregroundStyle(NQTheme.inkFaint)
-                    .accessibilityHidden(true)
+                NQChevron()
             }
         }
         .nqPadding(.card)
@@ -523,50 +525,93 @@ struct ProfileView: View {
     }
 }
 
-/// Read-only account card — identity + watch link state (#31: a way into
-/// "user info" from the profile).
+/// Trainer ID — a passport card, not a Settings form.
 private struct AccountSheet: View {
     var displayName: String
     @EnvironmentObject private var gameState: GameState
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(spacing: NQTheme.spaceL) {
-            HStack {
-                NQSectionHeader("Account")
+        NavigationStack {
+            VStack(spacing: NQTheme.spaceL) {
+                HStack(alignment: .top, spacing: NQTheme.spaceM) {
+                    RoundedRectangle(cornerRadius: 5, style: .circular)
+                        .fill(NQTheme.chrome)
+                        .frame(width: 88, height: 110)
+                        .overlay {
+                            RoundedRectangle(cornerRadius: 5, style: .circular)
+                                .strokeBorder(NQTheme.gold, lineWidth: 3)
+                        }
+                        .overlay {
+                            NQIcon.person.view
+                                .frame(width: 36, height: 36)
+                                .foregroundStyle(NQTheme.gold)
+                        }
+                    VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+                        Text("Trainer ID")
+                            .font(NQText.microS.font)
+                            .foregroundStyle(NQTheme.gold)
+                        Text(displayName)
+                            .font(NQText.display.font)
+                            .foregroundStyle(NQTheme.ink)
+                            .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
+                        Text(SessionStore.shared.username.map { "@\($0)" } ?? "Guest")
+                            .font(NQText.caption.font.weight(.bold))
+                            .foregroundStyle(NQTheme.inkMuted)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .nqPadding(.card)
+
+                VStack(alignment: .leading, spacing: NQTheme.spaceM) {
+                    passportRow("Player ID", gameState.playerID)
+                    Rectangle().fill(NQTheme.inkDeep.opacity(0.35)).frame(height: 2)
+                    passportRow("Apple Watch", gameState.watchLinked ? "Linked" : "Not linked")
+                }
+                .nqPadding(.card)
+
                 Spacer()
-                Button("Done") { dismiss() }
-                    .font(NQText.heading.font.weight(.bold))
-                    .foregroundStyle(NQTheme.ink)
             }
-            VStack(spacing: 0) {
-                infoRow("Name", displayName)
-                Divider().foregroundStyle(NQTheme.hairline)
-                infoRow("Username", SessionStore.shared.username ?? "—")
-                Divider().foregroundStyle(NQTheme.hairline)
-                infoRow("Player ID", gameState.playerID)
-                Divider().foregroundStyle(NQTheme.hairline)
-                infoRow("Apple Watch", gameState.watchLinked ? "Linked" : "Not linked")
+            .padding(NQTheme.spaceL)
+            .background(NQTicketShape().fill(NQTheme.background.opacity(0.92)))
+            .overlay { NQTicketShape().strokeBorder(NQTheme.gold, lineWidth: 4) }
+            .padding(NQTheme.spaceL)
+            .nqSceneBackground(GameArt.scene("home"))
+            .navigationTitle("Account")
+            .navigationBarTitleDisplayMode(.inline)
+            .nqTransparentNav()
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    NQGameTitle("Account")
+                }
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button {
+                        dismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 14, weight: .heavy))
+                            .foregroundStyle(NQTheme.inkDeep)
+                            .frame(width: 36, height: 36)
+                            .background(NQTicketShape().fill(NQTheme.gold))
+                            .overlay { NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2.5) }
+                    }
+                    .buttonStyle(NQPressableStyle(scale: 0.94, haptic: false, ledge: 3))
+                    .accessibilityLabel("Done")
+                }
             }
-            .nqElevation(.card)
-            Spacer()
         }
-        .nqPadding(.screen)
-        .background(NQTheme.inkFaint.opacity(0.4).ignoresSafeArea())
     }
 
-    private func infoRow(_ label: String, _ value: String) -> some View {
-        HStack {
-            Text(label.uppercased())
-                .font(NQText.body.font)
-                .foregroundStyle(NQTheme.inkMuted)
-            Spacer()
+    private func passportRow(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(NQText.microS.font)
+                .foregroundStyle(NQTheme.gold)
             Text(value)
                 .font(NQText.body.font.weight(.semibold))
-                .foregroundStyle(NQTheme.inkFaint)
+                .foregroundStyle(NQTheme.ink)
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
-        .nqPadding(.card)
     }
 }

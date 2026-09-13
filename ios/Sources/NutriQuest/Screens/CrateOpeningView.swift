@@ -109,7 +109,7 @@ struct CrateOpeningView: View {
             }
         } message: {
             if let item = pendingSale {
-                Text("\(item.character.name) leaves the collection. You get \(item.value) coins — full net worth.")
+                Text("\(item.character.name) leaves the collection. You get \(item.value) coins: full net worth.")
             }
         }
     }
@@ -1131,7 +1131,7 @@ private struct FairnessSheet: View {
                 } else {
                     ForEach(fairness.retired, id: \.serverSeedHash) { seed in
                         VStack(alignment: .leading, spacing: 4) {
-                            infoRow("Server seed", seed.serverSeed ?? "—")
+                            infoRow("Server seed", seed.serverSeed ?? "-")
                             infoRow("Hash", seed.serverSeedHash)
                             infoRow("Nonce", "\(seed.nonce)")
                             if let retiredAt = seed.retiredAt {

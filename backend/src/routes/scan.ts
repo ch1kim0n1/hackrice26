@@ -435,7 +435,7 @@ const markAnalysisConsumed = (analysisId: string) =>
 // vision request.
 scanRouter.post(
   "/photo/analyze",
-  rateLimitByPlayer({ windowMs: 60_000, max: 5, keyPrefix: "scan:photo", message: "Photo scans are heavy — max 5 per minute." }),
+  rateLimitByPlayer({ windowMs: 60_000, max: 5, keyPrefix: "scan:photo", message: "Photo scans are heavy; max 5 per minute." }),
   async (req: PlayerRequest, res) => {
     const { image } = req.body as { image?: string };
     if (typeof image !== "string" || image.length < 500 || image.length > 9_000_000) {

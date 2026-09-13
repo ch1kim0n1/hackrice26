@@ -211,7 +211,7 @@ final class LANHost {
                 guard let match = matches[matchID] else { break }
                 let loserName = players[loser]?.name ?? "A player"
                 for player in match.participants {
-                    deliver(.matchCancelled(matchID: matchID, reason: "\(loserName) forfeited — \(reason)"), to: player)
+                    deliver(.matchCancelled(matchID: matchID, reason: "\(loserName) forfeited: \(reason)"), to: player)
                 }
                 matches[matchID] = nil
                 if let winner = match.opponent(of: loser) {

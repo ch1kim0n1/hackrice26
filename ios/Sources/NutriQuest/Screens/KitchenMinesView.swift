@@ -830,7 +830,7 @@ struct MinesRulesView: View {
             VStack(alignment: .leading, spacing: NQTheme.spaceL) {
                 section("How it works") {
                     ruleLine("25 covered dishes. You choose how many are burnt, from 1 to 24.")
-                    ruleLine("More burnt dishes means more danger — and a bigger ladder.")
+                    ruleLine("More burnt dishes means more danger: and a bigger ladder.")
                     ruleLine("Every safe dish you lift raises the multiplier.")
                     ruleLine("Hit a burnt dish and the wagered monster is gone.")
                     ruleLine("Cash out whenever you like; your final net worth buys a new random monster.")

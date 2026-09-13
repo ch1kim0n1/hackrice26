@@ -14,12 +14,16 @@ struct RootTabView: View {
     @State private var colorMode: ColorMode = .active
     @State private var showCrateOpening = false
     @State private var showOnboarding = !OnboardingGate.isDoneForCurrentBuild
+        && !ProcessInfo.processInfo.arguments.contains("-skipOnboarding")
     @State private var showLeaderboard = false
     /// One stack shared by every tab. A push from inside a tab (e.g. Casino's
     /// "Loot Box Shop") must not survive a tab switch, or the bottom nav
     /// stops navigating and just sits on top of whatever was last pushed.
     @State private var navPath = NavigationPath()
     @Environment(\.scenePhase) private var scenePhase
+    @AppStorage("nq.hint.scanSeen") private var scanHintSeen = false
+
+    private var inviteScan: Bool { !scanHintSeen && !showOnboarding && !gameState.showTour }
 
     /// "Synced 3m ago" once a HealthKit snapshot has been uploaded; plain
     /// Connected / Not Connected otherwise.
@@ -84,6 +88,7 @@ struct RootTabView: View {
                             ],
                             rows: [
                                 ProfileSettingsRow(label: "Leaderboard", systemImage: "trophy.fill", action: { showLeaderboard = true }),
+                                ProfileSettingsRow(label: "Replay the tour", systemImage: "questionmark.circle", action: { gameState.showTour = true }),
                                 ProfileSettingsRow(label: "Connected devices", systemImage: "applewatch", trailing: watchRowTrailing, isWatchRow: true)
                             ]
                         )
@@ -92,15 +97,29 @@ struct RootTabView: View {
                 .frame(maxHeight: .infinity)
                 .id(selectedTab)
                 .transition(.asymmetric(
-                    insertion: .opacity.combined(with: .scale(scale: 0.985)),
+                    insertion: .scale(scale: 0.94).combined(with: .opacity),
                     removal: .opacity
                 ))
-                .animation(.easeOut(duration: 0.16), value: selectedTab)
+                .animation(NQMotion.bouncy, value: selectedTab)
 
-
-
-                NQBottomNav(selection: $selectedTab)
+                NQBottomNav(selection: $selectedTab, inviteScan: inviteScan && selectedTab != .scan)
             }
+            .overlay(alignment: .bottom) {
+                if inviteScan && selectedTab != .scan {
+                    Button {
+                        NQJuice.tap()
+                        scanHintSeen = true
+                        withAnimation(NQMotion.bouncy) { selectedTab = .scan }
+                    } label: {
+                        NQSpeechBubble("Scan a snack!")
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.bottom, 96)
+                    .transition(NQTransition.pop)
+                    .accessibilityHint("Opens the scanner")
+                }
+            }
+            .animation(NQMotion.bouncy, value: inviteScan && selectedTab != .scan)
             .overlay(alignment: .bottom) {
                 // Backend errors float above the nav instead of shoving it around.
                 if let backendError = gameState.backendError {
@@ -112,6 +131,7 @@ struct RootTabView: View {
             }
             .animation(NQMotion.snappy, value: gameState.backendError)
             .nqPageBackground()
+            .nqTransparentNav()
             .overlay {
                 // One-shot milestone celebration.
                 if let achievement = gameState.achievement {
@@ -140,22 +160,39 @@ struct RootTabView: View {
                         NQTheme.inkDeep.opacity(0.55).ignoresSafeArea()
                         VStack(spacing: NQTheme.spaceM) {
                             NQDotsLoader(color: NQTheme.gold)
-                            Text("Loading…")
+                            Text("Syncing…")
                                 .font(NQText.heading.font.weight(.heavy))
                                 .foregroundStyle(NQTheme.ink)
                         }
+                        .nqPadding(.card)
+                        .nqSurface(.hero)
+                        .padding(.horizontal, NQTheme.spaceXL)
                     }
                     .transition(.opacity)
                 }
             }
             .animation(NQMotion.quick, value: gameState.loadingVisible)
+            .overlay {
+                // First-run guided tour — the Gatekeeper walks the tabs with
+                // the real app behind the scrim. Above everything, including
+                // the loading veil.
+                if gameState.showTour {
+                    GuidedTourView(gameState: gameState, selectedTab: $selectedTab) {
+                        gameState.showTour = false
+                        withAnimation(NQMotion.snappy) { selectedTab = .home }
+                    }
+                    .transition(.opacity)
+                }
+            }
+            .animation(NQMotion.quick, value: gameState.showTour)
         }
         .nqAccentContext(accentContext)
-        .onChange(of: selectedTab) { _ in
+        .onChange(of: selectedTab) { tab in
             // Bottom-nav taps switch tabs, not push screens — anything a tab
             // pushed onto the shared stack (e.g. Casino's "Loot Box Shop")
             // must not still be on top the next time that tab is visited.
             navPath = NavigationPath()
+            if tab == .scan { scanHintSeen = true }
         }
         .sheet(isPresented: $showLeaderboard) {
             NavigationStack { LeaderboardView() }
@@ -164,11 +201,24 @@ struct RootTabView: View {
             OnboardingView {
                 OnboardingGate.markDoneForCurrentBuild()
                 showOnboarding = false
-                selectedTab = .scan
+                // First-ever finish hands straight to the Gatekeeper's tour —
+                // one run, then Profile's "Replay the tour" is the way back.
+                if !TourGate.seen {
+                    gameState.showTour = true
+                } else {
+                    selectedTab = .scan
+                }
             }
             .environmentObject(gameState)
         }
         .task {
+            // Once-ever gate, independent of onboarding's per-build one: if
+            // the grounds were never toured (fresh install whose onboarding
+            // stamp already matched, or a dev run with -skipOnboarding), the
+            // Gatekeeper still gets first run.
+            if !TourGate.seen && !showOnboarding {
+                gameState.showTour = true
+            }
             await gameState.loadProfile()
             await gameState.refreshVitals()
             await gameState.loadCharacterCatalog()

@@ -97,7 +97,7 @@ for (const color of PORTAL_COLORS) {
   if (sections / TOTAL_SECTIONS > 1 - HOUSE_EDGE) {
     throw new Error(
       `SECTION_LAYOUT gives "${color}" ${sections}/${TOTAL_SECTIONS} sections, ` +
-        `which pays under 1x — winning that bet would lose net worth`
+        `which pays under 1x, so winning that bet would lose net worth`
     );
   }
 }

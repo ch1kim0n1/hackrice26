@@ -48,6 +48,8 @@ public enum NQTheme {
     // MARK: Status and rewards
     public static let success = Color(hex: 0x4FE39C)
     public static let warning = Color(hex: 0xFF7A7A)
+    /// Over-budget red — harder than `warning` so a blown calorie cap is unmistakable.
+    public static let overBudget = Color(hex: 0xD9453A)
     public static let error = warning
     public static let caution = Color(hex: 0xFFCC2E)
     public static let info = Color(hex: 0x5CB0FF)
@@ -78,6 +80,9 @@ public enum NQTheme {
     public static let radiusM: CGFloat = 16
     public static let radiusL: CGFloat = 22
     public static let radiusXL: CGFloat = 28
+    /// Tight stamp corners for HUD chips. `NQPanelShape` multiplies cut by
+    /// 1.65, so 4pt stays a rectangle on a 28pt control instead of a capsule.
+    public static let radiusStamp: CGFloat = 4
     public static let radiusPill: CGFloat = 999
 }
 
@@ -523,7 +528,7 @@ public extension Color {
 
 import UIKit
 
-extension UIColor {
+public extension UIColor {
     convenience init(hex: UInt32) {
         self.init(
             red: CGFloat((hex >> 16) & 0xFF) / 255,

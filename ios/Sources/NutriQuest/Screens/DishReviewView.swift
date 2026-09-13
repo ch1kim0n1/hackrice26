@@ -96,7 +96,7 @@ struct DishReviewView: View {
                 VStack(spacing: NQTheme.spaceL) {
                     if analysis.lowConfidence {
                         NQBanner(
-                            "This one was hard to read — double-check the items before you log it.",
+                            "This one was hard to read: double-check the items before you log it.",
                             dotColor: NQTheme.warning
                         )
                     }
@@ -266,7 +266,7 @@ struct DishReviewView: View {
 
     private var actions: some View {
         VStack(spacing: NQTheme.spaceS) {
-            NQButton(isConfirming ? "Logging…" : "Looks right — log this meal", icon: .checkCircle) {
+            NQButton(isConfirming ? "Logging…" : "Looks right: log this meal", icon: .checkCircle) {
                 onConfirm(items.compactMap(\.edit))
             }
             .disabled(plateIsEmpty || isConfirming)

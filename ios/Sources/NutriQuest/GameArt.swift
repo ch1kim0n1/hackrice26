@@ -61,6 +61,20 @@ enum GameArt {
         return hurt ? pair.hurt : pair.idle
     }
 
+    /// Per-rarity variant name (`<id>-epic|legendary|mythic`) — the caller
+    /// must still fall back to `sprite(id:)` since not every character has
+    /// variant art. Rarities below epic use the base sprite.
+    static func spriteVariant(id: String, rarity: NQRarity) -> String? {
+        switch rarity {
+        case .epic, .legendary, .mythic:
+            let key = canonicalID(id)
+            guard sprites[key] != nil else { return nil }
+            return "\(key)-\(rarity.rawValue)"
+        default:
+            return nil
+        }
+    }
+
     static func crateClosed(_ crateID: String) -> String {
         crates[crateID]?.closed ?? "common-chest"
     }

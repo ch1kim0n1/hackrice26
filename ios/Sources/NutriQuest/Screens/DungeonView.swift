@@ -54,12 +54,12 @@ struct DungeonView: View {
                     Text("Last run")
                         .font(NQText.microXS.font)
                         .foregroundStyle(NQTheme.battleInkMuted)
-                    Text(gameState.dungeonState?.lastRunAt?.prefix(10).description ?? "—")
+                    Text(gameState.dungeonState?.lastRunAt?.prefix(10).description ?? "-")
                         .font(NQText.headingL.font)
                         .foregroundStyle(NQTheme.gold)
                 }
             }
-            Text("Every cleared floor pays coins — bosses pay triple. You keep what you earn, even on a wipe.")
+            Text("Every cleared floor pays coins: bosses pay triple. You keep what you earn, even on a wipe.")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.battleInkMuted)
         }
@@ -83,8 +83,8 @@ struct DungeonView: View {
                 }
                 if partyPreview.count < 3 {
                     Text(partyPreview.isEmpty
-                         ? "No monsters yet — scan a food first"
-                         : "You need 3 monsters to descend — scan more food")
+                         ? "No monsters yet: scan a food first"
+                         : "You need 3 monsters to descend: scan more food")
                         .font(NQText.caption.font)
                         .foregroundStyle(NQTheme.battleInkMuted)
                 }

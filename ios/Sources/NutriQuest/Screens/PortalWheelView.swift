@@ -220,7 +220,7 @@ struct PortalWheelView: View {
                             Circle()
                                 .fill(tint)
                                 .frame(width: 7, height: 7)
-                            Text(entry.won ? String(format: "%.2fx", entry.multiplier) : "—")
+                            Text(entry.won ? String(format: "%.2fx", entry.multiplier) : "-")
                                 .font(NQText.captionS.font.weight(.heavy))
                                 .foregroundStyle(entry.won ? NQTheme.success : NQTheme.inkMuted)
                         }
@@ -1065,7 +1065,7 @@ struct PortalWheelRulesView: View {
 
                 if let config = gameState.portalWheelConfig {
                     section("The real odds") {
-                        Text("The wheel has \(config.totalSections) equal sections. These are the actual counts, not a sample — the wedges you see are the odds.")
+                        Text("The wheel has \(config.totalSections) equal sections. These are the actual counts, not a sample: the wedges you see are the odds.")
                             .font(NQText.captionS.font)
                             .foregroundStyle(NQTheme.inkMuted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1094,7 +1094,7 @@ struct PortalWheelRulesView: View {
                             .accessibilityElement(children: .combine)
                         }
 
-                        Text("Every payout is (1 − edge) ÷ chance, at a \(String(format: "%.0f", config.houseEdge * 100))% house edge — the same as the other games.")
+                        Text("Every payout is (1 − edge) ÷ chance, at a \(String(format: "%.0f", config.houseEdge * 100))% house edge: the same as the other games.")
                             .font(NQText.microXS.font)
                             .foregroundStyle(NQTheme.inkFaint)
                             .fixedSize(horizontal: false, vertical: true)

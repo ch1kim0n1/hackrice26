@@ -37,7 +37,7 @@ struct AchievementToast: View {
             NQButton("Nice", style: .secondary, fullWidth: false) { onDismiss() }
         }
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
+        .nqSurface(.sticker)
         .padding(NQTheme.spaceXL)
     }
 }

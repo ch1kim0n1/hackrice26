@@ -403,7 +403,7 @@ function resolveOwnSquad(playerId: string, squad: SquadUnitIn[]): TrustedUnit[] 
     const message = err instanceof Error ? err.message : String(err);
     const id = message.startsWith(BATTLE_ERRORS.SQUAD_UNOWNED) ? message.split(":").pop() : "?";
     return {
-      error: `Unit '${id}' is not in your collection — squads are built from starters, scanned characters, and monsters you own.`
+      error: `Unit '${id}' is not in your collection; squads are built from starters, scanned characters, and monsters you own.`
     };
   }
 }

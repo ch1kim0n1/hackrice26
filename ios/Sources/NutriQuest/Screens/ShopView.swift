@@ -10,7 +10,6 @@ import NutriQuestUI
 /// win pops up. Selling lives on the Squad tab, next to the monsters.
 struct ShopView: View {
     @ObservedObject var gameState: GameState
-    @Environment(\.nqAccent) private var accent
 
     @State private var cookbooks: [CookbookDTO] = []
     @State private var loaded = false
@@ -34,8 +33,18 @@ struct ShopView: View {
             }
             .padding(NQTheme.spaceL)
         }
-        .nqPageBackground()
+        .nqSceneBackground(GameArt.scene("casino"))
+        .navigationTitle("Shop")
         .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle("Shop")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                NQCoinBalance(balance: gameState.coinBalance)
+            }
+        }
         // isPresented, not item: — `item:` needs iOS 17 and a Hashable
         // payload; the deployment target is 16.
         .navigationDestination(isPresented: Binding(
@@ -55,23 +64,17 @@ struct ShopView: View {
 
     // MARK: - Header
 
-    /// Same overline + headline shape as Casino and Squad, with the coin
-    /// balance in the top corner.
     private var header: some View {
-        HStack(alignment: .top, spacing: NQTheme.spaceM) {
-            VStack(alignment: .leading, spacing: NQTheme.spaceXS) {
-                Text("SHOP")
-                    .font(NQText.micro.font)
-                    .tracking(2)
-                    .foregroundStyle(NQTheme.gold)
-                Text("Cookbooks")
-                    .font(NQText.display.font)
-                    .foregroundStyle(NQTheme.ink)
-                    .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
-            }
-            Spacer(minLength: 0)
-            NQCoinBalance(balance: gameState.coinBalance)
+        VStack(alignment: .leading, spacing: NQTheme.spaceXS) {
+            Text("Cookbooks")
+                .font(NQText.headingL.font)
+                .foregroundStyle(NQTheme.ink)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
+            Text("Spend coins. Roll a Case. Mint a ★1 monster.")
+                .font(NQText.captionS.font)
+                .foregroundStyle(NQTheme.inkMuted)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // MARK: - Cookbooks
@@ -80,44 +83,51 @@ struct ShopView: View {
         // Odds arrive sorted likeliest-first — `first` is the book's modal
         // tier, which is what distinguishes the four books at a glance.
         let floor = Rarity(rawValue: book.odds.first?.rarity ?? "") ?? .common
+        let tint = book.shopTint
         let affordable = gameState.coinBalance >= book.price
 
         return Button {
             NQHaptic.selection()
             selectedBook = book
         } label: {
-            VStack(alignment: .leading, spacing: NQTheme.spaceS) {
-                HStack(alignment: .firstTextBaseline, spacing: NQTheme.spaceS) {
+            HStack(spacing: 0) {
+                Rectangle()
+                    .fill(tint)
+                    .frame(width: 12)
+                VStack(alignment: .leading, spacing: NQTheme.spaceS) {
                     Text(book.name)
                         .font(NQText.headingL.font.weight(.heavy))
                         .foregroundStyle(NQTheme.ink)
-                    Spacer(minLength: 0)
-                    Text(floor.label)
-                        .font(NQText.tagBold.font)
-                        .foregroundStyle(floor.badgeText)
-                        .nqPadding(.badge)
-                        .background(floor.badgeBackground)
-                        .clipShape(Capsule())
-                }
-                Text(oddsLine(book))
-                    .font(NQText.captionS.font)
-                    .foregroundStyle(NQTheme.inkMuted)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(alignment: .firstTextBaseline, spacing: NQTheme.spaceS) {
-                    Text("\(book.price.formatted()) coins")
-                        .font(NQText.heading.font.weight(.bold))
-                        .foregroundStyle(affordable ? NQTheme.gold : NQTheme.inkMuted)
-                    Spacer(minLength: 0)
-                    Text(affordable ? "Open →" : "Not enough coins")
+                    Text(oddsLine(book))
                         .font(NQText.captionS.font)
-                        .foregroundStyle(affordable ? accent.accent : NQTheme.inkMuted)
+                        .foregroundStyle(NQTheme.inkMuted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(alignment: .firstTextBaseline, spacing: NQTheme.spaceS) {
+                        Text("\(book.price.formatted()) coins")
+                            .font(NQText.heading.font.weight(.bold))
+                            .foregroundStyle(affordable ? NQTheme.gold : NQTheme.inkMuted)
+                        Spacer(minLength: 0)
+                        Text(affordable ? "Open cookbook" : "Not enough coins")
+                            .font(NQText.captionS.font)
+                            .foregroundStyle(affordable ? NQTheme.ink : NQTheme.inkMuted)
+                    }
                 }
+                .nqPadding(.card)
+                .padding(.trailing, NQTheme.spaceXL)
             }
-            .nqPadding(.card)
-            .nqSurface(.sticker)
-            .overlay {
-                NQPanelShape().strokeBorder(floor.ringColor.opacity(0.6), lineWidth: NQLayout.hairlineWidth)
+            .background(tint.mix(with: NQTheme.chrome, amount: 0.35))
+            .overlay { NQTicketShape().strokeBorder(tint, lineWidth: 3) }
+            .overlay(alignment: .topTrailing) {
+                Text(floor.label)
+                    .font(NQText.microS.font)
+                    .foregroundStyle(tint.readableTextColor())
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Rectangle().fill(tint))
+                    .overlay { Rectangle().strokeBorder(NQTheme.inkDeep, lineWidth: 2) }
+                    .padding(NQTheme.spaceS)
             }
+            .clipShape(NQTicketShape())
         }
         .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
         // Not disabled when unaffordable — the book's page still shows its
@@ -136,5 +146,19 @@ struct ShopView: View {
         chance >= 0.1
             ? String(format: "%.0f%%", chance * 100)
             : String(format: "%.2g%%", chance * 100)
+    }
+}
+
+extension CookbookDTO {
+    /// One identity colour per book so the shop row isn't four identical blues.
+    var shopTint: Color {
+        switch id {
+        case "home-cookbook": return NQTheme.sky
+        case "chefs-cookbook": return NQTheme.gold
+        case "master-cookbook": return NQTheme.leaf
+        case "forbidden-cookbook": return NQTheme.plum
+        default:
+            return (Rarity(rawValue: odds.first?.rarity ?? "") ?? .common).ringColor
+        }
     }
 }

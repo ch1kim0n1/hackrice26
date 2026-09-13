@@ -171,7 +171,7 @@ struct CharacterDetailView: View {
                 HStack(spacing: NQTheme.spaceS) {
                     NQAssetImage("star-badge")
                         .frame(width: 28, height: 28)
-                    Text("★\(unit.star) — stats scale with stars")
+                    Text("★\(unit.star): stats scale with stars")
                         .font(NQText.captionS.font.weight(.bold))
                         .foregroundStyle(NQTheme.gold)
                 }

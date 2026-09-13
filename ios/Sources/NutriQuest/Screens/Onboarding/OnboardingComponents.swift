@@ -31,22 +31,21 @@ enum OBTheme {
 
 // MARK: - Wordmark
 
-/// The "hackrice" logo lockup: apple mark plus wordmark, as on the splash.
+/// NutriQuest lockup: mark plus wordmark, same as the in-game top bar.
 struct OBWordmark: View {
-    /// Point size of the wordmark text; the mark scales with it.
     var size: CGFloat = 40
 
     var body: some View {
         HStack(spacing: size * 0.25) {
-            Image(systemName: "apple.logo")
-                .font(.system(size: size * 0.95, weight: .semibold))
-                .foregroundStyle(OBTheme.ink)
-            Text("hackrice")
+            NQLogoMark()
+                .frame(width: size * 0.85, height: size * 0.85)
+            Text("NutriQuest")
                 .font(NQFont.display.font(size))
-                .foregroundStyle(OBTheme.ink)
+                .foregroundStyle(NQTheme.gold)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("hackrice")
+        .accessibilityLabel("NutriQuest")
     }
 }
 

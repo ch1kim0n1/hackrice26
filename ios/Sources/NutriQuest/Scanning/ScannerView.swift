@@ -1,6 +1,7 @@
 import SwiftUI
 import VisionKit
 import Vision
+import AVFoundation
 
 /// Camera-based barcode scanner built on VisionKit's DataScannerViewController.
 /// Reports (payload, symbology raw value) pairs for every detected barcode.
@@ -32,6 +33,14 @@ public struct ScannerView: UIViewControllerRepresentable {
             isHighlightingEnabled: true
         )
         scanner.delegate = context.coordinator
+        // Tap-to-focus: DataScannerViewController exposes no focus API, but
+        // the device it runs on is the shared default video device — point
+        // focus/exposure can be driven through AVCaptureDevice directly.
+        let tap = UITapGestureRecognizer(
+            target: context.coordinator,
+            action: #selector(Coordinator.handleFocusTap(_:))
+        )
+        scanner.view.addGestureRecognizer(tap)
         return scanner
     }
 
@@ -76,6 +85,69 @@ public struct ScannerView: UIViewControllerRepresentable {
         public func dataScanner(_ dataScanner: DataScannerViewController,
                          didBecomeUnavailableWithError error: DataScannerViewController.ScanningUnavailable) {
             parent.onUnavailable(error.localizedDescription)
+        }
+
+        /// Tap anywhere in the preview → focus + expose at that point, then
+        /// hand control back to continuous autofocus. Also flashes a small
+        /// reticle so the tap reads as an action.
+        @objc func handleFocusTap(_ gesture: UITapGestureRecognizer) {
+            guard let view = gesture.view else { return }
+            let point = gesture.location(in: view)
+            let devicePoint = CGPoint(
+                x: point.x / max(1, view.bounds.width),
+                y: point.y / max(1, view.bounds.height)
+            )
+            guard let device = AVCaptureDevice.default(for: .video),
+                  device.isFocusPointOfInterestSupported else { return }
+            do {
+                try device.lockForConfiguration()
+                device.focusPointOfInterest = devicePoint
+                device.focusMode = .autoFocus
+                if device.isExposurePointOfInterestSupported {
+                    device.exposurePointOfInterest = devicePoint
+                    device.exposureMode = .autoExpose
+                }
+                device.unlockForConfiguration()
+            } catch { return }
+            flashReticle(at: point, in: view)
+            // Return to continuous focus once the point focus locks.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.2) {
+                do {
+                    try device.lockForConfiguration()
+                    if device.isFocusModeSupported(.continuousAutoFocus) {
+                        device.focusMode = .continuousAutoFocus
+                    }
+                    if device.isExposureModeSupported(.continuousAutoExposure) {
+                        device.exposureMode = .continuousAutoExposure
+                    }
+                    device.unlockForConfiguration()
+                } catch { return }
+            }
+        }
+
+        /// Brief square reticle at the tap point, like the system camera.
+        private func flashReticle(at point: CGPoint, in view: UIView) {
+            let side: CGFloat = 64
+            let reticle = UIView(frame: CGRect(
+                x: point.x - side / 2, y: point.y - side / 2,
+                width: side, height: side
+            ))
+            reticle.layer.borderColor = UIColor.systemYellow.cgColor
+            reticle.layer.borderWidth = 1.5
+            reticle.layer.cornerRadius = 6
+            reticle.isUserInteractionEnabled = false
+            reticle.alpha = 0
+            reticle.transform = CGAffineTransform(scaleX: 1.4, y: 1.4)
+            view.addSubview(reticle)
+            UIView.animate(withDuration: 0.18, animations: {
+                reticle.alpha = 1
+                reticle.transform = .identity
+            }) { _ in
+                UIView.animate(withDuration: 0.4, delay: 0.5, options: [], animations: {
+                    reticle.alpha = 0
+                    reticle.transform = CGAffineTransform(scaleX: 0.8, y: 0.8)
+                }) { _ in reticle.removeFromSuperview() }
+            }
         }
     }
 }

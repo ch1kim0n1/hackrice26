@@ -24,21 +24,23 @@ struct LeaderboardView: View {
                     NQEmptyState(message: "No ranked players yet. Win a ranked battle to claim first place", icon: .trophy)
                         .padding(.top, 80)
                 } else {
-                    ForEach(entries) { entry in
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { index, entry in
                         row(entry)
+                            .nqCascade(index: min(index, 8))
                     }
                 }
             }
             .padding(NQTheme.spaceL)
         }
-        .background(NQTheme.battleBg.ignoresSafeArea())
-        .preferredColorScheme(.dark)
+        .nqSceneBackground(GameArt.scene("battle"))
         .navigationTitle("Leaderboard")
         .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
         .toolbar {
             ToolbarItem(placement: .cancellationAction) {
                 Button("Close") { dismiss() }
-                    .foregroundStyle(.white)
+                    .font(NQText.heading.font.weight(.bold))
+                    .foregroundStyle(NQTheme.gold)
             }
         }
         .task { await load() }
@@ -78,12 +80,10 @@ struct LeaderboardView: View {
                 .foregroundStyle(entry.isYou ? accent.accent : NQTheme.battleInk)
         }
         .nqPadding(.card)
-        .background(entry.isYou ? accent.accent.opacity(0.15) : NQTheme.battleSurface)
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusM))
+        .nqSurface(.sticker, fill: entry.isYou ? accent.accent.opacity(0.18) : NQTheme.background)
         .overlay {
             if entry.isYou {
-                RoundedRectangle(cornerRadius: NQTheme.radiusM)
-                    .strokeBorder(accent.accent, lineWidth: 2)
+                NQPanelShape().strokeBorder(accent.accent, lineWidth: 2)
             }
         }
         .accessibilityElement(children: .combine)

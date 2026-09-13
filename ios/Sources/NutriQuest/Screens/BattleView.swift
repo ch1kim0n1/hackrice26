@@ -335,7 +335,10 @@ struct BattleView: View {
     /// The active unit: large artwork in a rarity-glow ring, HP bar, mana
     /// bar (Epic+), status chips. Faints slump and grey out.
     private func activeCard(unitID: String, unit: BattleScene.Unit, side: Int) -> some View {
+        // Hurt pose: on the hit flash, and persistently while the unit is
+        // low on HP — a battered monster shouldn't look fresh.
         let hurt = (side == 0 && yourHit) || (side == 1 && opponentHit)
+            || (!unit.fainted && unit.hpFraction <= 0.3)
         let rarity = character(for: unitID)?.rarity.kitRarity
         return HStack(spacing: NQTheme.spaceM) {
             ZStack {
@@ -435,7 +438,7 @@ struct BattleView: View {
     /// A benched unit: portrait + HP sliver; dimmed once fainted.
     private func benchChip(unitID: String, unit: BattleScene.Unit) -> some View {
         VStack(spacing: 4) {
-            characterArtwork(unitID: unitID, fainted: unit.fainted)
+            characterArtwork(unitID: unitID, hurt: !unit.fainted && unit.hpFraction <= 0.3, fainted: unit.fainted)
                 .frame(width: 40, height: 52)
                 .opacity(unit.fainted ? 0.35 : 1)
                 .saturation(unit.fainted ? 0 : 1)
@@ -726,7 +729,7 @@ struct BattleView: View {
         let parked = await gameState.beginRankedBattle(squad: displayedSquad)
         serverBusy = false
         guard let parked else {
-            logLine("No match — check your connection")
+            logLine("No match: check your connection")
             return
         }
         match = parked
@@ -821,11 +824,11 @@ struct BattleView: View {
                 rankedOutcome = outcome
                 serverOpponent = outcome.opponentSquad
             } else {
-                logLine("Result sync failed — showing local replay")
+                logLine("Result sync failed: showing local replay")
             }
         case .friendly:
             if await gameState.commitFriendlyBattle(match, actions: script) == nil {
-                logLine("Result sync failed — showing local replay")
+                logLine("Result sync failed: showing local replay")
             }
         }
         serverBusy = false
@@ -1126,10 +1129,10 @@ struct BattleView: View {
                 unit.fainted = unit.hp <= 0
                 scene.units[defender] = unit
             }
-            logLine("\(name(for: attacker)) used \(move) — \(damage) dmg\(crit ? " CRIT" : "")")
+            logLine("\(name(for: attacker)) used \(move): \(damage) dmg\(crit ? " CRIT" : "")")
         case .miss(let attacker, _, let move, let moveID):
             spendMana(attacker: attacker, moveID: moveID)
-            logLine("\(name(for: attacker)) used \(move) — missed")
+            logLine("\(name(for: attacker)) used \(move): missed")
         case .status(let unit, let kind, _):
             scene.units[unit]?.statuses.insert(kind)
             logLine("\(name(for: unit)): \(kind.displayName)")
@@ -1159,7 +1162,7 @@ struct BattleView: View {
             logLine("\(name(for: unit)) fainted")
         case .victory(let winner, _, let reason):
             logLine(reason == .turnLimit
-                ? "Turn limit — \(name(for: sideUnitIDs[winner].first ?? ""))'s side holds the field"
+                ? "Turn limit: \(name(for: sideUnitIDs[winner].first ?? ""))'s side holds the field"
                 : "\(name(for: sideUnitIDs[winner].first ?? ""))'s side wins")
         }
     }

@@ -239,15 +239,15 @@ struct WatchConnectView: View {
     }
 
     private var stepsLabel: String {
-        gameState.vitalsActivity?.stepsToday.map { $0.formatted() } ?? "—"
+        gameState.vitalsActivity?.stepsToday.map { $0.formatted() } ?? "-"
     }
 
     private var exerciseLabel: String {
-        gameState.vitalsActivity?.exerciseMinutesToday.map { "\($0)m" } ?? "—"
+        gameState.vitalsActivity?.exerciseMinutesToday.map { "\($0)m" } ?? "-"
     }
 
     private var standLabel: String {
-        gameState.vitalsActivity?.standHoursToday.map { "\($0)h" } ?? "—"
+        gameState.vitalsActivity?.standHoursToday.map { "\($0)h" } ?? "-"
     }
 
     private func sampleStat(icon: NQIcon, tint: Color, value: String, label: String) -> some View {

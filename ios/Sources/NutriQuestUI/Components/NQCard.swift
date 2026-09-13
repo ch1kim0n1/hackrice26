@@ -25,9 +25,9 @@ public struct NQCard<Content: View>: View {
 // MARK: - Character card (Collection)
 
 /// The shared Collection card, matching design/CharacterCard.dc.html:
-/// white card with rarity ring, chibi preview, rarity chip top-right,
-/// optional ACTIVE / SUGGESTED pill top-center, and a faceless "???" body
-/// with a lock for locked characters.
+/// white card with rarity ring, chibi preview, rarity stamp top-right,
+/// optional ACTIVE / SUGGESTED stamp under the name, and a mystery
+/// silhouette with a lock for locked characters.
 public struct NQCharacterCard: View {
     public enum State { case normal, active, suggested, locked, loading }
 
@@ -113,7 +113,8 @@ public struct NQCharacterCard: View {
                         color: color,
                         statType: statType,
                         expression: state == .locked ? .sleepy : expression,
-                        showFace: state != .locked
+                        showFace: state != .locked,
+                        silhouette: state == .locked
                     )
                 }
             }
@@ -146,16 +147,24 @@ public struct NQCharacterCard: View {
                 .font(NQText.heading.font)
                 .foregroundStyle(state == .locked ? NQTheme.inkFaint : NQTheme.ink)
                 .lineLimit(1)
+            if state == .active {
+                Text("Active")
+                    .font(NQText.microS.font)
+                    .foregroundStyle(NQTheme.gold)
+                    .shadow(color: NQTheme.inkDeep, radius: 0, y: 1)
+            } else if state == .suggested {
+                Text("Suggested")
+                    .font(NQText.microS.font)
+                    .foregroundStyle(NQTheme.accentDark)
+                    .shadow(color: NQTheme.inkDeep, radius: 0, y: 1)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.top, NQTheme.spaceL)
         .padding(.bottom, NQTheme.spaceM)
         .background {
             NQPanelShape(cut: NQTheme.radiusM)
-                .fill(NQTheme.background)
-                // Real depth instead of a flat outline standing in for it —
-                // this is the level the design system already names for
-                // "character cards, modals" but hadn't reached this card yet.
+                .fill(state == .locked ? NQTheme.chrome : NQTheme.background)
                 .nqElevation(.raised)
         }
         .clipShape(NQPanelShape(cut: NQTheme.radiusM))
@@ -173,14 +182,9 @@ public struct NQCharacterCard: View {
                     .strokeBorder(Color.black, lineWidth: rarity.outlineWidth)
             }
         }
-        .overlay(alignment: .top) {
-            if state != .normal && state != .locked {
-                stateBadge.padding(.top, -9)
-            }
-        }
         .overlay(alignment: .topTrailing) {
-            if !hidesRarityChip {
-                rarityChip.padding(NQTheme.spaceS + 2)
+            if !hidesRarityChip && state != .locked {
+                rarityChip
             }
         }
         .overlay(alignment: .top) {
@@ -205,42 +209,32 @@ public struct NQCharacterCard: View {
         )
     }
 
-    /// Active / Suggested pill, top-center.
-    private var stateBadge: some View {
-        Text(state == .active ? "Active" : "Suggested")
-            .font(NQText.microS.font)
-            .foregroundStyle(state == .active ? color.accent.readableTextColor() : color.accentDark)
-            .nqPadding(.badge)
-            .background(
-                NQPanelShape(cut: NQTheme.radiusXS).fill(state == .active ? color.accent : color.accentSoft)
-            )
-            .overlay { NQPanelShape(cut: NQTheme.radiusXS).strokeBorder(NQTheme.gold.opacity(0.5), lineWidth: 1) }
-    }
-
-    /// Rarity label chip, top-right.
+    /// Rarity as a corner fold — a rectangle, not a chip.
     private var rarityChip: some View {
         Text(rarity.displayName)
-            .font(NQText.tagBold.font)
-            .lineLimit(1)
-            .minimumScaleFactor(0.8)
-            .foregroundStyle(rarity.badgeText)
-            .nqPadding(.badge)
-            .background(NQPanelShape(cut: NQTheme.radiusXS).fill(rarity.badgeBackground))
-            .overlay {
-                NQPanelShape(cut: NQTheme.radiusXS)
-                    .strokeBorder(rarity.outline.opacity(0.6), lineWidth: 1)
-            }
+            .font(NQText.microS.font)
+            .foregroundStyle(rarity.outline.readableTextColor())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Rectangle().fill(rarity.outline))
+            .overlay { Rectangle().strokeBorder(NQTheme.inkDeep, lineWidth: 2) }
+            .rotationEffect(.degrees(8))
+            .padding(.top, 10)
+            .padding(.trailing, 4)
     }
 
-    /// Lock square over the faceless chibi for locked characters.
+    /// Gold lock stamp over the mystery silhouette.
     private var lockBadge: some View {
         ZStack {
-            RoundedRectangle(cornerRadius: NQTheme.radiusS)
-                .fill(NQTheme.inkFaint)
-                .frame(width: 26, height: 26)
+            RoundedRectangle(cornerRadius: 5, style: .circular)
+                .fill(NQTheme.gold)
+                .frame(width: 40, height: 40)
+            RoundedRectangle(cornerRadius: 5, style: .circular)
+                .strokeBorder(NQTheme.inkDeep, lineWidth: 2.5)
+                .frame(width: 40, height: 40)
             NQIcon.lock.view
-                .frame(width: 14, height: 14)
-                .foregroundStyle(.white)
+                .frame(width: 20, height: 20)
+                .foregroundStyle(NQTheme.inkDeep)
         }
         .accessibilityHidden(true)
     }

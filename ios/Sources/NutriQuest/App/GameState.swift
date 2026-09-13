@@ -178,6 +178,10 @@ final class GameState: ObservableObject {
     private let multiplierCalc = DailyMultiplierCalculator()
     private let api = APIClient.shared
 
+    /// Raised by Profile's "Replay the tour" row and by the first-run gate —
+    /// RootTabView covers the app with GuidedTourView while it's set.
+    @Published var showTour = false
+
     /// Height, weight, age, sex, activity and goal — the inputs every
     /// nutrition number is derived from. Set by onboarding, editable later in
     /// Profile > Body & goals. Falls back to an average-adult placeholder
@@ -690,7 +694,7 @@ final class GameState: ObservableObject {
         return await withBlockingUpdate {
 
         guard squad.count == 3 else {
-            backendError = "You need 3 healthy monsters for ranked — scan more food or wait for faints to recover."
+            backendError = "You need 3 healthy monsters for ranked: scan more food or wait for faints to recover."
             return nil
         }
         do {
@@ -788,7 +792,7 @@ final class GameState: ObservableObject {
         return await withBlockingUpdate {
 
         guard squad.count == 3 else {
-            backendError = "You need 3 healthy monsters for a friendly — scan more food or wait for faints to recover."
+            backendError = "You need 3 healthy monsters for a friendly: scan more food or wait for faints to recover."
             return nil
         }
         do {
@@ -875,7 +879,7 @@ final class GameState: ObservableObject {
 
         let squad = battleReadySquad.map(squadMember)
         guard squad.count == 3 else {
-            backendError = "You need 3 healthy monsters to descend — scan more food or wait for faints to recover."
+            backendError = "You need 3 healthy monsters to descend: scan more food or wait for faints to recover."
             return nil
         }
         do {

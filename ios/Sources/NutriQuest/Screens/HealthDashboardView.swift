@@ -25,26 +25,24 @@ struct HealthDashboardView: View {
             .padding(NQTheme.spaceL)
         }
         .nqPageBackground()
-        .navigationTitle("Health Dashboard")
+        .navigationTitle("Health")
         .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle("Health")
+            }
+        }
     }
 
     // MARK: - Calories
 
     private var calorieCard: some View {
-        VStack(spacing: NQTheme.spaceM) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("TODAY")
-                        .font(NQText.microS.font)
-                        .tracking(0.6)
-                        .foregroundStyle(NQTheme.inkMuted)
-                    Text("Calories")
-                        .font(NQText.heading.font.weight(.heavy))
-                        .foregroundStyle(NQTheme.ink)
-                }
-                Spacer()
-                NQChip("\(gameState.todayEntries.count) logged", icon: .barcode)
+        VStack(alignment: .leading, spacing: NQTheme.spaceM) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Calories")
+                    .font(NQText.headingL.font)
+                    .foregroundStyle(NQTheme.ink)
             }
 
             HStack(spacing: NQTheme.spaceL) {
@@ -58,6 +56,11 @@ struct HealthDashboardView: View {
                 VStack(alignment: .leading, spacing: NQTheme.spaceS) {
                     statRow(label: "Consumed", value: "\(Int(gameState.todayCalories)) kcal", color: NQTheme.ink)
                     statRow(label: "Target", value: "\(Int(profile.calorieTarget)) kcal", color: NQTheme.inkMuted)
+                    statRow(
+                        label: "Meals",
+                        value: "\(gameState.todayEntries.count)",
+                        color: NQTheme.ink
+                    )
                     let remaining = profile.calorieTarget - gameState.todayCalories
                     statRow(
                         label: remaining >= 0 ? "Remaining" : "Over by",
@@ -69,7 +72,7 @@ struct HealthDashboardView: View {
             }
         }
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .raised)
+        .nqSurface(.sticker)
     }
 
     private func statRow(label: String, value: String, color: Color) -> some View {
@@ -185,8 +188,12 @@ struct HealthDashboardView: View {
             .padding(.horizontal, 4)
             .frame(maxWidth: .infinity)
             .background(
-                Capsule().fill(hit ? accent.accent : NQTheme.hairline)
+                NQTicketShape()
+                    .fill(hit ? accent.accent : NQTheme.chrome)
             )
+            .overlay {
+                NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2)
+            }
     }
 
     // MARK: - Fun stats
@@ -242,9 +249,11 @@ struct HealthDashboardView: View {
                     .font(NQText.heading.font)
                     .foregroundStyle(NQTheme.ink)
                 Spacer()
-                NQChip("×\(String(format: "%.2f", gameState.lastMultiplier))", icon: .leaf, filled: true)
+                Text("×\(String(format: "%.2f", gameState.lastMultiplier))")
+                    .font(NQText.heading.font.weight(.heavy))
+                    .foregroundStyle(NQTheme.gold)
             }
-            Text("Balanced eating lifts the rarity of monsters your scans mint — and keeps the streak alive. What's driving today's number:")
+            Text("Balanced eating lifts the rarity of monsters your scans mint: and keeps the streak alive. What's driving today's number:")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.inkMuted)
             VStack(spacing: 6) {
@@ -269,7 +278,7 @@ struct HealthDashboardView: View {
                 .font(NQText.caption.font)
                 .foregroundStyle(NQTheme.inkSubtle)
             Spacer()
-            Text(bonus == 0 ? "—" : "\(bonus > 0 ? "+" : "")\(Int(bonus * 100))%")
+            Text(bonus == 0 ? "-" : "\(bonus > 0 ? "+" : "")\(Int(bonus * 100))%")
                 .font(NQText.captionS.font.weight(.heavy))
                 .foregroundStyle(bonus > 0 ? NQTheme.success : (bonus < 0 ? NQTheme.warning : NQTheme.inkFaint))
         }
