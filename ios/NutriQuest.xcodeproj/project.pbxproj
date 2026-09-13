@@ -10,6 +10,7 @@
 		00D502FC89112C5ECE6CA6F5 /* WorkoutSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E32994F76F52FC4A261194A /* WorkoutSummary.swift */; };
 		03461E13091C8D3EE383DAAB /* DishReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A178BC1BCAAA42B0EE0DD8 /* DishReviewView.swift */; };
 		04EB62BF0CA027847B8DF200 /* HumanGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D1677FC4D6136C587AA8EA /* HumanGateView.swift */; };
+		05D087C9AEFFA556F34E3958 /* RarityVFX in Resources */ = {isa = PBXBuildFile; fileRef = 523F60C282B317F912D0AD28 /* RarityVFX */; };
 		0653B227DAE320B30676A856 /* BattleEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C2E0CA4A793739737B7568 /* BattleEngineTests.swift */; };
 		0822FEFA512C70B019F89F7E /* LANClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18EB6CF6C45D8D8C3BC90B76 /* LANClient.swift */; };
 		134D81E9B0D858DAE3366A07 /* OnboardingStepViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 684E036C4AE5581378F5F4D7 /* OnboardingStepViews.swift */; };
@@ -24,6 +25,7 @@
 		2B5242112D570192B6879AA6 /* NutriQuestApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3760A6F93969CB515E706B1 /* NutriQuestApp.swift */; };
 		2C603B97017B76B6A4424FCC /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75591C47CFE5CD1E720436E9 /* HealthKitManager.swift */; };
 		2C9F1E9442FC35F13F6C032D /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82930BA2971F8DBFDBBC9EF6 /* SessionStore.swift */; };
+		31D69136A2AF1286495B979F /* MonsterRarityPresentationView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 435B56B50B7AA6E89D665337 /* MonsterRarityPresentationView.swift */; };
 		3954C97B71E2F2A26AF86F32 /* LANLobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285167B39A9F98AC073AEE70 /* LANLobbyView.swift */; };
 		3AF44E9524682DB3FAD7B4DE /* JourneyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D8A9CAFEA349E7337340C4C /* JourneyView.swift */; };
 		3E0BF30C14366382DC08E336 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97CA1129653E7E25D7307C6A /* ProfileView.swift */; };
@@ -37,6 +39,8 @@
 		486D2ED1CAA8171326F3C5BD /* AppConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5BE5A5A080CDEA4912ABB03 /* AppConfig.swift */; };
 		49B437CCD2CB282C35AE72F9 /* DungeonView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B50EEE2B0F8FAAF470C99CB /* DungeonView.swift */; };
 		4A18CE1FE929227B0316F900 /* OnboardingComponents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4106D1906C3B4E0023C053F2 /* OnboardingComponents.swift */; };
+		4EDFF89254CC42F64B8BF14A /* RarityVFXAssetManifest.swift in Sources */ = {isa = PBXBuildFile; fileRef = D45D5CB090B01016A414F294 /* RarityVFXAssetManifest.swift */; };
+		505FA0B6A207F40F4CD283CE /* RarityAuraDemoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E7ECC223FB6A5CC38A005B2 /* RarityAuraDemoView.swift */; };
 		515C28287014195D4587445C /* PortalWheelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0102BBD5D48083C41BA3BE5C /* PortalWheelView.swift */; };
 		52DB4149B9A9CEA5889E1A16 /* FoodProduct.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC9AD2C5FC6A73330E8ECF07 /* FoodProduct.swift */; };
 		5B5652062290FDE3A5688C47 /* APIErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3695D833EDA8B023BFEC62A9 /* APIErrorTests.swift */; };
@@ -44,8 +48,10 @@
 		648E041A8F3F380D0EF73C70 /* DesignTokens.swift in Sources */ = {isa = PBXBuildFile; fileRef = B49A99726C1DC2C5DF944B0B /* DesignTokens.swift */; };
 		65C4F2F89BCB97CFF3F31DFB /* Characters.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 284179EF70690D9FF0B92110 /* Characters.xcassets */; };
 		6625061C195EB61BB19ADC32 /* APIClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44E477D60E4D6C3F189C099B /* APIClient.swift */; };
+		6B45F038A33F508BEE51C7B5 /* RarityAnimationConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = EB2455C6D40FB8F237906468 /* RarityAnimationConfiguration.swift */; };
 		6B842BBD9BDE955B6C3A7504 /* CharacterBios.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA38B012E57749DC07E99993 /* CharacterBios.swift */; };
 		757C655FBEFE2632208627F1 /* LANTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = DB077BE598A1019959EF64F5 /* LANTestSupport.swift */; };
+		769E63F08101C0FD2520804F /* RarityFrameCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F0029F866C3B7C99F3365E1 /* RarityFrameCache.swift */; };
 		78C9C65BCDC91D9B1E68602D /* BattleKit in Frameworks */ = {isa = PBXBuildFile; productRef = 6C4642CADC1838D0387C7BF8 /* BattleKit */; };
 		795B9A261F386F22DC7D1595 /* GuidedTourView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2D72F87F60BCBF813FB7A3 /* GuidedTourView.swift */; };
 		7B93FED2EEC0D911006208E3 /* BarcodeUtils.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EE1172B559382ABFAD76939 /* BarcodeUtils.swift */; };
@@ -80,6 +86,7 @@
 		CC092355D9B7A450D3FF6804 /* CharacterFactory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CD9A140A0FB687BDE8C7D1D /* CharacterFactory.swift */; };
 		CD72782E940370E6181C986D /* LANTournament.swift in Sources */ = {isa = PBXBuildFile; fileRef = B7EF8099151DFFA30CE3943C /* LANTournament.swift */; };
 		CD89EF2DA18AB214EB5DA6DF /* CauldronClock.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B32FE00FCF3110C4CF6CA4F /* CauldronClock.swift */; };
+		D05A8A0F0394A58EAC54AA94 /* RarityEffectLayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2262D0B9F08B33477A04A29A /* RarityEffectLayers.swift */; };
 		D1ADCDCB0825A28A9CD99C3F /* PlinkoView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3A14417EBD05F2CF14FFD9 /* PlinkoView.swift */; };
 		D25A48BFBDFC8D07B9865590 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = F50179EE5AAEE08C0FCB81A5 /* Fonts */; };
 		D29A87BF4AE1A58B668ECF6D /* FoodDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD2876558076202EA95115B /* FoodDataService.swift */; };
@@ -92,6 +99,7 @@
 		E29F27538CBD2F77EE0C7158 /* LANHostMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6C3DB05E7C0029DFC4918CE /* LANHostMatch.swift */; };
 		E3851D2F8079148F483B030A /* LANHostMatchTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE76EE310D51FB67A9F7B65F /* LANHostMatchTests.swift */; };
 		E3CBA1A9E31B9902D6A2F5DF /* CasinoLuckChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = E485499E6AB6C9D34DB8A037 /* CasinoLuckChart.swift */; };
+		E4A797375390690F9849F24E /* RarityVFXTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C69F940FF7A9C684B481B2CA /* RarityVFXTests.swift */; };
 		EAAB967F70349AFCD7271B73 /* LANHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F04A367FE902628B6C91D40 /* LANHost.swift */; };
 		EB98860670275942ACDD229F /* LANHostIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4276CE36E6E9F75F9425C903 /* LANHostIntegrationTests.swift */; };
 		EE7EF50636EA1FA9DFB240A0 /* Rarity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A6E74A63D448AB2789D4DE /* Rarity.swift */; };
@@ -123,9 +131,11 @@
 		18EB6CF6C45D8D8C3BC90B76 /* LANClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANClient.swift; sourceTree = "<group>"; };
 		1C6C1A080D8038405488E203 /* ScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerView.swift; sourceTree = "<group>"; };
 		1D82D7B1DDA55C8F24D3A468 /* HealthKitSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSnapshotTests.swift; sourceTree = "<group>"; };
+		1F0029F866C3B7C99F3365E1 /* RarityFrameCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RarityFrameCache.swift; sourceTree = "<group>"; };
 		1F67C1ADDA4258BE80A784CD /* StatType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatType.swift; sourceTree = "<group>"; };
 		205934A45344A61D0CE98920 /* BattleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleView.swift; sourceTree = "<group>"; };
 		2158CFD64CCE3C30F4C01624 /* ScanPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanPipelineTests.swift; sourceTree = "<group>"; };
+		2262D0B9F08B33477A04A29A /* RarityEffectLayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RarityEffectLayers.swift; sourceTree = "<group>"; };
 		23CE9A03DDD3B2F84BD11D9B /* LANTournamentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANTournamentTests.swift; sourceTree = "<group>"; };
 		27A178BC1BCAAA42B0EE0DD8 /* DishReviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DishReviewView.swift; sourceTree = "<group>"; };
 		284179EF70690D9FF0B92110 /* Characters.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Characters.xcassets; sourceTree = "<group>"; };
@@ -140,9 +150,11 @@
 		4106D1906C3B4E0023C053F2 /* OnboardingComponents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingComponents.swift; sourceTree = "<group>"; };
 		4179B24E4931E9E66B609F58 /* ios */ = {isa = PBXFileReference; lastKnownFileType = folder; name = ios; path = .; sourceTree = SOURCE_ROOT; };
 		4276CE36E6E9F75F9425C903 /* LANHostIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANHostIntegrationTests.swift; sourceTree = "<group>"; };
+		435B56B50B7AA6E89D665337 /* MonsterRarityPresentationView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MonsterRarityPresentationView.swift; sourceTree = "<group>"; };
 		44E477D60E4D6C3F189C099B /* APIClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = APIClient.swift; sourceTree = "<group>"; };
 		477C9D1892868D080F6DD2B5 /* BodyMetrics.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyMetrics.swift; sourceTree = "<group>"; };
 		52369D9BC6D2E80B6F54DD7D /* LeaderboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LeaderboardView.swift; sourceTree = "<group>"; };
+		523F60C282B317F912D0AD28 /* RarityVFX */ = {isa = PBXFileReference; lastKnownFileType = folder; name = RarityVFX; path = Sources/NutriQuest/Resources/RarityVFX; sourceTree = SOURCE_ROOT; };
 		53DBF7798C8D10EAD3843701 /* CaseOpeningView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaseOpeningView.swift; sourceTree = "<group>"; };
 		5798E49E21720763CE0AE0E6 /* BattleReplayMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleReplayMapper.swift; sourceTree = "<group>"; };
 		589E1F9B242A850F9FFB2EB8 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
@@ -153,6 +165,7 @@
 		64173722F51710D196A6C3F7 /* WatchConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectView.swift; sourceTree = "<group>"; };
 		684E036C4AE5581378F5F4D7 /* OnboardingStepViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStepViews.swift; sourceTree = "<group>"; };
 		6E32994F76F52FC4A261194A /* WorkoutSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSummary.swift; sourceTree = "<group>"; };
+		6E7ECC223FB6A5CC38A005B2 /* RarityAuraDemoView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RarityAuraDemoView.swift; sourceTree = "<group>"; };
 		75591C47CFE5CD1E720436E9 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
 		75E3F7281A314FBA8931CA9F /* ImageColorExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageColorExtractor.swift; sourceTree = "<group>"; };
 		7AB602D2B3D6DBF6725D2720 /* HealthDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDashboardView.swift; sourceTree = "<group>"; };
@@ -180,9 +193,11 @@
 		C030FB0134776A73A42C9F1B /* BodyMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyMetricsTests.swift; sourceTree = "<group>"; };
 		C04360E042B736F05741E5C3 /* KitchenMinesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitchenMinesView.swift; sourceTree = "<group>"; };
 		C2A8F56ABF6DD4934679CE67 /* LANSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANSession.swift; sourceTree = "<group>"; };
+		C69F940FF7A9C684B481B2CA /* RarityVFXTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RarityVFXTests.swift; sourceTree = "<group>"; };
 		C6C3DB05E7C0029DFC4918CE /* LANHostMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANHostMatch.swift; sourceTree = "<group>"; };
 		C822A50B46EBDCFD6D0A406A /* HealthKitSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSnapshot.swift; sourceTree = "<group>"; };
 		CCAEF89F81FE0EDB05A590CA /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
+		D45D5CB090B01016A414F294 /* RarityVFXAssetManifest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RarityVFXAssetManifest.swift; sourceTree = "<group>"; };
 		D4A367D08DD5A7DABD1176DA /* CauldronCashOut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CauldronCashOut.swift; sourceTree = "<group>"; };
 		D7FBC0B430D9F714B0E2BBF8 /* GameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameState.swift; sourceTree = "<group>"; };
 		D7FC2AA7CBE841DB8197EE9B /* LaunchSplashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchSplashView.swift; sourceTree = "<group>"; };
@@ -195,6 +210,7 @@
 		E4C2E0CA4A793739737B7568 /* BattleEngineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleEngineTests.swift; sourceTree = "<group>"; };
 		E4C3894E067CAE94B508A12A /* CharacterDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterDetailView.swift; sourceTree = "<group>"; };
 		E5BE5A5A080CDEA4912ABB03 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
+		EB2455C6D40FB8F237906468 /* RarityAnimationConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RarityAnimationConfiguration.swift; sourceTree = "<group>"; };
 		ED14063699D4A328F1173D67 /* GameArtTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameArtTests.swift; sourceTree = "<group>"; };
 		F3760A6F93969CB515E706B1 /* NutriQuestApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutriQuestApp.swift; sourceTree = "<group>"; };
 		F4E494C697135C3755277737 /* KitBridging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitBridging.swift; sourceTree = "<group>"; };
@@ -263,6 +279,7 @@
 				BC5F873A573C1079971EC218 /* Resources */,
 				0CDB25462B4C930F85EE9F3E /* Scanning */,
 				CAE49F2D55D752F820828085 /* Screens */,
+				627671FA0724269659DEDD31 /* VFX */,
 			);
 			path = NutriQuest;
 			sourceTree = "<group>";
@@ -348,6 +365,19 @@
 			);
 			sourceTree = "<group>";
 		};
+		627671FA0724269659DEDD31 /* VFX */ = {
+			isa = PBXGroup;
+			children = (
+				435B56B50B7AA6E89D665337 /* MonsterRarityPresentationView.swift */,
+				EB2455C6D40FB8F237906468 /* RarityAnimationConfiguration.swift */,
+				6E7ECC223FB6A5CC38A005B2 /* RarityAuraDemoView.swift */,
+				2262D0B9F08B33477A04A29A /* RarityEffectLayers.swift */,
+				1F0029F866C3B7C99F3365E1 /* RarityFrameCache.swift */,
+				D45D5CB090B01016A414F294 /* RarityVFXAssetManifest.swift */,
+			);
+			path = VFX;
+			sourceTree = "<group>";
+		};
 		65A40832A6D3ED5B06518E1B /* App */ = {
 			isa = PBXGroup;
 			children = (
@@ -405,6 +435,7 @@
 				F6C6FC0540636169213ADE2B /* LANProtocolTests.swift */,
 				DB077BE598A1019959EF64F5 /* LANTestSupport.swift */,
 				23CE9A03DDD3B2F84BD11D9B /* LANTournamentTests.swift */,
+				C69F940FF7A9C684B481B2CA /* RarityVFXTests.swift */,
 				2158CFD64CCE3C30F4C01624 /* ScanPipelineTests.swift */,
 			);
 			path = NutriQuestTests;
@@ -445,6 +476,7 @@
 			children = (
 				3179FA7282219DAAB0FE3C85 /* Assets.xcassets */,
 				284179EF70690D9FF0B92110 /* Characters.xcassets */,
+				523F60C282B317F912D0AD28 /* RarityVFX */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -557,8 +589,6 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1430;
-				TargetAttributes = {
-				};
 			};
 			buildConfigurationList = 9BC1CA3799A0C2EB4187AC77 /* Build configuration list for PBXProject "NutriQuest" */;
 			developmentRegion = en;
@@ -592,6 +622,7 @@
 				7DD51A43094A15FBA71D4806 /* Assets.xcassets in Resources */,
 				65C4F2F89BCB97CFF3F31DFB /* Characters.xcassets in Resources */,
 				D25A48BFBDFC8D07B9865590 /* Fonts in Resources */,
+				05D087C9AEFFA556F34E3958 /* RarityVFX in Resources */,
 				DDB78FA7CDA51160C6DB0E89 /* game-assets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -613,6 +644,7 @@
 				C0C9255AED877997786E820B /* LANProtocolTests.swift in Sources */,
 				757C655FBEFE2632208627F1 /* LANTestSupport.swift in Sources */,
 				C0296742AF08312A6682855E /* LANTournamentTests.swift in Sources */,
+				E4A797375390690F9849F24E /* RarityVFXTests.swift in Sources */,
 				C3360731A29714DD0EC3A9F2 /* ScanPipelineTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -675,6 +707,7 @@
 				93C8129BBF8A41F2040DFCF2 /* LaunchSplashView.swift in Sources */,
 				42A9DFE50004FC1709A4B4E8 /* LeaderboardView.swift in Sources */,
 				155A9CDB0E660DB4A6EEC849 /* MealPhotoCapture.swift in Sources */,
+				31D69136A2AF1286495B979F /* MonsterRarityPresentationView.swift in Sources */,
 				FA8A3C6E9ADA720D64BB26BA /* NQAchievements.swift in Sources */,
 				CA10C22B6D8D33946BB3F89D /* NQNotifications.swift in Sources */,
 				2B5242112D570192B6879AA6 /* NutriQuestApp.swift in Sources */,
@@ -685,6 +718,11 @@
 				515C28287014195D4587445C /* PortalWheelView.swift in Sources */,
 				3E0BF30C14366382DC08E336 /* ProfileView.swift in Sources */,
 				EE7EF50636EA1FA9DFB240A0 /* Rarity.swift in Sources */,
+				6B45F038A33F508BEE51C7B5 /* RarityAnimationConfiguration.swift in Sources */,
+				505FA0B6A207F40F4CD283CE /* RarityAuraDemoView.swift in Sources */,
+				D05A8A0F0394A58EAC54AA94 /* RarityEffectLayers.swift in Sources */,
+				769E63F08101C0FD2520804F /* RarityFrameCache.swift in Sources */,
+				4EDFF89254CC42F64B8BF14A /* RarityVFXAssetManifest.swift in Sources */,
 				BB057BEABE205F6E1F111907 /* RootTabView.swift in Sources */,
 				41A88104A1DFA600EEA689AF /* ScanView.swift in Sources */,
 				16775AC590EAAA581DF92F07 /* ScannerView.swift in Sources */,

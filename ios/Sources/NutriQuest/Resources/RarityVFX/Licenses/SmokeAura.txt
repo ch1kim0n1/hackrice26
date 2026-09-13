@@ -1,0 +1,14 @@
+Smoke Aura — Beast
+Source: https://opengameart.org/content/smoke-aura
+Download origin: https://lpc.opengameart.org/content/smoke-aura
+License: Creative Commons Zero (CC0)
+https://creativecommons.org/publicdomain/zero/1.0/
+https://creativecommons.org/publicdomain/zero/1.0/legalcode
+
+Used: Smoke.zip, frames 0000, 0003, 0006, ... 0087.
+Changes: 90-frame loop sampled to 30 frames; duplicate 0090 endpoint omitted;
+PNGs renamed and losslessly optimized. Runtime playback reversed and colors
+multiplied to near-black with a neutral gray rim.
+
+This is a provenance/credit record based on the source page inspected 2026-09-13.
+The downloaded archive did not contain a license file.

@@ -1,0 +1,19 @@
+Free Stylized Sprite VFX — Jony / Kalponic Studio
+Source and license terms: https://kalponic-studio.itch.io/free-stylized-sprite-vfx
+Source page inspected: 2026-09-13
+
+The author's displayed terms permit personal and commercial project use,
+modification, and selling works containing the assets. They prohibit resale
+of original/modified assets and use in logos, trademarks or service marks.
+The author says credit is appreciated, not necessary.
+The same page's asset-license metadata also lists Creative Commons Attribution 4.0:
+https://creativecommons.org/licenses/by/4.0/
+https://creativecommons.org/licenses/by/4.0/legalcode
+Both source statements are recorded here; this project provides attribution
+and does not resell these assets or use them as a logo.
+
+Used: Bonfire/1.png through Bonfire/16.png.
+Changes: one fixed union crop for all frames, downscaled to at most 256 pixels,
+renamed; tinted and composited behind character art at runtime.
+No endorsement by the original artist is implied.
+The downloaded archive (including nested ZIPs) contains no license file.

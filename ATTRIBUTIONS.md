@@ -1,0 +1,12 @@
+# Rarity VFX asset credits
+
+Only the optimized production selection is included in `ios/Sources/NutriQuest/Resources/RarityVFX`.
+The four original Downloads ZIPs and all extracted raw packs remain outside this repository.
+Exact source-to-production filenames and transformations are recorded in [the asset manifest](docs/rarity-vfx-assets.json).
+
+- **Free Game FX** — ashishlko11 (Ashish Kumar Yadav). [Author's download page](https://ashishlko11.itch.io/free-game-fx), [author's OpenGameArt release and licensing](https://opengameart.org/content/free-game-fx). Used under [CC BY 3.0](https://creativecommons.org/licenses/by/3.0/), one of the licenses offered on OpenGameArt. Selected sequences 67, 69, 72; PNGs renamed and losslessly optimized; red is multiplied at runtime. The downloaded ZIP has no license document. Credit and license links are also bundled in `Licenses/FreeGameFX.txt`.
+- **Free Stylized Sprite VFX** — Jony / Kalponic Studio. [Author's release and terms](https://kalponic-studio.itch.io/free-stylized-sprite-vfx). Selected Bonfire 1–16; shared crop, downscale, rename, runtime color multiplication. The page permits personal/commercial projects and modifications, prohibits asset resale and logo/trademark use, and says credit is appreciated. Its metadata additionally lists [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/). We preserve both statements and provide attribution; we do not claim the archive contains a license or treat it as CC0. No raw pack is redistributed.
+- **Kenney Particle Pack 1.1** — Kenney Vleugels / Kenney.nl. [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Selected transparent `circle_05.png` and `star_04.png`, downscaled to 64 × 64, renamed, tinted at runtime. The original `License.txt`, including additional filter-template credits, is preserved verbatim as `Licenses/Kenney-CC0.txt`.
+- **Smoke Aura** — Beast. [Original release](https://opengameart.org/content/smoke-aura), [download source recorded by macOS](https://lpc.opengameart.org/content/smoke-aura). [CC0](https://creativecommons.org/publicdomain/zero/1.0/). Selected every third frame of the 90-frame loop (0000–0087); duplicate endpoint 0090 omitted. Renamed and losslessly optimized; reversed playback and black/neutral runtime multiplication. License is on the source page; no license file is present in `Smoke.zip`.
+
+Source pages inspected 2026-09-13. Archive identities were confirmed from macOS download-origin metadata. All required credits travel in the application resource folder without adding or changing production UI.

@@ -210,8 +210,10 @@ struct CollectionView: View {
                 artwork: character.isLocked ? nil : AnyView(
                     // Fainted monsters wear the hurt sprite on their card —
                     // the FAINTED badge alone was too easy to miss.
-                    CharacterArtwork(character: character, hurt: gameState.faintedIds.contains(character.id))
-                        .frame(width: 96, height: 124)
+                    MonsterRarityPresentationView(rarity: character.rarity) {
+                        CharacterArtwork(character: character, hurt: gameState.faintedIds.contains(character.id))
+                            .frame(width: 96, height: 124)
+                    }
                 ),
                 artworkSize: CGSize(width: 96, height: 124),
                 // Sell/merge/faint badges take the top-right corner — the

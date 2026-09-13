@@ -21,6 +21,11 @@ targets:
     platform: iOS
     sources:
       - path: Sources/NutriQuest
+        excludes:
+          - Resources/RarityVFX
+      - path: Sources/NutriQuest/Resources/RarityVFX
+        type: folder
+        buildPhase: resources
       - path: Resources/Fonts
         type: folder
         buildPhase: resources

@@ -23,7 +23,9 @@ let package = Package(
             dependencies: ["BattleKit", "NutriQuestUI"],
             path: "Sources/NutriQuest",
             resources: [
-                .process("Resources")
+                .process("Resources/Assets.xcassets"),
+                .process("Resources/Characters.xcassets"),
+                .copy("Resources/RarityVFX")
             ]
         ),
         .testTarget(
