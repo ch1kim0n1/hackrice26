@@ -46,8 +46,10 @@ const inquirySchema = z.object({
   }),
   meta: z
     .object({
-      "session-token": z.string().optional(),
-      sessionToken: z.string().optional()
+      // Persona sends null (not just omitted) on the initial create call —
+      // the real token only shows up after /resume.
+      "session-token": z.string().nullable().optional(),
+      sessionToken: z.string().nullable().optional()
     })
     .passthrough()
     .optional()
