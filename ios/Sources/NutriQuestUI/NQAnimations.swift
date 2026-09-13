@@ -17,6 +17,12 @@ public enum NQMotion {
     public static let quick = Animation.easeOut(duration: 0.2)
     /// Stat bar fills.
     public static let fill = Animation.spring(response: 0.6, dampingFraction: 0.75)
+    /// Attack wind-up and recoil — tight enough to read as force, not drift.
+    public static let attackLunge = Animation.spring(response: 0.28, dampingFraction: 0.6)
+    /// A fainting unit sinking out of the fight: slow, heavy, no bounce back.
+    public static let faintDroop = Animation.easeOut(duration: 0.5)
+    /// Crit flash — one frame of white-out, gone before it registers as a fade.
+    public static let critFlash = Animation.easeOut(duration: 0.08)
 
     /// Spring with custom response/damping.
     public static func spring(response: Double, damping: Double) -> Animation {

@@ -9,6 +9,7 @@ public enum ChibiExpression: String, CaseIterable, Sendable {
     case hungry     // pleading eyes + small frown — nothing scanned yet today
     case proud      // closed ^^ eyes + open grin — strong day
     case hurt       // squeezed eyes + wavy mouth — lost the last battle
+    case fainted    // × × eyes + dazed mouth — knocked out mid-battle
 
     /// Spoken by VoiceOver.
     public var description: String {
@@ -20,6 +21,7 @@ public enum ChibiExpression: String, CaseIterable, Sendable {
         case .hungry: return "hungry"
         case .proud: return "proud"
         case .hurt: return "hurt"
+        case .fainted: return "knocked out"
         }
     }
 }
@@ -238,6 +240,13 @@ public struct ChibiCharacterView: View {
             stroke(&context, "M\(50 - eyeDx - 6) \(eyeCy + 3) L\(50 - eyeDx + 5) \(eyeCy - 4)", color: ink, width: 2.4)
             stroke(&context, "M\(50 + eyeDx - 5) \(eyeCy - 4) L\(50 + eyeDx + 6) \(eyeCy + 3)", color: ink, width: 2.4)
             stroke(&context, "M\(50 + eyeDx - 5) \(eyeCy + 3) L\(50 + eyeDx + 6) \(eyeCy - 4)", color: ink, width: 2.4)
+        case .fainted:
+            // Full × × crosses — bigger and symmetric, so a KO reads at a
+            // glance as different from `.hurt`'s squeezed-shut wince.
+            for dx in [-eyeDx, eyeDx] {
+                stroke(&context, "M\(50 + dx - 6) \(eyeCy - 6) L\(50 + dx + 6) \(eyeCy + 6)", color: ink, width: 2.8)
+                stroke(&context, "M\(50 + dx - 6) \(eyeCy + 6) L\(50 + dx + 6) \(eyeCy - 6)", color: ink, width: 2.8)
+            }
         }
 
         // Brows
@@ -270,6 +279,9 @@ public struct ChibiCharacterView: View {
         case .hurt:
             // Uneasy wavy line.
             stroke(&context, "M44 \(mouthCy) Q47 \(mouthCy - 2.5) 50 \(mouthCy) Q53 \(mouthCy + 2.5) 56 \(mouthCy)", color: ink, width: 2.2)
+        case .fainted:
+            // Small slack oval — out cold, mouth hanging open.
+            ellipse(&context, cx: 50, cy: mouthCy, rx: 3.4, ry: 2.6, fill: ink)
         }
     }
 
