@@ -43,6 +43,10 @@ public struct NQCharacterCard: View {
     /// When a screen pins its own badge top-right (faint, sell, merge), the
     /// built-in rarity chip would sit on top of it — this hides it.
     private let hidesRarityChip: Bool
+    /// The rarity frame image (and Secret's foil) drawn over the artwork.
+    /// Screens with their own rarity presentation turn it off so effects
+    /// aren't boxed in.
+    private let showsArtworkFrame: Bool
 
     /// Creates a character card.
     /// - Parameter artworkSize: Frame for the chibi/artwork area; defaults to
@@ -57,7 +61,8 @@ public struct NQCharacterCard: View {
         artwork: AnyView? = nil,
         shiny: Bool = false,
         artworkSize: CGSize = CGSize(width: 80, height: 104),
-        hidesRarityChip: Bool = false
+        hidesRarityChip: Bool = false,
+        showsArtworkFrame: Bool = true
     ) {
         self.name = name
         self.color = color
@@ -69,6 +74,7 @@ public struct NQCharacterCard: View {
         self.shiny = shiny
         self.artworkSize = artworkSize
         self.hidesRarityChip = hidesRarityChip
+        self.showsArtworkFrame = showsArtworkFrame
     }
 
     public var body: some View {
@@ -120,7 +126,7 @@ public struct NQCharacterCard: View {
             }
             .frame(width: artworkSize.width, height: artworkSize.height)
             .overlay {
-                if state != .locked, let frame = NQAsset.uiImage("\(rarity.rawValue)-frame") {
+                if showsArtworkFrame, state != .locked, let frame = NQAsset.uiImage("\(rarity.rawValue)-frame") {
                     Image(uiImage: frame)
                         .resizable()
                         .scaledToFit()
@@ -128,7 +134,7 @@ public struct NQCharacterCard: View {
                 }
             }
             .overlay {
-                if (rarity == .secret || shiny) && state != .locked,
+                if showsArtworkFrame, (rarity == .secret || shiny) && state != .locked,
                    let foil = NQAsset.uiImage("nutriquest-holographic-foil-overlay-512x640") {
                     Image(uiImage: foil)
                         .resizable()

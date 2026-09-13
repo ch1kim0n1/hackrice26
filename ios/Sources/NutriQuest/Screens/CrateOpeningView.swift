@@ -458,7 +458,7 @@ struct CrateOpeningView: View {
                     .font(NQText.heading.font)
                     .foregroundStyle(NQTheme.ink)
                     .lineLimit(1)
-                Text("\(item.character.rarity.capitalized) · ★\(item.stars ?? 1) · \(item.value) coins")
+                Text("\(item.character.rarity.capitalized) · \(String(repeating: "★", count: max(1, item.stars ?? 1))) · \(item.value) coins")
                     .font(NQText.caption.font)
                     .foregroundStyle(NQTheme.inkMuted)
             }
@@ -568,7 +568,7 @@ struct CrateOpeningView: View {
                     Text(item.character.rarity.capitalized)
                         .font(NQText.micro.font)
                         .foregroundStyle(NQTheme.inkMuted)
-                    Text("· ★\(item.stars ?? 1)")
+                    Text("· " + String(repeating: "★", count: max(1, item.stars ?? 1)))
                         .font(NQText.micro.font)
                         .foregroundStyle(NQTheme.inkFaint)
                 }

@@ -77,6 +77,10 @@ private struct RarityAnimatedArtwork<CharacterImage: View>: View {
                 composition(time: 0)
             }
         }
+        // Outside the timeline, so the blurred plate isn't rebuilt every frame.
+        .background {
+            CharacterBackplateView(configuration: configuration, animated: animating)
+        }
         .background {
             // A single non-layout GeometryReader tracks scroll visibility. LazyVGrid
             // prefetch may call onAppear before a card actually enters the viewport.
@@ -122,6 +126,7 @@ private struct RarityAnimatedArtwork<CharacterImage: View>: View {
         let horizontal = motion ? configuration.horizontalDrift
             * sin(time * 2 * .pi / configuration.floatDuration) : 0
         return characterImage
+            .scaleEffect(configuration.characterScale)
             .offset(x: horizontal, y: vertical)
             .background(alignment: .bottom) {
                 // Above the glow, and outside the effect stack's mask so the
@@ -132,7 +137,9 @@ private struct RarityAnimatedArtwork<CharacterImage: View>: View {
                     MonsterAuraView(tier: tier, isDetailedView: false, isActive: animating)
                         .frame(width: imageSize.width * MonsterAuraView.widthRatio + MonsterAuraView.inset * 2,
                                height: imageSize.height * MonsterAuraView.heightRatio + MonsterAuraView.inset * 2)
-                        .offset(y: MonsterAuraView.inset)
+                        // Floor lifted a little above the feet so the flames
+                        // don't bleed into the monster's name below.
+                        .offset(y: MonsterAuraView.inset - 14)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
@@ -213,8 +220,13 @@ enum RarityTier {
         case .legendary: return [.yellow] // Gold
         case .mythic: return [.red]
         case .secret:
-            // White, silver and light blue overlapping.
-            return [.white, Color(red: 0.75, green: 0.78, blue: 0.83), Color(red: 0.55, green: 0.80, blue: 1)]
+            // The Secret frame's holographic palette: cyan, pink, violet, lavender.
+            return [
+                Color(red: 0.24, green: 0.85, blue: 0.95),
+                Color(red: 0.95, green: 0.61, blue: 0.71),
+                Color(red: 0.60, green: 0.48, blue: 0.94),
+                Color(red: 0.85, green: 0.77, blue: 1.00)
+            ]
         }
     }
 }
@@ -337,6 +349,42 @@ struct MonsterAuraView: View {
                 isSpark: isSpark,
                 colorIndex: Int.random(in: 0..<tier.colors.count)
             ))
+        }
+    }
+}
+
+// MARK: - Backplate
+
+/// Soft tinted plate behind the monster: a blurred ellipse, never a stroked
+/// frame. Mostly stationary — only a slow, tiny pulse — so the floating
+/// character reads as moving in front of it.
+private struct CharacterBackplateView: View {
+    let configuration: RarityAnimationConfiguration
+    let animated: Bool
+    @State private var pulsing = false
+
+    private var enabled: Bool {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("-rarityBackplateDisabled") { return false }
+        #endif
+        return true
+    }
+
+    var body: some View {
+        if enabled, let color = configuration.backplateColor {
+            Ellipse()
+                .fill(color)
+                .opacity(configuration.backplateOpacity)
+                .blur(radius: 14)
+                .scaleEffect(x: configuration.backplateScale, y: configuration.backplateScale * 0.92)
+                .offset(y: 4)
+                .scaleEffect(pulsing ? 1.015 : 1)
+                .animation(animated ? .easeInOut(duration: 3.2).repeatForever(autoreverses: true) : nil,
+                           value: pulsing)
+                .onAppear { pulsing = animated }
+                .onChange(of: animated) { pulsing = $0 }
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
         }
     }
 }

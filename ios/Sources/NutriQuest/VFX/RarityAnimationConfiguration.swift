@@ -29,6 +29,13 @@ struct RarityAnimationConfiguration {
     var secondaryAura: RarityVFXAssetManifest.Sequence?
     /// When set, a live flame (MonsterAuraView) replaces the frame-sequence aura.
     var flame: RarityTier?
+    /// Soft tinted plate behind the monster — separates it from the card
+    /// without boxing it in the way the old inner frame did.
+    var backplateColor: Color?
+    var backplateOpacity: Double = 0
+    var backplateScale: CGFloat = 1
+    /// Subtle size lift for higher tiers.
+    var characterScale: CGFloat = 1
 
     var auraEnabled: Bool { aura != nil }
     var glowEnabled: Bool { glowOpacity.upperBound > 0 }
@@ -42,33 +49,44 @@ struct RarityAnimationConfiguration {
         case .common, .uncommon:
             return Self()
         case .rare:
-            return Self(glowColor: NQRarity.rare.outline, glowOpacity: 0.30...0.50, flame: .rare)
+            return Self(glowColor: NQRarity.rare.outline, glowOpacity: 0.30...0.50, flame: .rare,
+                        backplateColor: .blue, backplateOpacity: 0.16, backplateScale: 1.08)
         case .epic:
             return Self(aura: .epic, auraOpacity: 0.50,
                         glowColor: NQRarity.epic.outline, glowOpacity: 0.28...0.38,
-                        floatDistance: 4.5, flame: .epic)
+                        floatDistance: 2, flame: .epic,
+                        backplateColor: .purple, backplateOpacity: 0.20, backplateScale: 1.12,
+                        characterScale: 1.02)
         case .legendary:
             return Self(aura: .gold, auraFPS: 18, auraScale: 1.20, auraOpacity: 0.72,
                         glowColor: NQRarity.legendary.outline, glowOpacity: 0.38...0.52,
-                        floatDistance: 6, floatDuration: 2.1,
+                        floatDistance: 3, floatDuration: 2.1,
                         particleStyle: .rising, particleCount: 5, particleSize: 3.5,
-                        accentInterval: 7.5, accentStrength: 0.12, flame: .legendary)
+                        accentInterval: 7.5, accentStrength: 0.12, flame: .legendary,
+                        backplateColor: .yellow, backplateOpacity: 0.24, backplateScale: 1.17,
+                        characterScale: 1.03)
         case .mythic:
             return Self(aura: .red, auraFPS: 20, auraScale: 1.28, auraOpacity: 0.78,
                         auraTint: Palette.redTint,
                         glowColor: Palette.red, glowOpacity: 0.44...0.60,
-                        floatDistance: 7, floatDuration: 1.8,
+                        floatDistance: 5, floatDuration: 1.8,
                         particleStyle: .embers, particleCount: 7, particleLifetime: 2.7,
                         particleSize: 3.5, accentInterval: 8.5, accentDuration: 1.4,
-                        accentStrength: 0.20, secondaryAura: .flame, flame: .mythic)
+                        accentStrength: 0.20, secondaryAura: .flame, flame: .mythic,
+                        backplateColor: .red, backplateOpacity: 0.30, backplateScale: 1.21,
+                        characterScale: 1.04)
         case .secret:
             return Self(aura: .smoke, auraFPS: 15, auraScale: 1.30, auraOpacity: 0.92,
                         auraTint: Palette.void, playsInReverse: true,
                         glowColor: Palette.rim, glowOpacity: 0.25...0.35,
-                        floatDistance: 8, horizontalDrift: 1, floatDuration: 1.8,
+                        floatDistance: 6, horizontalDrift: 1, floatDuration: 1.8,
                         particleStyle: .inward, particleCount: 6, particleLifetime: 3.6,
                         particleSize: 4, particleOpacity: 0.72,
-                        accentInterval: 10.5, accentDuration: 1.8, accentStrength: 0.12, flame: .secret)
+                        accentInterval: 10.5, accentDuration: 1.8, accentStrength: 0.12, flame: .secret,
+                        // Pale to match Secret's white/silver/light-blue flame
+                        // (the spec's charcoal predates that palette change).
+                        backplateColor: Palette.secretPlate, backplateOpacity: 0.32, backplateScale: 1.24,
+                        characterScale: 1.05)
         }
     }
 
@@ -82,6 +100,7 @@ struct RarityAnimationConfiguration {
         static let redTint = Color(red: 1, green: 0.22, blue: 0.30)
         static let void = Color(red: 0.025, green: 0.028, blue: 0.035)
         static let rim = Color(red: 0.65, green: 0.69, blue: 0.74)
+        static let secretPlate = Color(red: 0.78, green: 0.86, blue: 0.95)
     }
 
     enum Metrics {
