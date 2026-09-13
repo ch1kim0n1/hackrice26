@@ -439,6 +439,58 @@ public struct NQBreathingGlow: ViewModifier {
 
 public extension View {
     func nqBreathingGlow(color: Color) -> some View { modifier(NQBreathingGlow(color: color)) }
+
+    /// ★5 leader aura — the squad-wide Leader bonus, made visible on the
+    /// portrait that grants it. Inert when `active` is false, so call sites
+    /// pass a condition instead of branching around the modifier.
+    func nqLeaderAura(active: Bool, color: Color) -> some View {
+        modifier(NQLeaderAura(active: active, color: color))
+    }
+}
+
+// MARK: - Leader aura (★5)
+
+/// A soft halo that hugs the content it decorates. Deliberately *not*
+/// `NQBreathingGlow`: that one paints a fixed 190pt circle sized for a hero
+/// card, which swamps a 64pt squad portrait. This one sizes off the content.
+public struct NQLeaderAura: ViewModifier {
+    private var active: Bool
+    private var color: Color
+    @State private var breathing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(active: Bool, color: Color) {
+        self.active = active
+        self.color = color
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .background {
+                if active {
+                    Circle()
+                        .fill(color.opacity(0.34))
+                        .blur(radius: 12)
+                        .padding(-6)
+                        .scaleEffect(breathing && !reduceMotion ? 1.08 : 0.96)
+                        .animation(
+                            reduceMotion ? nil : .easeInOut(duration: 2.0).repeatForever(autoreverses: true),
+                            value: breathing
+                        )
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                if active {
+                    Circle()
+                        .strokeBorder(color.opacity(0.5), lineWidth: 1.5)
+                        .padding(-2)
+                        .allowsHitTesting(false)
+                }
+            }
+            .onAppear { breathing = active }
+            .onChange(of: active) { breathing = $0 }
+    }
 }
 
 // MARK: - Floating particles (ambient sparkles)

@@ -4,6 +4,14 @@ import NutriQuestUI
 /// Endless dungeon — send your top 3 down floor after floor until they wipe.
 /// Every cleared floor pays coins (bosses pay triple) and earnings survive
 /// the wipe. The run feed is the highlight reel.
+///
+/// **Deliberately not animated like a battle** (docs/ANIMATIONS-AND-EFFECTS.md
+/// §4.1). A run resolves many floors at once, so `BattleView`'s per-event
+/// choreography — lunge, hit-stop, crit flash — would stretch a single tap
+/// into minutes. The run feed is the payoff instead: an outcome highlight
+/// reel, which is a different genre of interaction, not a missing feature.
+/// If PvE ever needs real fight choreography, it should consume the extracted
+/// battle animator rather than growing its own copy here.
 struct DungeonView: View {
     @ObservedObject var gameState: GameState
 

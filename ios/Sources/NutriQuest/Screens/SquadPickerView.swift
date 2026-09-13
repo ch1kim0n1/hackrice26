@@ -90,6 +90,12 @@ struct SquadPickerView: View {
                 artwork: AnyView(
                     CharacterArtwork(character: character)
                         .frame(width: 80, height: 104)
+                        // ★5 carries a squad-wide bonus, so it should be
+                        // visible while picking, not just once in the arena.
+                        .nqLeaderAura(
+                            active: character.starLevel == 5,
+                            color: character.kitColor.artFill
+                        )
                 ),
             )
             .overlay(alignment: .topLeading) {

@@ -58,6 +58,11 @@ struct BattleView: View {
     @State private var yourHit = false
     @State private var damagePopups: [BattlePopup] = []
     @State private var impactTrigger = 0
+    /// Crits hit the arena harder than a normal exchange, so the shake scales
+    /// rather than every hit landing with identical force.
+    @State private var impactIntensity: CGFloat = 7
+    @State private var critFlash = false
+    @State private var confettiTrigger = 0
 
     struct BattlePopup: Identifiable {
         let id = UUID()
@@ -68,6 +73,7 @@ struct BattleView: View {
 
     @Environment(\.nqAccent) private var accent
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Derived
 
@@ -137,6 +143,19 @@ struct BattleView: View {
         return (yourSquad + opponentSquad).first { $0.id == charID }
     }
 
+    /// ★5 is the Leader aura tier (see docs/NET-WORTH.md) — a maxed monster
+    /// buffs the squad's dominant stat, which until now had no visual tell.
+    private func isLeader(_ unitID: String) -> Bool {
+        character(for: unitID)?.starLevel == 5
+    }
+
+    /// `artFill`, not `accent` — the aura hugs the portrait, so it's an
+    /// artwork tint. `accent` is the fixed chrome gold and would make every
+    /// leader's aura identical.
+    private func leaderAuraColor(_ unitID: String) -> Color {
+        character(for: unitID)?.kitColor.artFill ?? accent.accent
+    }
+
     /// Which engine side a unit fights for, or -1 if unknown.
     private func side(of unitID: String) -> Int {
         if sideUnitIDs[0].contains(unitID) { return 0 }
@@ -160,6 +179,7 @@ struct BattleView: View {
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
         .nqSuccessBurst(on: simulateTrigger)
+        .overlay { NQConfetti(trigger: confettiTrigger) }
         .onAppear {
             if orderedSquad.isEmpty { orderedSquad = yourSquad }
             resetScene()
@@ -222,8 +242,8 @@ struct BattleView: View {
                 .multilineTextAlignment(.center)
                 .animation(NQMotion.quick, value: scene.lastAction)
         }
-        .animation(.spring(response: 0.28, dampingFraction: 0.6), value: yourLunge)
-        .animation(.spring(response: 0.28, dampingFraction: 0.6), value: opponentLunge)
+        .animation(NQMotion.attackLunge, value: yourLunge)
+        .animation(NQMotion.attackLunge, value: opponentLunge)
         .animation(.easeOut(duration: 0.18), value: opponentHit)
         .animation(.easeOut(duration: 0.18), value: yourHit)
         .nqPadding(.card)
@@ -239,7 +259,19 @@ struct BattleView: View {
                     .transition(.opacity)
             }
         }
-        .nqImpactShake(on: impactTrigger, intensity: 7)
+        // Crit flash sits above the per-hit tint: one gold frame across the
+        // whole arena, so a crit reads as different in kind, not just a
+        // differently-coloured number.
+        .overlay {
+            if critFlash {
+                RoundedRectangle(cornerRadius: NQTheme.radiusXL + 2)
+                    .fill(NQTheme.gold.opacity(0.42))
+                    .blendMode(.plusLighter)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(NQMotion.critFlash, value: critFlash)
+        .nqImpactShake(on: impactTrigger, intensity: impactIntensity)
         .nqShake(on: defeatTrigger)
     }
 
@@ -285,6 +317,16 @@ struct BattleView: View {
         HStack(spacing: NQTheme.spaceM) {
             characterArtwork(unitID: unitID, hurt: (side == 0 && yourHit) || (side == 1 && opponentHit), fainted: unit.fainted)
                 .frame(width: 64, height: 84)
+                // Faint droop: the unit tips over, sinks and drains of colour.
+                // A transform on the container rather than a pose, because the
+                // artwork underneath is a single static image either way.
+                .rotationEffect(.degrees(unit.fainted ? 12 : 0), anchor: .bottom)
+                .offset(y: unit.fainted ? 10 : 0)
+                .opacity(unit.fainted ? 0.45 : 1)
+                .saturation(unit.fainted ? 0.15 : 1)
+                .animation(NQMotion.faintDroop, value: unit.fainted)
+                // ★5 leader aura — the squad-wide bonus, made visible.
+                .nqLeaderAura(active: isLeader(unitID), color: leaderAuraColor(unitID))
             VStack(alignment: .leading, spacing: 4) {
                 Text(name(for: unitID))
                     .font(NQText.caption.font.weight(.bold))
@@ -380,9 +422,11 @@ struct BattleView: View {
 
     @ViewBuilder private func characterArtwork(unitID: String, hurt: Bool = false, fainted: Bool = false) -> some View {
         let expression: ChibiExpression = {
+            // A KO outranks the battle's outcome: a unit that fainted stays
+            // fainted on the victory screen rather than beaming with the rest.
+            if fainted { return .fainted }
             if resultText?.hasPrefix("VICTORY") == true { return .sparkle }
             if resultText?.hasPrefix("DEFEAT") == true { return .sleepy }
-            if fainted { return .sleepy }
             return hurt ? .hurt : .happy
         }()
         if let character = character(for: unitID) {
@@ -632,6 +676,7 @@ struct BattleView: View {
         running = false
         if won {
             simulateTrigger += 1
+            confettiTrigger += 1
             NQJuice.success()
         } else {
             defeatTrigger += 1
@@ -742,8 +787,10 @@ struct BattleView: View {
             } else {
                 showPopup("−\(damage)", color: .white, side: defenderSide)
             }
+            impactIntensity = crit ? 12 : 7
             impactTrigger += 1
             if crit { NQJuice.crit() } else { NQJuice.hit(heavy: false) }
+            if crit && !reduceMotion { await flashCrit() }
 
             try? await Task.sleep(nanoseconds: crit ? 160_000_000 : 90_000_000)
             setHit(side: defenderSide, active: false)
@@ -851,6 +898,14 @@ struct BattleView: View {
               let move = spec.moves.first(where: { $0.id == moveID }),
               move.manaCost > 0 else { return }
         scene.units[attacker]?.mana = max(0, (scene.units[attacker]?.mana ?? 0) - move.manaCost)
+    }
+
+    /// One frame of gold across the arena. Short enough to register as an
+    /// impact rather than a fade — the timing is `NQMotion.critFlash`.
+    private func flashCrit() async {
+        critFlash = true
+        try? await Task.sleep(nanoseconds: 90_000_000)
+        critFlash = false
     }
 
     private func setLunge(side: Int, active: Bool) {
