@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Human vs AI Security Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Quicksand:wght@500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.withpersona.com/dist/persona-v5.8.0.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <header class="page-header">
+    <div class="wordmark">nutriquest<span class="wordmark-dot">.</span></div>
+    <h1 class="page-title">Human vs AI Security Demo</h1>
+    <p class="page-subhead">
+      Sensitive actions require a server-side Persona verification state. An autonomous agent
+      that cannot satisfy the required verification never receives the protected resource.
+    </p>
+  </header>
+
+  <main class="panels">
+    <!-- ============ HUMAN PANEL ============ -->
+    <section class="panel panel-human" id="human-panel">
+      <h2 class="panel-title">Human</h2>
+      <dl class="status-grid">
+        <dt>Session</dt>
+        <dd data-human-state data-value="idle">Idle</dd>
+        <dt>Persona</dt>
+        <dd class="pill" data-human-persona data-value="not_started">NOT_STARTED</dd>
+      </dl>
+
+      <div class="panel-actions">
+        <button class="btn btn-primary" data-human-start>Start Human Demo</button>
+        <button class="btn btn-accent" data-human-verify hidden>Verify with Persona</button>
+      </div>
+
+      <div class="result-banner result-success" data-human-result hidden>
+        ✓ HUMAN VERIFIED<br />
+        ✓ PROTECTED NUTRIQUEST ACCESS GRANTED
+      </div>
+    </section>
+
+    <!-- ============ AI AGENT PANEL ============ -->
+    <section class="panel panel-agent" id="agent-panel">
+      <h2 class="panel-title">AI Agent</h2>
+      <p class="panel-objective">Objective: reach the protected NutriQuest account screen.</p>
+      <dl class="status-grid">
+        <dt>Persona</dt>
+        <dd class="pill" data-agent-persona data-value="unverified">UNVERIFIED</dd>
+        <dt>Access</dt>
+        <dd class="pill" data-agent-access data-value="blocked">BLOCKED</dd>
+      </dl>
+
+      <div class="panel-actions">
+        <button class="btn btn-primary" data-agent-run>Run AI Demo</button>
+        <button class="btn btn-ghost" data-agent-reset>Reset</button>
+      </div>
+
+      <div class="agent-log" data-agent-log aria-live="polite"></div>
+    </section>
+  </main>
+
+  <!-- ============ LIVE SECURITY MONITOR ============ -->
+  <section class="monitor">
+    <h2 class="panel-title">Live Security Monitor</h2>
+    <div class="monitor-log" id="security-log"></div>
+  </section>
+
+  <!-- ============ RICKROLL OVERLAY ============ -->
+  <!-- Stage 2 embeds the actual rickroll video via YouTube's own embed
+       player (muted-autoplay by default, one-click unmute) — nothing here
+       is proxied or re-hosted, it's a standard iframe embed. -->
+  <div class="rickroll-overlay" id="rickroll-overlay" hidden>
+    <div class="rickroll-card">
+      <div data-rickroll-stage="1">
+        <p class="rickroll-heading">ACCESS OVERRIDE ACCEPTED</p>
+        <p class="rickroll-sub">Decrypting NutriQuest account…</p>
+        <div class="rickroll-bar"><div class="rickroll-bar-fill"></div></div>
+      </div>
+      <div class="rickroll-video-stage" data-rickroll-stage="2" hidden>
+        <p class="rickroll-heading">NICE TRY, ROBOT 🤖</p>
+        <p class="rickroll-sub">YOU HAVE BEEN RICKROLLED</p>
+        <div class="rickroll-video-wrap">
+          <iframe
+            data-rickroll-video
+            title="rickroll"
+            src=""
+            allow="autoplay; encrypted-media"
+            allowfullscreen
+            frameborder="0"
+          ></iframe>
+          <button class="btn btn-primary rickroll-unmute" data-rickroll-unmute>Unmute 🔊</button>
+        </div>
+        <button class="btn btn-ghost" data-rickroll-close>Close</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

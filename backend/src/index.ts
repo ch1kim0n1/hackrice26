@@ -14,11 +14,13 @@ import { plinkoRouter } from "./routes/plinko";
 import { portalWheelRouter } from "./routes/portalWheel";
 import { authRouter } from "./auth/routes";
 import { humanGateRouter } from "./humanGate/routes";
+import { demoRouter } from "./demo/routes";
 import { readinessRouter } from "./routes/readiness";
 import { trendsRouter } from "./routes/trends";
 import { startMirrorDrain } from "./services/mirrorDrain";
 import { sweepExpiredSessions } from "./auth/store";
 import { sweepExpiredGateSessions } from "./humanGate/store";
+import { sweepExpiredDemoSessions } from "./demo/demoSessionStore";
 import { closeDatabase } from "./db";
 
 /** Uniform JSON error handler. Catches thrown errors from route handlers
@@ -60,6 +62,7 @@ export function buildApp(): express.Express {
 
   app.use("/auth", authRouter);
   app.use("/human-gate", humanGateRouter);
+  app.use("/demo", demoRouter);
   // Pre-generated character art (game-assets/) — catalog/image routes point here.
   app.use("/assets", express.static(join(__dirname, "..", "..", "game-assets")));
   app.use("/characters", charactersRouter);
@@ -97,6 +100,7 @@ if (!process.env.VITEST) {
   setInterval(() => {
     sweepExpiredSessions();
     sweepExpiredGateSessions();
+    sweepExpiredDemoSessions();
   }, 60 * 60 * 1000).unref();
   const port = process.env.PORT ? Number(process.env.PORT) : 4000;
   const server = app.listen(port, () => {
