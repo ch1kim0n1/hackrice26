@@ -147,6 +147,7 @@ struct OnboardingView: View {
     @State private var answers = OBAnswers()
     /// Apple Health step: true while the permission sheet + first upload run.
     @State private var connectingHealth = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
@@ -157,16 +158,25 @@ struct OnboardingView: View {
             stepView
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .id(step)
-                .transition(.asymmetric(
-                    insertion: .move(edge: .trailing).combined(with: .opacity),
-                    removal: .move(edge: .leading).combined(with: .opacity)
-                ))
+                .transition(stepTransition)
         }
         .padding(.horizontal, OBTheme.screenInset)
         .padding(.bottom, 10)
         .nqPageBackground()
         .animation(.easeInOut(duration: 0.3), value: step)
         .preferredColorScheme(.light)
+    }
+
+    /// Steps slide in from the side they came from, so the flow reads as a
+    /// line you move along. Under Reduce Motion the line is implied by the
+    /// progress bar instead and the steps simply cross-fade.
+    private var stepTransition: AnyTransition {
+        reduceMotion
+            ? .opacity
+            : .asymmetric(
+                insertion: .move(edge: .trailing).combined(with: .opacity),
+                removal: .move(edge: .leading).combined(with: .opacity)
+            )
     }
 
     /// Progress through the questionnaire, 0...1.
