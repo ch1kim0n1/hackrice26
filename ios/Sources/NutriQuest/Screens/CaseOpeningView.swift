@@ -167,6 +167,9 @@ struct CaseOpeningView: View {
                     )
                 )
                 .frame(width: 120, height: 156)
+                // The reel builds the suspense; this is what pays it off by
+                // tier, so a Cookbook pull reads like every other reveal.
+                .nqRarityTreatment(rarity.kitRarity, trigger: 1)
                 Text(drop.character.name)
                     .font(NQText.headingL.font.weight(.heavy))
                     .foregroundStyle(NQTheme.ink)

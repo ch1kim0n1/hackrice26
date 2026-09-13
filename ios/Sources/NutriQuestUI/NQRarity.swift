@@ -72,6 +72,117 @@ public enum NQRarity: String, CaseIterable, Sendable, Comparable {
     }
 }
 
+// MARK: - Rarity reveal treatment
+
+public extension NQRarity {
+    /// Whether a pull at this tier is worth throwing confetti for.
+    var deservesConfetti: Bool { self >= .legendary }
+    /// Whether the card carries a moving shine.
+    var deservesShine: Bool { self >= .rare }
+    /// Whether the card sits in a halo of its own colour.
+    var deservesGlow: Bool { self >= .epic }
+    /// Secret is the one holographic tier in the system (design/README.md).
+    var isHolographic: Bool { self == .secret }
+}
+
+/// One escalating visual treatment for a revealed reward, so a Legendary
+/// never looks like a Common no matter which screen pulled it.
+///
+/// Before this existed every reveal screen decided for itself: the crate did
+/// the full production, and the four wager games showed the same flat card at
+/// every tier. The ladder is deliberately fixed here rather than per-screen —
+/// that consistency *is* the feature.
+///
+/// | Tier | Treatment |
+/// |---|---|
+/// | Common / Uncommon | nothing — the ordinary result has to look ordinary |
+/// | Rare | shine sweep |
+/// | Epic | shine + coloured glow |
+/// | Legendary / Mythic | shine + glow + confetti |
+/// | Secret | all of it, plus the holographic sheen |
+///
+/// `trigger` drives the one-shot confetti: bump it at the moment of reveal.
+/// Left at 0 the treatment is purely ambient, which is what a static card
+/// (a Collection grid cell, say) wants.
+public struct NQRarityTreatment: ViewModifier {
+    private var rarity: NQRarity
+    private var trigger: Int
+    @State private var holoPhase: CGFloat = -1
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(rarity: NQRarity, trigger: Int = 0) {
+        self.rarity = rarity
+        self.trigger = trigger
+    }
+
+    public func body(content: Content) -> some View {
+        content
+            .nqShineSweep(active: rarity.deservesShine && !rarity.isHolographic)
+            .modifier(HolographicSheen(active: rarity.isHolographic, phase: holoPhase))
+            .background {
+                if rarity.deservesGlow {
+                    Circle()
+                        .fill(rarity.outline.opacity(0.3))
+                        .blur(radius: 26)
+                        .padding(-10)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                if rarity.deservesConfetti && trigger > 0 {
+                    NQConfetti(trigger: trigger)
+                        .allowsHitTesting(false)
+                }
+            }
+            .task(id: rarity.isHolographic) {
+                guard rarity.isHolographic, !reduceMotion else { return }
+                withAnimation(.linear(duration: 3.4).repeatForever(autoreverses: false)) {
+                    holoPhase = 1
+                }
+            }
+    }
+
+    /// Iridescent band that slides across a Secret pull. A plain white shine
+    /// reads as "shiny"; the hue shift is what reads as *holographic*.
+    private struct HolographicSheen: ViewModifier {
+        var active: Bool
+        var phase: CGFloat
+        @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+        func body(content: Content) -> some View {
+            content.overlay {
+                if active && !reduceMotion {
+                    GeometryReader { geo in
+                        LinearGradient(
+                            colors: [
+                                .clear,
+                                Color(hex: 0x22D3EE).opacity(0.55),
+                                Color(hex: 0xB892FF).opacity(0.55),
+                                Color(hex: 0xFF9290).opacity(0.45),
+                                .clear
+                            ],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                        .frame(width: geo.size.width * 0.75)
+                        .offset(x: phase * geo.size.width * 1.7)
+                        .blendMode(.plusLighter)
+                        .allowsHitTesting(false)
+                    }
+                    .clipped()
+                }
+            }
+        }
+    }
+}
+
+public extension View {
+    /// Apply the rarity reveal ladder. See `NQRarityTreatment`.
+    func nqRarityTreatment(_ rarity: NQRarity, trigger: Int = 0) -> some View {
+        modifier(NQRarityTreatment(rarity: rarity, trigger: trigger))
+    }
+}
+
 /// The stat specialty shown on a character's chest badge.
 public enum NQStatType: String, CaseIterable, Sendable {
     case protein

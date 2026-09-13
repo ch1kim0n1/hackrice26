@@ -95,7 +95,7 @@ struct KitchenMinesView: View {
         }
         .overlay(alignment: .top) {
             if let rarityToast {
-                rarityBanner(rarityToast)
+                NQBracketBanner(rarityToast)
                     .padding(.top, NQTheme.spaceS)
                     .transition(NQTransition.slideUp)
             }
@@ -563,17 +563,6 @@ struct KitchenMinesView: View {
         }
     }
 
-    private func rarityBanner(_ label: String) -> some View {
-        Text("\(label.uppercased()) VALUE REACHED")
-            .font(NQText.microS.font.weight(.heavy))
-            .tracking(0.8)
-            .foregroundStyle(NQTheme.background)
-            .nqPadding(.banner)
-            .background(NQTheme.gold)
-            .clipShape(Capsule())
-            .nqElevation(.card)
-    }
-
     private func lastRoundCard(_ last: MinesRoundDTO) -> some View {
         HStack(spacing: NQTheme.spaceM) {
             Circle()
@@ -746,6 +735,8 @@ struct MinesResultView: View {
                 )
             )
             .frame(width: 140, height: 140)
+            // Same reveal ladder as every other reward surface in the app.
+            .nqRarityTreatment(rarity.kitRarity, trigger: 1)
 
             Text(rarity.label.uppercased())
                 .font(NQText.heading.font.weight(.heavy))

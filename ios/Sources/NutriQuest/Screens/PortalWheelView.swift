@@ -561,6 +561,12 @@ struct PortalWheelView: View {
     private func coreContents(_ monster: CasinoMonsterDTO) -> some View {
         if phase == .opening, let reward = spinning?.reward {
             CharacterArtwork(character: artwork(for: reward))
+                // Was tinted by the wagered wheel colour, which said nothing
+                // about what you actually won; now it escalates by rarity.
+                .nqRarityTreatment(
+                    (Rarity(rawValue: reward.character.rarity) ?? .common).kitRarity,
+                    trigger: 1
+                )
         } else if phase == .opening {
             Text("✕")
                 .font(.system(size: 40, weight: .black, design: .rounded))

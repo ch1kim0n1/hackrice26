@@ -678,6 +678,10 @@ struct PlinkoResultView: View {
                 )
             )
             .frame(width: 140, height: 140)
+            // The shared reveal ladder — a Legendary out of Plinko now looks
+            // like a Legendary out of a crate. Trigger 1 fires the confetti
+            // once, as this view appears.
+            .nqRarityTreatment(rarity.kitRarity, trigger: 1)
 
             Text(rarity.label.uppercased())
                 .font(NQText.heading.font.weight(.heavy))

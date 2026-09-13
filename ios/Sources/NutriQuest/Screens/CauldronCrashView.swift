@@ -92,7 +92,7 @@ struct CauldronCrashView: View {
         .navigationBarTitleDisplayMode(.inline)
         .overlay(alignment: .top) {
             if let bracketToast {
-                bracketBanner(bracketToast)
+                NQBracketBanner(bracketToast)
                     .padding(.top, NQTheme.spaceS)
                     .transition(NQTransition.slideUp)
             }
@@ -364,18 +364,6 @@ struct CauldronCrashView: View {
         case ..<5: return NQTheme.flame
         default: return NQTheme.warning
         }
-    }
-
-    private func bracketBanner(_ label: String) -> some View {
-        Text("\(label.uppercased()) VALUE REACHED")
-            .font(NQText.microS.font.weight(.heavy))
-            .tracking(0.8)
-            .foregroundStyle(NQTheme.background)
-            .nqPadding(.banner)
-            .background(NQTheme.gold)
-            .clipShape(Capsule())
-            .nqElevation(.card)
-            .accessibilityAddTraits(.isStaticText)
     }
 
     private func lastRoundCard(_ last: CauldronRoundDTO) -> some View {
@@ -671,6 +659,9 @@ struct CauldronResultView: View {
                 )
             )
             .frame(width: 140, height: 140)
+            // Cashing out on a Mythic was visually identical to cashing out on
+            // a Common; the shared ladder is what makes the tier land.
+            .nqRarityTreatment(rarity.kitRarity, trigger: 1)
 
             Text(rarity.label.uppercased())
                 .font(NQText.heading.font.weight(.heavy))

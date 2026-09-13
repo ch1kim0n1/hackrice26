@@ -28,3 +28,29 @@ public struct NQBandRow: View {
         .accessibilityElement(children: .combine)
     }
 }
+
+/// "EPIC VALUE REACHED" — the toast a wager game shows when a climbing pot
+/// crosses into the next rarity bracket.
+///
+/// Lived twice, verbatim, in Cauldron Crash and Kitchen Mines. Both games
+/// climb a multiplier through the same `rarityBands` ladder, so the toast is
+/// one component, not one per game.
+public struct NQBracketBanner: View {
+    private let label: String
+
+    public init(_ label: String) {
+        self.label = label
+    }
+
+    public var body: some View {
+        Text("\(label.uppercased()) VALUE REACHED")
+            .font(NQText.microS.font.weight(.heavy))
+            .tracking(0.8)
+            .foregroundStyle(NQTheme.background)
+            .nqPadding(.banner)
+            .background(NQTheme.gold)
+            .clipShape(Capsule())
+            .nqElevation(.card)
+            .accessibilityAddTraits(.isStaticText)
+    }
+}
