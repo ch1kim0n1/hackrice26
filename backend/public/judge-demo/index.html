@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>NutriQuest — Judge Demo</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header>
+  <div class="logo">NUTRIQUEST</div>
+  <div class="demo-badge">JUDGE DEMO</div>
+  <div class="coins">🪙 <span id="coinCount">0</span></div>
+</header>
+
+<nav>
+  <button class="tab active" data-tab="scan">SCAN</button>
+  <button class="tab" data-tab="squad">SQUAD</button>
+  <button class="tab" data-tab="battle">BATTLE</button>
+</nav>
+
+<main>
+  <!-- ===================== SCAN ===================== -->
+  <section id="tab-scan" class="panel active">
+    <div class="scanner" id="scanner">
+      <div class="scanline" id="scanline"></div>
+      <div id="scanHint">Point at a snack.</div>
+    </div>
+    <div class="product" id="productLine">—</div>
+    <button class="big-btn" id="scanBtn">SCAN A SNACK</button>
+    <div class="note">Better nutrition rolls better monsters.</div>
+    <div id="reveal"></div>
+  </section>
+
+  <!-- ===================== SQUAD ===================== -->
+  <section id="tab-squad" class="panel">
+    <div class="squad-head">
+      <span id="collectionCount">0 monsters</span>
+      <span id="netWorth"></span>
+    </div>
+    <div class="grid" id="collection"></div>
+    <div class="note">3 identical copies fuse into the next star automatically.</div>
+  </section>
+
+  <!-- ===================== BATTLE ===================== -->
+  <section id="tab-battle" class="panel">
+    <div id="battleSetup">
+      <p class="note">3v3. One monster fights at a time. Winner takes coins.</p>
+      <button class="big-btn" id="fightBtn">FIGHT</button>
+    </div>
+    <div id="arena" class="hidden">
+      <div class="side enemy" id="enemySide"></div>
+      <div class="vs-row">
+        <div class="fighter" id="enemyActive">
+          <div class="hpbar"><div class="hpfill enemy-fill" id="enemyHp"></div></div>
+          <img id="enemyImg" alt="">
+          <div class="fname" id="enemyName"></div>
+          <div class="dmg-float" id="enemyDmg"></div>
+        </div>
+        <div class="fighter" id="playerActive">
+          <img id="playerImg" alt="">
+          <div class="hpbar"><div class="hpfill" id="playerHp"></div></div>
+          <div class="fname" id="playerName"></div>
+          <div class="dmg-float" id="playerDmg"></div>
+        </div>
+      </div>
+      <div class="side player" id="playerSide"></div>
+      <div class="mana-row" id="manaRow"></div>
+      <div class="moves" id="moves"></div>
+      <div class="battle-log" id="battleLog"></div>
+    </div>
+  </section>
+</main>
+
+<script src="catalog.js"></script>
+<script src="game.js"></script>
+</body>
+</html>

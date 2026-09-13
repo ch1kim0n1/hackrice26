@@ -69,6 +69,8 @@ export function buildApp(): express.Express {
   // "Prove You're Human" signup gate — same origin as the API, so the web
   // app defaults apiBase to the server that served it (no ?api= needed).
   app.use("/gate", express.static(join(__dirname, "..", "public", "human-gate")));
+  // Judge demo — standalone web mini-game, no auth, no server writes.
+  app.use("/play", express.static(join(__dirname, "..", "public", "judge-demo")));
   app.use("/characters", charactersRouter);
   app.use("/scan", scanRouter);
   app.use("/battle", battleRouter);
