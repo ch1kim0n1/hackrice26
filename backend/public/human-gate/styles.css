@@ -165,7 +165,19 @@ code {
 
 /* ---------- forms ---------- */
 
-#signup-form { margin-top: 28px; text-align: left; }
+#signup-form, #login-form { margin-top: 28px; text-align: left; }
+
+.auth-home { display: inline-block; text-decoration: none; }
+.auth-switch { margin-top: 22px; font-size: 13px; color: var(--ink-subtle); }
+.auth-switch a, .auth-home-link { color: var(--ink); text-underline-offset: 4px; }
+.auth-home-link { display: inline-block; margin-top: 16px; font-size: 12px; }
+.auth-switch a:focus-visible, .auth-home:focus-visible, .auth-home-link:focus-visible {
+  outline: 3px solid var(--accent); outline-offset: 4px; border-radius: 4px;
+}
+.screen:not(.screen-game):not(.screen-stats) { overflow-y: auto; }
+.screen > .card { margin: auto; flex-shrink: 0; }
+body.website-auth { --accent: var(--success); --accent-bg: var(--success-soft); --accent-dark: var(--ink); }
+body.website-auth .subhead, body.website-auth .field-label, body.website-auth .fine-print { color: var(--ink-subtle); }
 
 .field { display: block; margin-bottom: 16px; }
 .field-label {
@@ -223,6 +235,11 @@ code {
   box-shadow: 0 6px 20px rgba(184, 146, 255, 0.4), inset 0 -3px 0 rgba(0, 0, 0, 0.08);
 }
 .btn-primary:hover { background: var(--accent-dark); transform: translateY(-1px); }
+body.website-auth .btn-primary {
+  color: var(--ink);
+  box-shadow: 0 6px 20px rgba(95, 203, 130, 0.35), inset 0 -3px 0 rgba(0, 0, 0, 0.08);
+}
+body.website-auth .btn-primary:hover { background: var(--success); }
 
 .btn-ghost {
   color: var(--ink-subtle);

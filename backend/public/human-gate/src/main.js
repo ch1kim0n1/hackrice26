@@ -18,11 +18,16 @@ import {
   createGateSession,
   submitGateResult,
   register,
+  login,
   notifyNativeAuth,
   createPersonaInquiry,
   completePersonaInquiry,
 } from "./api.js";
 import { openPersonaFlow } from "./persona.js";
+import { saveSession, restoreSession } from "./session.js";
+
+const websiteAuth = /^\/(login|signup)(\/|$)/.test(location.pathname);
+const loginPage = /^\/login(\/|$)/.test(location.pathname);
 
 const $ = (id) => document.getElementById(id);
 
@@ -256,7 +261,14 @@ async function createAccount() {
     await runPersonaLeg();
     els.resultCopy.textContent = "Nice reflexes. Creating your account…";
     session.account = await register({ ...session.creds, gateToken: session.gateToken });
+    session.creds = null;
+    els.signupForm.reset();
     notifyNativeAuth(session.account);
+    if (websiteAuth) {
+      saveSession(session.account);
+      location.replace("/");
+      return;
+    }
   } catch (err) {
     els.resultTitle.textContent = "Signup failed";
     els.resultCopy.textContent = err.message || "Something went wrong.";
@@ -278,6 +290,7 @@ async function createAccount() {
 // ---------- wire-up ----------
 els.signupForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (els.btnSignup.disabled) return;
   const form = new FormData(els.signupForm);
   session.creds = {
     displayName: form.get("displayName")?.toString().trim() || undefined,
@@ -287,6 +300,17 @@ els.signupForm.addEventListener("submit", async (e) => {
   els.signupError.hidden = true;
   els.btnSignup.disabled = true;
   try {
+    if (websiteAuth) {
+      // Check storage before creating an account so a blocked browser store
+      // cannot leave the user with an account but no usable web session.
+      localStorage.setItem("nutriquest.storage-check", "1");
+      localStorage.removeItem("nutriquest.storage-check");
+    }
+    if (session.creds.displayName && session.creds.displayName.length < 2) {
+      throw new Error("Display name must be at least 2 characters.");
+    }
+    session.escalations = 0;
+    session.persona = null;
     const { gateToken } = await createGateSession();
     session.gateToken = gateToken;
     showScreen("intro");
@@ -339,3 +363,48 @@ els.debugToggle.addEventListener("click", () => {
 });
 
 updateDebug();
+
+if (websiteAuth) {
+  document.body.classList.add("website-auth");
+  document.title = `${loginPage ? "Log in" : "Sign up"} · NutriQuest`;
+  $("signup-login-link").hidden = false;
+  $("signup-home-link").hidden = false;
+  els.debugToggle.hidden = true;
+  for (const screen of els.screens) {
+    screen.hidden = screen.dataset.screen !== (loginPage ? "login" : "signup");
+  }
+  const activeButton = loginPage ? $("btn-login") : els.btnSignup;
+  activeButton.disabled = true;
+  restoreSession().then((auth) => {
+    if (auth) location.replace("/");
+  }).catch(() => {
+    // A temporary connection failure still allows an explicit login attempt.
+  }).finally(() => { activeButton.disabled = false; });
+}
+
+$("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $("btn-login");
+  const error = $("login-error");
+  if (button.disabled) return;
+  error.hidden = true;
+  button.disabled = true;
+  button.textContent = "Logging in…";
+  try {
+    const values = new FormData(form);
+    const auth = await login({
+      username: values.get("username").trim(),
+      password: values.get("password"),
+    });
+    saveSession(auth);
+    form.reset();
+    location.replace("/");
+  } catch (err) {
+    error.textContent = err.message || "Could not log in. Please try again.";
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Log in";
+  }
+});

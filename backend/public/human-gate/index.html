@@ -3,12 +3,12 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Prove You're Human</title>
+  <title>Sign up · NutriQuest</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="styles.css" />
-  <script src="https://cdn.withpersona.com/dist/persona-v5.8.0.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.withpersona.com/dist/persona-v5.8.0.js" crossorigin="anonymous" async></script>
 </head>
 <body>
   <div class="bg-orbs" aria-hidden="true">
@@ -19,6 +19,27 @@
 
   <main id="app">
 
+    <section class="screen" id="screen-login" data-screen="login" hidden>
+      <div class="card signup-card">
+        <a class="wordmark auth-home" href="/">nutriquest<span class="wordmark-dot">.</span></a>
+        <h1 class="headline">Welcome back</h1>
+        <p class="subhead">Your next food adventure awaits.</p>
+        <form id="login-form">
+          <label class="field">
+            <span class="field-label">Username</span>
+            <input type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" required minlength="3" maxlength="24" pattern="[a-zA-Z0-9_.\-]+" placeholder="Your username" />
+          </label>
+          <label class="field">
+            <span class="field-label">Password</span>
+            <input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="128" placeholder="Your password" />
+          </label>
+          <p class="form-error" id="login-error" role="alert" hidden></p>
+          <button type="submit" class="btn btn-primary btn-block" id="btn-login">Log in</button>
+        </form>
+        <p class="auth-switch">New to NutriQuest? <a href="/signup/">Sign up</a></p>
+      </div>
+    </section>
+
     <!-- ============ SCREEN: SIGNUP ============ -->
     <section class="screen" id="screen-signup" data-screen="signup">
       <div class="card signup-card">
@@ -26,27 +47,29 @@
         <h1 class="headline">Create your account</h1>
         <p class="subhead">One quick step before you're in.</p>
 
-        <form id="signup-form" autocomplete="off">
+        <form id="signup-form">
           <label class="field">
             <span class="field-label">Display name</span>
-            <input type="text" name="displayName" placeholder="Ada Lovelace" maxlength="32" />
+            <input type="text" name="displayName" autocomplete="nickname" placeholder="Ada Lovelace" minlength="2" maxlength="32" />
           </label>
           <label class="field">
             <span class="field-label">Username</span>
-            <input type="text" name="username" placeholder="ada_l" required
+            <input type="text" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" placeholder="ada_l" required
                    minlength="3" maxlength="24" pattern="[a-zA-Z0-9_.\-]+" />
           </label>
           <label class="field">
             <span class="field-label">Password</span>
-            <input type="password" name="password" placeholder="8+ characters" required minlength="8" maxlength="128" />
+            <input type="password" name="password" autocomplete="new-password" placeholder="8+ characters" required minlength="8" maxlength="128" />
           </label>
-          <p class="form-error" id="signup-error" hidden></p>
+          <p class="form-error" id="signup-error" role="alert" hidden></p>
           <button type="submit" class="btn btn-primary btn-block" id="btn-signup">
             Continue
           </button>
         </form>
 
         <p class="fine-print">No email needed. Protected by a human-check mini-game.</p>
+        <p class="auth-switch" id="signup-login-link" hidden>Already have an account? <a href="/login/">Log in</a></p>
+        <a class="auth-home-link" id="signup-home-link" href="/" hidden>Back to NutriQuest</a>
       </div>
     </section>
 

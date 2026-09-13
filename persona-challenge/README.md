@@ -85,3 +85,27 @@ score, flags, escalation count. Useful for judging/demo.
 | `src/api.js` | backend client (gate session, result, register, iOS handoff) |
 | `src/stats.js` | post-signup scoring breakdown renderer |
 | `src/main.js` | screen state machine |
+
+## Website login and signup
+
+The backend serves the existing landing page at `/`, login at `/login/`,
+and signup at `/signup/`. Start it with `cd backend && npm run dev` from
+the repository root, then open `http://localhost:4000/login/`.
+
+Website signup reuses the human check and automatically saves the issued
+session and returns home. Returning users are checked through `/auth/me`;
+expired sessions return to the form. The homepage login link becomes logout,
+which revokes the session. The native/demo gate at `/gate/` keeps its stats
+and completion screens. No passwords are saved in browser storage.
+
+Browser regression tests against an isolated in-memory backend:
+
+```sh
+npm --prefix backend run build
+npm --prefix persona-challenge ci
+npm --prefix persona-challenge run test:website
+```
+
+Run `npx playwright install chromium` in `persona-challenge` if needed, or set
+`PLAYWRIGHT_CHANNEL=msedge` to use an installed Edge browser. `WEBSITE_TEST_URL`
+can point to an already-running disposable backend instead of starting one.

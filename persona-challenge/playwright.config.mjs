@@ -5,10 +5,12 @@ import { defineConfig } from "@playwright/test";
 // server (backend has its own vitest suite).
 export default defineConfig({
   testDir: "./e2e",
+  testIgnore: "website.spec.mjs",
   timeout: 45_000,
   retries: 0,
   reporter: "list",
   use: {
+    channel: process.env.PLAYWRIGHT_CHANNEL || undefined,
     baseURL: "http://localhost:8123",
     viewport: { width: 420, height: 800 },
   },

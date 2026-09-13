@@ -11,6 +11,9 @@
 const DEFAULT_API = "http://localhost:4000";
 
 export function apiBase() {
+  // Website credentials and sessions belong to this origin. Query overrides
+  // are only for the standalone/native gate integration.
+  if (/^\/(login|signup)(\/|$)/.test(location.pathname)) return location.origin;
   const param = new URLSearchParams(location.search).get("api");
   // Served by the backend itself at /gate → same origin is the API. Only a
   // standalone dev server (python http.server on :8123) needs the fallback.
@@ -59,6 +62,8 @@ export function submitGateResult(gateToken, scoring) {
 export function register({ username, password, displayName, gateToken }) {
   return post("/auth/register", { username, password, displayName, gateToken });
 }
+
+export const login = ({ username, password }) => post("/auth/login", { username, password });
 
 // Persona leg — server creates an inquiry bound to the gate session and
 // returns { inquiryId, sessionToken } for the embedded widget.
