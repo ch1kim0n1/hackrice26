@@ -672,6 +672,39 @@ struct JourneyTimeline: Decodable, Sendable {
     let dropsByDay: [JourneyBucket]
 }
 
+/// One completed workout as the server stored it from a vitals upload.
+/// `start`/`end` stay Strings for the same reason as `CasinoTrendPoint.bucket`.
+struct JourneyWorkout: Decodable, Sendable, Identifiable {
+    let activityType: String
+    let start: String
+    let end: String
+    let durationMinutes: Double
+    let activeCalories: Double?
+    let distanceMeters: Double?
+    let averageHeartRateBpm: Double?
+    let maxHeartRateBpm: Double?
+
+    var id: String { "\(activityType)|\(start)" }
+    var startDate: Date? { CasinoTrendPoint.parse(start) }
+}
+
+/// One calendar day (`date` is YYYY-MM-DD) of health activity.
+struct JourneyActivityDay: Decodable, Sendable, Identifiable {
+    let date: String
+    let workouts: [JourneyWorkout]
+    let workoutMinutes: Int
+    let workoutCalories: Int
+    let steps: Int?
+    let activeCalories: Int?
+    let exerciseMinutes: Int?
+
+    var id: String { date }
+}
+
+struct JourneyActivity: Decodable, Sendable {
+    let byDay: [JourneyActivityDay]
+}
+
 struct JourneyResponse: Decodable, Sendable {
     let profile: UserProfileDTO
     let summary: JourneySummary
@@ -679,6 +712,8 @@ struct JourneyResponse: Decodable, Sendable {
     let timeline: JourneyTimeline
     let recentDrops: [InventoryItemDTO]
     let vitals: [JourneyVitalsPoint]
+    /// Absent from servers that predate the Journey calendar.
+    let activity: JourneyActivity?
 }
 
 // MARK: - Promo codes
