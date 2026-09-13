@@ -172,15 +172,15 @@ struct BodyMetricsView: View {
                 .font(NQText.bodyL.font)
                 .foregroundStyle(NQTheme.ink)
             Spacer()
-            Picker("Units", selection: Binding(
-                get: { draft.usesMetric },
-                set: { draft.usesMetric = $0; gameState.setUnitsPreference($0) }
-            )) {
+            Picker("Units", selection: $draft.usesMetric) {
                 Text("Imperial").tag(false)
                 Text("Metric").tag(true)
             }
             .pickerStyle(.segmented)
             .frame(width: 190)
+            // Persisting inside the Picker's set made the segmented control
+            // snap back mid-gesture; onChange lands after it settles.
+            .onChange(of: draft.usesMetric) { gameState.setUnitsPreference($0) }
         }
         .padding(.vertical, NQTheme.spaceS)
     }

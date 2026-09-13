@@ -49,6 +49,10 @@ struct CharacterDetailView: View {
                     Button("Close") { dismiss() }
                 }
             }
+            // Retry the catalog on open — a fetch that failed at launch
+            // (offline, stale deploy) would otherwise leave this sheet on
+            // the Strike-only fallback moveset forever.
+            .task { await gameState.loadCharacterCatalog() }
         }
     }
 

@@ -24,7 +24,7 @@ public struct ScannerView: UIViewControllerRepresentable {
     public func makeUIViewController(context: Context) -> DataScannerViewController {
         let scanner = DataScannerViewController(
             recognizedDataTypes: [.barcode(symbologies: Self.supportedSymbologies)],
-            qualityLevel: .balanced,
+            qualityLevel: .accurate,
             recognizesMultipleItems: false,
             isHighFrameRateTrackingEnabled: true,
             isPinchToZoomEnabled: true,

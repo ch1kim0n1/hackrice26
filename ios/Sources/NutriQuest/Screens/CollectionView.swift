@@ -197,21 +197,19 @@ struct CollectionView: View {
                     CharacterArtwork(character: character)
                         .frame(width: 96, height: 124)
                 ),
-                artworkSize: CGSize(width: 96, height: 124)
+                artworkSize: CGSize(width: 96, height: 124),
+                // Sell/merge/faint badges take the top-right corner — the
+                // rarity chip must yield it or the two paint on each other.
+                hidesRarityChip: sellMode || mergeMode || gameState.faintedIds.contains(character.id)
             )
             .overlay {
                 rarityAura(for: character)
             }
             .overlay(alignment: .topLeading) {
                 // Star count lives top-left on every owned card (#16) —
-                // ★1 included, so an unfused card still reads its level.
+                // drawn as a row of stars, not "★N" text.
                 if !character.isLocked {
-                    Text("★\(character.starLevel)")
-                        .font(NQText.captionS.font.weight(.heavy))
-                        .foregroundStyle(NQTheme.gold.readableTextColor())
-                        .nqPadding(.badge)
-                        .padding(.horizontal, NQTheme.spaceXS)
-                        .background(Capsule().fill(NQTheme.gold))
+                    starBadge(character.starLevel)
                         .padding(NQTheme.spaceS)
                         .allowsHitTesting(false)
                 }
@@ -241,6 +239,21 @@ struct CollectionView: View {
         .accessibilityLabel("\(character.name), \(character.rarity.label) rarity\(character.isLocked ? "" : ", \(character.starLevel) star\(character.starLevel == 1 ? "" : "s")")")
         .accessibilityHint(cardHint(for: character, isSelected: isSelected))
         .nqShineSweep(active: character.rarity >= .legendary)
+    }
+
+    /// Mastery as drawn stars — ★★★ reads at a glance where "3 stars" text
+    /// did not. Five max, so the row never wraps on a card.
+    private func starBadge(_ stars: Int) -> some View {
+        HStack(spacing: 2) {
+            ForEach(0..<max(1, stars), id: \.self) { _ in
+                Image(systemName: "star.fill")
+                    .font(.system(size: 10, weight: .bold))
+                    .foregroundStyle(NQTheme.gold.readableTextColor())
+            }
+        }
+        .nqPadding(.badge)
+        .padding(.horizontal, NQTheme.spaceXS)
+        .background(Capsule().fill(NQTheme.gold))
     }
 
     private func cardHint(for character: Character, isSelected: Bool) -> String {

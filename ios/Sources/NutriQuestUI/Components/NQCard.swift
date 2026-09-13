@@ -40,6 +40,9 @@ public struct NQCharacterCard: View {
     private let artwork: AnyView?
     private let shiny: Bool
     private let artworkSize: CGSize
+    /// When a screen pins its own badge top-right (faint, sell, merge), the
+    /// built-in rarity chip would sit on top of it — this hides it.
+    private let hidesRarityChip: Bool
 
     /// Creates a character card.
     /// - Parameter artworkSize: Frame for the chibi/artwork area; defaults to
@@ -53,7 +56,8 @@ public struct NQCharacterCard: View {
         expression: ChibiExpression = .happy,
         artwork: AnyView? = nil,
         shiny: Bool = false,
-        artworkSize: CGSize = CGSize(width: 80, height: 104)
+        artworkSize: CGSize = CGSize(width: 80, height: 104),
+        hidesRarityChip: Bool = false
     ) {
         self.name = name
         self.color = color
@@ -64,6 +68,7 @@ public struct NQCharacterCard: View {
         self.artwork = artwork
         self.shiny = shiny
         self.artworkSize = artworkSize
+        self.hidesRarityChip = hidesRarityChip
     }
 
     public var body: some View {
@@ -174,7 +179,9 @@ public struct NQCharacterCard: View {
             }
         }
         .overlay(alignment: .topTrailing) {
-            rarityChip.padding(NQTheme.spaceS + 2)
+            if !hidesRarityChip {
+                rarityChip.padding(NQTheme.spaceS + 2)
+            }
         }
         .overlay(alignment: .top) {
             if state == .locked {
