@@ -6,6 +6,7 @@ import NutriQuestUI
 /// First screen of the flow: hero art, headline, enter-the-game CTA.
 struct OBWelcomeStep: View {
     let onGetStarted: () -> Void
+    let onLogIn: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,6 +26,44 @@ struct OBWelcomeStep: View {
             OBPrimaryButton(title: "Build your squad", action: onGetStarted)
                 .padding(.top, 22)
                 .nqSlideUp(delay: 0.14)
+
+            Button(action: onLogIn) {
+                Text("I already have an account")
+                    .font(NQFont.heading.font(16))
+                    .foregroundStyle(OBTheme.accentDark)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+            .padding(.top, 4)
+            .nqSlideUp(delay: 0.18)
+        }
+    }
+}
+
+// MARK: - Account
+
+/// Sign up or log in before the questionnaire. Hosts the web gate, which
+/// already carries the app's theme: signup runs the reflex human check, login
+/// runs the Persona identity check, and the page hands the session back.
+struct OBAccountStep: View {
+    let mode: HumanGateMode
+    let onAuthenticated: () -> Void
+
+    var body: some View {
+        if let url = HumanGateWebView.url(mode: mode) {
+            HumanGateWebView(url: url, onAuth: onAuthenticated)
+                // The page pads its own card; let it use the full width.
+                .padding(.horizontal, -OBTheme.screenInset)
+                .ignoresSafeArea(.container, edges: .bottom)
+        } else {
+            VStack(spacing: NQTheme.spaceS) {
+                Image(systemName: "exclamationmark.triangle")
+                    .font(.system(size: 28))
+                    .foregroundStyle(NQTheme.warning)
+                Text("Couldn't open sign in")
+                    .font(NQText.headingL.font.weight(.bold))
+                    .foregroundStyle(NQTheme.ink)
+            }
+            .frame(maxHeight: .infinity)
         }
     }
 }

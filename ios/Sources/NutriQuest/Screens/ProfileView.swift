@@ -39,6 +39,9 @@ struct ProfileView: View {
     /// QA hook: `-uiBodyMetrics` opens the body-and-goals editor directly.
     @State private var showBodyMetrics = ProfileView.qaArg("-uiBodyMetrics")
     @State private var showAccount = false
+    @State private var confirmLogOut = false
+    /// Observed so the Log out row appears and disappears with the session.
+    @ObservedObject private var session = SessionStore.shared
 
     var body: some View {
         ScrollView {
@@ -107,6 +110,24 @@ struct ProfileView: View {
             NavigationStack {
                 BodyMetricsView(gameState: gameState, metrics: gameState.bodyMetrics)
             }
+        }
+        .confirmationDialog("Log out of NutriQuest?", isPresented: $confirmLogOut, titleVisibility: .visible) {
+            Button("Log out", role: .destructive) { logOut() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Your squad stays on your account. Log back in any time.")
+        }
+    }
+
+    /// Revokes the session server-side, forgets it locally, and reloads
+    /// everything keyed on the player as a guest.
+    private func logOut() {
+        Task {
+            await APIClient.shared.logout()
+            SessionStore.shared.clear()
+            await gameState.loadProfile()
+            await gameState.refreshTasks()
+            await gameState.refreshInventory(limit: 200)
         }
     }
 
@@ -414,6 +435,20 @@ struct ProfileView: View {
                 }
                 .buttonStyle(.nqPressable(scale: 0.98, haptic: false))
                 Divider().foregroundStyle(NQTheme.hairline)
+                if session.isAuthenticated {
+                    Button {
+                        confirmLogOut = true
+                    } label: {
+                        rowContent(ProfileSettingsRow(
+                            label: "Log out",
+                            systemImage: "rectangle.portrait.and.arrow.right",
+                            trailing: session.username.map { "@\($0)" },
+                            isDestructive: true
+                        ))
+                    }
+                    .buttonStyle(.nqPressable(scale: 0.98, haptic: false))
+                    Divider().foregroundStyle(NQTheme.hairline)
+                }
 
                 ForEach(rows) { row in
                     Group {

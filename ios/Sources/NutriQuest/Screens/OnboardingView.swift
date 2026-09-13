@@ -130,7 +130,8 @@ struct OBAnswers {
 // MARK: - Flow
 
 /// hackrice onboarding flow, implemented from the Figma reference:
-/// welcome, a calibration questionnaire (gender, height and
+/// welcome, an account (sign up, or log in through Persona), a calibration
+/// questionnaire (gender, height and
 /// weight, birthdate, activity, goal, desired weight, pace), Apple Health connect,
 /// and the plan-ready celebration.
 struct OnboardingView: View {
@@ -139,12 +140,14 @@ struct OnboardingView: View {
 
     /// Ordered steps of the flow. Raw value doubles as progress index.
     enum Step: Int, CaseIterable {
-        case welcome, gender, heightWeight, birthdate, activity, goal
+        case welcome, account, gender, heightWeight, birthdate, activity, goal
         case desiredWeight, motivation, speed, appleHealth, planReady
     }
 
     @State private var step: Step = .welcome
     @State private var answers = OBAnswers()
+    /// Whether the account step opens on signup or login.
+    @State private var accountMode: HumanGateMode = .signup
     /// Apple Health step: true while the permission sheet + first upload run.
     @State private var connectingHealth = false
 
@@ -178,7 +181,17 @@ struct OnboardingView: View {
     @ViewBuilder private var stepView: some View {
         switch step {
         case .welcome:
-            OBWelcomeStep { advance(to: .gender) }
+            OBWelcomeStep(
+                onGetStarted: { startAccount(.signup) },
+                onLogIn: { startAccount(.login) }
+            )
+        case .account:
+            OBAccountStep(mode: accountMode) {
+                // The session now belongs to the account, so everything the
+                // app loaded as a guest is re-fetched for that player.
+                Task { await gameState.loadProfile() }
+                advance(to: .gender)
+            }
         case .gender:
             BodySexStep(selection: $answers.gender) { advance(to: .heightWeight) }
         case .heightWeight:
@@ -257,12 +270,25 @@ struct OnboardingView: View {
         withAnimation { step = next }
     }
 
+    /// Opens the account step, or skips it when already signed in.
+    private func startAccount(_ mode: HumanGateMode) {
+        guard !SessionStore.shared.isAuthenticated else {
+            advance(to: .gender)
+            return
+        }
+        accountMode = mode
+        advance(to: .account)
+    }
+
     /// Moves one step back; the branch skips mirror the forward path.
     private func goBack() {
         let previous: Step
         switch step {
         case .speed where answers.goal == .maintain:
             previous = .desiredWeight
+        case .gender:
+            // The account step is done once signed in; back goes home.
+            previous = .welcome
         default:
             previous = Step(rawValue: step.rawValue - 1) ?? .welcome
         }

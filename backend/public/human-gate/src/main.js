@@ -4,6 +4,14 @@
 //     ├─ pass  → result → register account → stats → done
 //     ├─ escalate → +1 harder round (quiet "bonus") → rescore → result
 //     └─ flag  → still registers; flag rides on the account via the gate token
+//
+//   login → password → Persona identity check (when configured) → session
+//     └─ honeypot (hidden field, hidden skip link, automated browser) → rickroll
+//
+// Persona runs at login only; signup is gated by the reflex check alone.
+//
+// Three hosts: the website (/login/, /signup/), the standalone gate (/gate/),
+// and the iOS onboarding flow, which embeds /gate/?mode=signup|login.
 
 import { randomId } from "./rng.js";
 import {
@@ -18,11 +26,21 @@ import {
   createGateSession,
   submitGateResult,
   register,
+  login,
+  completePersonaLogin,
+  reportHoneypot,
   notifyNativeAuth,
-  createPersonaInquiry,
-  completePersonaInquiry,
 } from "./api.js";
 import { openPersonaFlow } from "./persona.js";
+import { saveSession, restoreSession } from "./session.js";
+
+const websiteAuth = /^\/(login|signup)(\/|$)/.test(location.pathname);
+const loginPage = /^\/login(\/|$)/.test(location.pathname);
+// Set by the iOS app when it embeds the gate inside onboarding.
+const embeddedMode = new URLSearchParams(location.search).get("mode");
+const startOnLogin = loginPage || embeddedMode === "login";
+
+const RICKROLL_URL = "https://www.youtube.com/watch?v=dQw4w9WgXcQ";
 
 const $ = (id) => document.getElementById(id);
 
@@ -62,7 +80,6 @@ const session = {
   gateToken: null,
   creds: null,
   account: null,
-  persona: null, // { inquiryId, status } once the Persona leg runs
 };
 
 function updateDebug() {
@@ -80,7 +97,6 @@ function updateDebug() {
           }
         : null,
       flagged: session.flagged,
-      persona: session.persona,
     },
     null,
     2
@@ -199,47 +215,6 @@ async function evaluate() {
   updateDebug();
 }
 
-// ---------- persona verification ----------
-// Second layer of the gate: Persona's embedded flow (doc check + liveness).
-// Runs only when the backend is configured — a 503 PERSONA_NOT_CONFIGURED
-// means the key/template aren't set and the leg is skipped entirely. The
-// outcome is non-punitive like the pre-gate: cancel or decline still let the
-// account register, with the server-verified status bound to the session.
-async function runPersonaLeg() {
-  let inquiry;
-  try {
-    inquiry = await createPersonaInquiry(session.gateToken);
-  } catch (err) {
-    if (err.code === "PERSONA_NOT_CONFIGURED") return; // leg off — skip silently
-    throw err;
-  }
-  session.persona = { inquiryId: inquiry.inquiryId, status: "started" };
-  updateDebug();
-
-  els.resultTitle.textContent = "One more check";
-  els.resultCopy.textContent = "Quick identity verification: takes about a minute.";
-  els.resultSpinner.style.display = "none";
-
-  try {
-    const { status } = await openPersonaFlow(inquiry);
-    session.persona.status = status;
-  } catch {
-    session.persona.status = "closed"; // cancelled or widget error
-  }
-  updateDebug();
-
-  // Record whatever Persona actually reports — not the client's word.
-  try {
-    const { status } = await completePersonaInquiry(session.gateToken, inquiry.inquiryId);
-    session.persona.status = status;
-  } catch { /* keep the client-observed status in the debug drawer */ }
-  updateDebug();
-
-  showScreen("result");
-  els.resultTitle.textContent = "Human confirmed";
-  els.resultSpinner.style.display = "";
-}
-
 // ---------- account creation ----------
 // The gate token was issued at signup-submit time and is now scored. Report
 // the verdict, then register — the token is consumed server-side and binds
@@ -253,10 +228,15 @@ async function createAccount() {
 
   try {
     await submitGateResult(session.gateToken, session.scoring);
-    await runPersonaLeg();
-    els.resultCopy.textContent = "Nice reflexes. Creating your account…";
     session.account = await register({ ...session.creds, gateToken: session.gateToken });
+    session.creds = null;
+    els.signupForm.reset();
     notifyNativeAuth(session.account);
+    if (websiteAuth) {
+      saveSession(session.account);
+      location.replace("/");
+      return;
+    }
   } catch (err) {
     els.resultTitle.textContent = "Signup failed";
     els.resultCopy.textContent = err.message || "Something went wrong.";
@@ -275,9 +255,37 @@ async function createAccount() {
   showScreen("stats");
 }
 
+// ---------- login ----------
+// With Persona configured the password only opens an identity check: the
+// session comes from the server once Persona reports a verified human. A
+// closed or declined widget still asks the server, which refuses the login.
+async function verifyLoginWithPersona({ loginToken, inquiryId, sessionToken }) {
+  try {
+    await openPersonaFlow({ inquiryId, sessionToken });
+  } catch {
+    // Closed or errored: the server decides from Persona's real status.
+  }
+  return completePersonaLogin({ loginToken, inquiryId });
+}
+
+// ---------- honeypot ----------
+// Only an automated agent reaches these: a field no person can see, a skip
+// link that is visually hidden, or an automated browser arriving at the
+// Persona check. The server logs the hit to the security monitor, then the
+// visitor gets rickrolled.
+async function rickroll(trap) {
+  try {
+    await reportHoneypot(trap);
+  } catch {
+    // The report always answers 403; the redirect never waits on it.
+  }
+  location.replace(RICKROLL_URL);
+}
+
 // ---------- wire-up ----------
 els.signupForm.addEventListener("submit", async (e) => {
   e.preventDefault();
+  if (els.btnSignup.disabled) return;
   const form = new FormData(els.signupForm);
   session.creds = {
     displayName: form.get("displayName")?.toString().trim() || undefined,
@@ -287,6 +295,16 @@ els.signupForm.addEventListener("submit", async (e) => {
   els.signupError.hidden = true;
   els.btnSignup.disabled = true;
   try {
+    if (websiteAuth) {
+      // Check storage before creating an account so a blocked browser store
+      // cannot leave the user with an account but no usable web session.
+      localStorage.setItem("nutriquest.storage-check", "1");
+      localStorage.removeItem("nutriquest.storage-check");
+    }
+    if (session.creds.displayName && session.creds.displayName.length < 2) {
+      throw new Error("Display name must be at least 2 characters.");
+    }
+    session.escalations = 0;
     const { gateToken } = await createGateSession();
     session.gateToken = gateToken;
     showScreen("intro");
@@ -326,7 +344,6 @@ els.btnRestart.addEventListener("click", () => {
   session.gateToken = null;
   session.creds = null;
   session.account = null;
-  session.persona = null;
   els.resultSpinner.style.display = "";
   els.btnBackSignup.hidden = true;
   els.signupForm.reset();
@@ -339,3 +356,84 @@ els.debugToggle.addEventListener("click", () => {
 });
 
 updateDebug();
+
+if (websiteAuth || embeddedMode) {
+  $("signup-login-link").hidden = false;
+  for (const screen of els.screens) {
+    screen.hidden = screen.dataset.screen !== (startOnLogin ? "login" : "signup");
+  }
+}
+
+if (websiteAuth) {
+  document.body.classList.add("website-auth");
+  document.title = `${loginPage ? "Log in" : "Sign up"} · NutriQuest`;
+  $("signup-home-link").hidden = false;
+  els.debugToggle.hidden = true;
+  const activeButton = loginPage ? $("btn-login") : els.btnSignup;
+  activeButton.disabled = true;
+  restoreSession().then((auth) => {
+    if (auth) location.replace("/");
+  }).catch(() => {
+    // A temporary connection failure still allows an explicit login attempt.
+  }).finally(() => { activeButton.disabled = false; });
+}
+
+if (embeddedMode) {
+  // Inside the app there is no site to navigate to: the account links swap
+  // screens in place and the wordmark stays put.
+  els.debugToggle.hidden = true;
+  for (const link of document.querySelectorAll(".auth-switch a")) {
+    link.addEventListener("click", (event) => {
+      event.preventDefault();
+      showScreen(link.getAttribute("href").startsWith("/login") ? "login" : "signup");
+    });
+  }
+  document.querySelector(".auth-home").addEventListener("click", (event) => event.preventDefault());
+}
+
+$("login-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const button = $("btn-login");
+  const error = $("login-error");
+  if (button.disabled) return;
+  const values = new FormData(form);
+  if (values.get("backupCode")) {
+    await rickroll("field");
+    return;
+  }
+  error.hidden = true;
+  button.disabled = true;
+  button.textContent = "Logging in…";
+  try {
+    let auth = await login({
+      username: values.get("username").trim(),
+      password: values.get("password"),
+    });
+    if (auth.personaRequired) {
+      if (navigator.webdriver) {
+        await rickroll("webdriver");
+        return;
+      }
+      button.textContent = "Verifying you're human…";
+      auth = await verifyLoginWithPersona(auth);
+    }
+    form.reset();
+    notifyNativeAuth(auth);
+    if (websiteAuth) {
+      saveSession(auth);
+      location.replace("/");
+      return;
+    }
+    els.doneTitle.textContent = "Welcome back";
+    els.doneCopy.textContent = `Signed in as ${auth.account.displayName || auth.account.username}.`;
+    els.btnRestart.hidden = true;
+    showScreen("done");
+  } catch (err) {
+    error.textContent = err.message || "Could not log in. Please try again.";
+    error.hidden = false;
+  } finally {
+    button.disabled = false;
+    button.textContent = "Log in";
+  }
+});

@@ -69,6 +69,8 @@ export function buildApp(): express.Express {
   // "Prove You're Human" signup gate — same origin as the API, so the web
   // app defaults apiBase to the server that served it (no ?api= needed).
   app.use("/gate", express.static(join(__dirname, "..", "public", "human-gate")));
+  // Website account pages share the existing themed signup and human check.
+  app.use(["/login", "/signup"], express.static(join(__dirname, "..", "public", "human-gate")));
   // Judge demo — standalone web mini-game, no auth, no server writes.
   app.use("/play", express.static(join(__dirname, "..", "public", "judge-demo")));
   app.use("/characters", charactersRouter);
@@ -86,6 +88,9 @@ export function buildApp(): express.Express {
   app.get("/health", (_req, res) => res.json({ ok: true }));
   // Readiness probe for the Tiger Cloud store (returns 503 until DATABASE_URL is wired).
   app.use(readinessRouter);
+
+  app.use("/design/logo", express.static(join(__dirname, "..", "..", "design", "logo")));
+  app.use(express.static(join(__dirname, "..", "..", "landing")));
 
   // JSON body-parse errors (e.g. malformed JSON, Infinity literal) land here
   // too — Express emits SyntaxError with `type: "entity.parse.failed"`.

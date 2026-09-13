@@ -33,23 +33,38 @@ signup (username + password, no email)
     ├─ clean pass           → POST /result
     ├─ ambiguous (30–70)    → silent "bonus round" escalation → rescore
     └─ bot-like             → still proceeds; flag recorded on the account
-  → Persona embedded flow (when backend is configured)
-      POST /human-gate/persona/inquiry   → { inquiryId, sessionToken }
-      widget opens → onComplete/onCancel
-      POST /human-gate/persona/complete  → server-verified status recorded
   → POST /auth/register → stats → done
+
+login (username + password)
+  → POST /auth/login
+    ├─ Persona not configured → session
+    └─ Persona configured     → 202 { loginToken, inquiryId, sessionToken }
+        widget opens → onComplete/onCancel
+        POST /auth/login/persona/complete → session only when Persona
+        reports the inquiry completed or approved
 ```
 
-Persona config lives server-side (`PERSONA_API_KEY`, `PERSONA_TEMPLATE_ID`
-in `backend/.env`). The inquiry's `reference-id` is `sha256(gateToken)` —
-the raw token never goes to Persona. When the backend isn't configured the
-widget step is skipped and signup works exactly as before. Cancel/decline
-still register: the status rides on the account for review, matching the
-gate's non-punitive design.
+Persona runs at login only. Its config lives server-side (`PERSONA_API_KEY`,
+`PERSONA_TEMPLATE_ID` in `backend/.env`). Each login opens a fresh inquiry
+whose `reference-id` is `sha256(loginToken)`, so the raw token never goes to
+Persona, and the status is read back from Persona server-side rather than
+trusted from the widget. A declined, cancelled or expired check refuses the
+login; the challenge is single use and lasts 10 minutes. Without Persona
+configured, login returns the session straight from the password.
 
 The backend requires a scored gate token at `/auth/register` — an account
 cannot be created without a completed gate run. Verdicts are bound to the
 account row (`human_gate_session.player_id`) for review.
+
+## Honeypot
+
+The login page carries three traps that only an automated agent reaches: a
+visually hidden "Backup verification code" field, a visually hidden "Skip
+identity verification" link, and a source comment pointing at
+`/auth/login/skip-verification`. An automated browser (`navigator.webdriver`)
+arriving at the Persona check trips it too. Nothing is skipped: the hit is
+logged to the Human-vs-AI demo's security monitor (`HONEYPOT_TRIGGERED`,
+`AGENT_RICKROLLED`) and the visitor is sent to the rickroll.
 
 ## Challenge design
 
@@ -76,8 +91,8 @@ score, flags, escalation count. Useful for judging/demo.
 
 | file | role |
 |---|---|
-| `index.html` | all screens (signup, intro, game, result, stats, done) |
-| `styles.css` | full visual system — NutriQuest theme, orb/anims, HUD |
+| `index.html` | all screens (login, signup, intro, game, result, stats, done) |
+| `styles.css` | full visual system — NutriQuest app theme, orb/anims, HUD |
 | `src/rng.js` | CSPRNG helpers |
 | `src/challenge.js` | combinatorial round-spec generation |
 | `src/game.js` | arena renderer + telemetry capture |
@@ -85,3 +100,27 @@ score, flags, escalation count. Useful for judging/demo.
 | `src/api.js` | backend client (gate session, result, register, iOS handoff) |
 | `src/stats.js` | post-signup scoring breakdown renderer |
 | `src/main.js` | screen state machine |
+
+## Website login and signup
+
+The backend serves the existing landing page at `/`, login at `/login/`,
+and signup at `/signup/`. Start it with `cd backend && npm run dev` from
+the repository root, then open `http://localhost:4000/login/`.
+
+Website signup reuses the human check and automatically saves the issued
+session and returns home. Returning users are checked through `/auth/me`;
+expired sessions return to the form. The homepage login link becomes logout,
+which revokes the session. The native/demo gate at `/gate/` keeps its stats
+and completion screens. No passwords are saved in browser storage.
+
+Browser regression tests against an isolated in-memory backend:
+
+```sh
+npm --prefix backend run build
+npm --prefix persona-challenge ci
+npm --prefix persona-challenge run test:website
+```
+
+Run `npx playwright install chromium` in `persona-challenge` if needed, or set
+`PLAYWRIGHT_CHANNEL=msedge` to use an installed Edge browser. `WEBSITE_TEST_URL`
+can point to an already-running disposable backend instead of starting one.

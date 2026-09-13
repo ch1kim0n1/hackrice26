@@ -93,8 +93,8 @@ async function playGame(page) {
 
 async function runSignupToGame(page) {
   await page.goto("/");
-  await page.fill('input[name="username"]', "e2e_user");
-  await page.fill('input[name="password"]', "hunter2!!");
+  await page.fill('#signup-form input[name="username"]', "e2e_user");
+  await page.fill('#signup-form input[name="password"]', "hunter2!!");
   await page.click("#btn-signup");
   await expect(page.locator("#screen-intro")).toBeVisible();
   await page.click("#btn-start");
