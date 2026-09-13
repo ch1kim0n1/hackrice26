@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>BackendBaseURL</key>
-	<string>https://main-production-3bbd.up.railway.app</string>
+	<string>https://backend-production-3ade.up.railway.app</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleExecutable</key>
@@ -21,7 +21,7 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>HumanGateURL</key>
-	<string>https://main-production-3bbd.up.railway.app/gate/</string>
+	<string>https://backend-production-3ade.up.railway.app/gate/</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>
