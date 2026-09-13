@@ -204,6 +204,44 @@ export function saveProfile(playerId: string, profile: PlayerProfile): void {
   db.prepare(
     `UPDATE user_profile SET payload = ?, updated_at = ? WHERE player_id = ?`
   ).run(JSON.stringify(profile), profile.updatedAt, playerId);
+  if (hasDatabaseUrl()) {
+    // Every profile mutation funnels through here, so this single site covers
+    // PUT/PATCH edits, ranked RR updates, and nutrition-streak bookkeeping --
+    // there is no separate "seasons"/"rankings" model to mirror (the app has
+    // none by design); RR and streak both live in this same payload.
+    enqueueMirror("profile_update", `${playerId}:${profile.updatedAt}`, {
+      playerId,
+      updatedAt: profile.updatedAt,
+      measurements: {
+        age: profile.age,
+        sex: profile.sex,
+        heightCm: profile.heightCm,
+        weightKg: profile.weightKg,
+        rr: profile.rr,
+        rankedWins: profile.rankedWins,
+        rankedLosses: profile.rankedLosses,
+        nutritionStreakDays: profile.nutritionStreakDays,
+        lastNutritionDay: profile.lastNutritionDay,
+        cookbookBoosts: profile.cookbookBoosts,
+      },
+      activityGoal: { activity: profile.activity, goal: profile.goal },
+      calculatedTargets: {
+        calorieTarget: profile.calorieTarget,
+        proteinTargetG: profile.proteinTargetG,
+        carbsTargetG: profile.carbsTargetG,
+        fatTargetG: profile.fatTargetG,
+      },
+      bodyType: profile.bodyType ?? null,
+    });
+    // The other half of the user_profile -> TigerData mapping (see
+    // db-documentation/10-schema-parity-audit.md): theme/active-character
+    // preferences go to app.player_settings, not app.profile_versions.
+    enqueueMirror("player_settings_update", `${playerId}:settings`, {
+      playerId,
+      theme: profile.colorMode ?? null,
+      activeCharacterId: profile.activeCharacterId ?? null,
+    });
+  }
 }
 
 /** Public rank block — RR + derived rank + progress to the next floor. */

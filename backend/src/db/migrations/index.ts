@@ -17,6 +17,8 @@ import { migration as scanMintAndMeals } from "./016_scan_mint_and_meals";
 import { migration as progression } from "./017_progression";
 import { migration as battleMatches } from "./018_battle_matches";
 import { migration as healMissingTables } from "./019_heal_missing_tables";
+import { migration as mirrorOutboxKindsV2 } from "./020_mirror_outbox_kinds_v2";
+import { migration as mirrorOutboxKindsV3 } from "./021_mirror_outbox_kinds_v3";
 
 export const migrations = [
   initial,
@@ -37,5 +39,7 @@ export const migrations = [
   scanMintAndMeals,
   progression,
   battleMatches,
-  healMissingTables
+  healMissingTables,
+  mirrorOutboxKindsV2,
+  mirrorOutboxKindsV3
 ];

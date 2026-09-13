@@ -25,7 +25,19 @@ export type MirrorKind =
   | "acquisition_event"
   | "dungeon_progress"
   | "coin_entry"
-  | "body_metric";
+  | "body_metric"
+  | "scan_mint"
+  | "case_grant"
+  | "case_open"
+  | "fainted_monster"
+  | "battle_match_begin"
+  | "owned_character"
+  | "squad_snapshot"
+  | "promo_redemption"
+  | "account_created"
+  | "session_event"
+  | "profile_update"
+  | "player_settings_update";
 
 export interface QueuedMirror {
   id: number;

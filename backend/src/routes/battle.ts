@@ -416,6 +416,12 @@ function saveSquadSnapshot(playerId: string, units: TrustedUnit[]): void {
     `INSERT INTO friend_squad (player_id, payload, updated_at) VALUES (?, ?, datetime('now'))
      ON CONFLICT(player_id) DO UPDATE SET payload = excluded.payload, updated_at = excluded.updated_at`
   ).run(playerId, JSON.stringify({ v: 2, units }));
+  if (hasDatabaseUrl()) {
+    enqueueMirror("squad_snapshot", `squad:${playerId}`, {
+      playerId,
+      units: units.map((u) => ({ id: u.id })),
+    });
+  }
 }
 
 /**
@@ -534,6 +540,20 @@ function parkMatch(
     extra.meta ? JSON.stringify(extra.meta) : null,
     seed, expires
   );
+  if (hasDatabaseUrl()) {
+    enqueueMirror("battle_match_begin", matchId, {
+      matchId,
+      playerId,
+      mode,
+      ownSquad: own,
+      oppSquad: opp,
+      opponentId: extra.opponentId ?? null,
+      isBot: extra.isBot ?? false,
+      meta: extra.meta ?? null,
+      seed,
+      expiresAt: expires,
+    });
+  }
   // Cheap hygiene: drop rows that can never be committed again.
   db.prepare(`DELETE FROM battle_match WHERE expires_at < ? OR consumed_at IS NOT NULL`)
     .run(new Date(Date.now() - MATCH_TTL_MS).toISOString());

@@ -3,6 +3,8 @@ import { Rarity } from "../types";
 import { RARITY_ORDER } from "../data/lootTable";
 import { PendingCase, grantCase } from "./lootboxState";
 import { coinBalance, recordCoinsInTransaction } from "./coins";
+import { hasDatabaseUrl } from "../db/pg";
+import { enqueueMirror } from "./mirrorQueue";
 
 export interface PromoCode {
   code: string;
@@ -108,6 +110,15 @@ export function redeemPromo(playerId: string, code: string): PromoRewardResult {
       throw new Error("PROMO_FULLY_REDEEMED");
     }
     db.prepare(`INSERT INTO promo_redeem (player_id, code) VALUES (?, ?)`).run(playerId, code);
+    if (hasDatabaseUrl()) {
+      enqueueMirror("promo_redemption", `${code}:${playerId}`, {
+        playerId,
+        code,
+        reward: promo.reward,
+        usesLimit: promo.usesLimit,
+        expiresAt: promo.expiresAt,
+      });
+    }
 
     let result: PromoRewardResult;
     if (parsed.type === "coins") {

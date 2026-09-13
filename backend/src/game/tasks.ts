@@ -14,6 +14,8 @@ import { createHash } from "crypto";
 import { db } from "../db";
 import { writeCoinEntryInTransaction } from "../services/coins";
 import { randomUUID } from "crypto";
+import { hasDatabaseUrl } from "../db/pg";
+import { enqueueMirror } from "../services/mirrorQueue";
 import {
   TASK_REWARD_COINS,
   TASK_ALL_DONE_BONUS
@@ -240,10 +242,23 @@ export function taskStatuses(playerId: string, day = todayKey(), ctx: TaskContex
 // ---------------------------------------------------------------------------
 
 export function markFainted(playerId: string, charIds: string[], day = todayKey()): void {
+  if (charIds.length === 0) return;
   const stmt = db.prepare(
     `INSERT OR IGNORE INTO fainted_monster (player_id, char_id, day) VALUES (?, ?, ?)`
   );
   for (const id of charIds) stmt.run(playerId, id, day);
+  if (hasDatabaseUrl()) {
+    // Fainting is additive, not a superseding state like a lock -- two
+    // battles can each faint different monsters the same day, so this key
+    // must not collide across calls the way a stable per-day key would.
+    // The Postgres write is idempotent per (player_id, char_id) regardless.
+    enqueueMirror("fainted_monster", `faint:${playerId}:${day}:${randomUUID()}`, {
+      playerId,
+      action: "faint",
+      charIds,
+      day,
+    });
+  }
 }
 
 /** Currently-fainted ids — today's rows only. Older rows self-heal: the
@@ -262,6 +277,13 @@ export function reviveOneFainted(playerId: string, day = todayKey()): string | n
   const first = ids[0];
   if (!first) return null;
   db.prepare(`DELETE FROM fainted_monster WHERE player_id = ? AND char_id = ?`).run(playerId, first);
+  if (hasDatabaseUrl()) {
+    enqueueMirror("fainted_monster", `revive:${playerId}:${first}`, {
+      playerId,
+      action: "revive",
+      charIds: [first],
+    });
+  }
   return first;
 }
 
