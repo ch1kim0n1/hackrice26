@@ -6,23 +6,27 @@
 //
 //     effectiveStat = baseStat × rarityMult × starMult(star)
 //
-// starMult is 1 + STAR_STEP × (star − 1), so one star is worth less than one
-// rarity step everywhere except the common→uncommon edge (1.06), which the
-// star economy deliberately lets a fully-mastered Common approach: a ★5
-// Common lands at ×1.32, between an Uncommon ★1 (×1.06) and a Rare ★1
-// (×1.12) — mastery narrows the gap without ever reaching the next band's
-// ceiling. Exactly the "rarity vs mastery" answer from the spec.
+// starMult follows the spec's authored curve (★1 ×1.00 … ★5 ×1.45), so a
+// fully-mastered Common at ×1.45 actually edges a fresh Legendary's ×1.40 —
+// mastery buys real ground. But star-for-star the next rarity always wins,
+// so bands still dominate. Exactly the "rarity vs mastery" answer from the
+// spec.
 
 import { RARITY_TIERS } from "../data/lootTable";
 import { Rarity } from "../types";
 import { StarLevel } from "./rarityBands";
 
-/** Per-star combat multiplier step. */
-export const STAR_STEP = 0.08;
+/**
+ * Star -> combat multiplier (final-dev-doc §4). Replaces the old flat
+ * 8%-per-star step: the spec's authored curve is steeper at the top so late
+ * mastery matters more. Mirrors STAR_COMBAT_MULT in services/battleEngine.ts
+ * — same table, kept here for non-battle scaling (merge previews).
+ */
+export const STAR_COMBAT_MULTS = [0, 1.0, 1.08, 1.18, 1.3, 1.45] as const;
 
 export function starMult(star: number): number {
   const s = Math.min(Math.max(Math.trunc(star), 1), 5);
-  return 1 + STAR_STEP * (s - 1);
+  return STAR_COMBAT_MULTS[s];
 }
 
 export function rarityMult(rarity: Rarity): number {

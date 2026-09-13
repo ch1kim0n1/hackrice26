@@ -34,28 +34,26 @@ async function withPlayer(
 ): Promise<void> {
   const { charactersRouter } = await import("./characters");
   const { stateFor } = await import("../services/lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
 
   const playerId = `sell_${counter++}_${Date.now()}`;
   const session = stateFor(playerId);
 
   const seeded = [
-    { character: "salmon-striker", value: 3_000, stars: 1 },
-    { character: "kale-colossus", value: 7_500, stars: 3 },
-    { character: "broccoli-bud", value: 600, stars: 1 }
+    { character: "salmon-striker", rarity: "rare", value: 3_000, stars: 1 },
+    { character: "kale-colossus", rarity: "epic", value: 7_500, stars: 3 },
+    { character: "broccoli-bud", rarity: "common", value: 600, stars: 1 }
   ].map((spec, i) =>
-    session.record({
-      crateId: "starter-crate",
-      character: CHARACTERS[spec.character],
-      stars: spec.stars,
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
-      value: spec.value,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
-      fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
-      openedAt: new Date().toISOString()
-    })
+    session.record(
+      testDrop({
+        crateId: "test",
+        character: testCharacter(spec.rarity as never, spec.character),
+        stars: spec.stars,
+        value: spec.value,
+        baseMintValue: spec.value,
+        fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i }
+      })
+    ).drop
   );
 
   const app = express();

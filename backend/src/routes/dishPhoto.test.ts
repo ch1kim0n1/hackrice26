@@ -3,14 +3,17 @@ import express from "express";
 import { createScanRouter } from "./scan";
 import { normalizeAnalysis } from "../nutrition/analyze";
 import { DishAnalysis, NotFoodError, VisionUnavailableError } from "../nutrition/types";
+import { db } from "../db";
 
 // ============================================================================
-// Dish photo -> review -> character.
+// Dish photo -> review -> meal log. NEVER a monster.
 //
 // Covers the two-step contract the app depends on: analyze produces a draft
-// and mints nothing, confirm applies the user's corrections server-side and
-// mints exactly one character. The vision call is stubbed so the suite is
-// hermetic.
+// and logs nothing, confirm applies the user's corrections server-side and
+// writes exactly one meal-log entry. Per spec §1 a photographed dish can
+// never mint a character — barcode is the only food path that mints — so
+// every confirm test here also proves the collection stays empty. The vision
+// call is stubbed so the suite is hermetic.
 // ============================================================================
 
 const PLATE = {
@@ -41,12 +44,14 @@ interface AnalyzeBody {
 }
 interface ConfirmBody {
   result: {
+    source: string;
     foodName: string;
-    statType: string;
-    summonedCharacter: { id: string; name: string; rarity: string; foodGroup?: string; colorHex: string };
-    stats: { power: number; guard: number; vitality: number; tempo: number };
-    nutrition: { calories: number; portionG: number; microScore: number };
+    mealId: string;
+    nutrition: { calories: number; portionG: number; microScore: number; dominantFoodGroup: string };
     items: { id: string; name: string; portionG: number }[];
+    lowConfidence: boolean;
+    implausible: boolean;
+    flagged: boolean;
   };
 }
 interface ErrorBody {
@@ -173,7 +178,7 @@ describe("POST /scan/photo/analyze", () => {
 });
 
 describe("POST /scan/photo/confirm", () => {
-  it("mints one character from the confirmed plate", async () => {
+  it("logs the confirmed plate as a meal and never mints a character", async () => {
     await withDishApp(async (call, player) => {
       const { analysis } = await json<AnalyzeBody>(
         await call("POST", "/scan/photo/analyze", player.headers, { image: IMAGE })
@@ -183,22 +188,37 @@ describe("POST /scan/photo/confirm", () => {
       expect(res.status).toBe(200);
       const { result } = await json<ConfirmBody>(res);
 
+      expect(result.source).toBe("photo");
       expect(result.foodName).toBe("Chicken, rice and broccoli");
-      expect(result.summonedCharacter.id).toBe(`dish-${analysis.analysisId}`);
-      expect(result.summonedCharacter.colorHex).toBe("#C8A45C");
-      // The element comes from the shared BATTLE-SYSTEM §2 formulas, unchanged.
-      // A low-sugar, protein-rich plate saturates Tempo (the protein:sugar term
-      // is divided by max(sugar,1)), so it reads as hydration-dominant. This is
-      // exactly why the artwork keys off the food group rather than the element.
-      expect(result.stats.power).toBeGreaterThan(20);
-      expect(result.stats.tempo).toBe(100);
-      expect(result.statType).toBe("hydration");
-      expect(result.summonedCharacter.foodGroup).toBe("protein");
+      expect(result.mealId).toBeTruthy();
+      expect(result.nutrition.calories).toBe(503);
+      expect(result.nutrition.dominantFoodGroup).toBe("protein");
+      expect(result.lowConfidence).toBe(false);
+      expect(result.implausible).toBe(false);
+      expect(result.flagged).toBe(false);
+      // No character fields exist on a photo result at all.
+      expect("summonedCharacter" in result).toBe(false);
 
+      // The collection is still empty — the photo path cannot mint.
       const collection = await json<{ characters: { id: string }[] }>(
         await call("GET", `/scan/collection/${player.id}`, { "x-player-id": player.id })
       );
-      expect(collection.characters.map((c) => c.id)).toContain(`dish-${analysis.analysisId}`);
+      expect(collection.characters).toHaveLength(0);
+
+      // And no scan_mint row exists for the player.
+      const mints = db
+        .prepare(`SELECT COUNT(*) AS n FROM scan_mint WHERE player_id = ?`)
+        .get(player.id) as { n: number };
+      expect(mints.n).toBe(0);
+
+      // The meal is in the log with the confirmed totals.
+      const meals = await json<{ meals: { mealId: string; source: string; calories: number }[] }>(
+        await call("GET", "/scan/meals", { "x-player-id": player.id })
+      );
+      expect(meals.meals).toHaveLength(1);
+      expect(meals.meals[0].source).toBe("photo");
+      expect(meals.meals[0].mealId).toBe(result.mealId);
+      expect(meals.meals[0].calories).toBe(503);
     });
   });
 
@@ -230,7 +250,7 @@ describe("POST /scan/photo/confirm", () => {
       );
       expect(result.items.map((i) => i.id)).toEqual(["i1", "i2"]);
       // Without the chicken the plate is grain-dominant.
-      expect(result.summonedCharacter.foodGroup).toBe("grain");
+      expect(result.nutrition.dominantFoodGroup).toBe("grain");
     });
   });
 
@@ -250,7 +270,7 @@ describe("POST /scan/photo/confirm", () => {
     });
   });
 
-  it("refuses to mint twice from the same analysis", async () => {
+  it("refuses to log twice from the same analysis", async () => {
     await withDishApp(async (call, player) => {
       const { analysis } = await json<AnalyzeBody>(
         await call("POST", "/scan/photo/analyze", player.headers, { image: IMAGE })

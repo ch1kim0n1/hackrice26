@@ -64,9 +64,7 @@ function monsterPayload(drop: StoredDrop) {
   return {
     id: drop.id,
     character: characterPayload(drop.character.id, drop.character),
-    power: drop.power,
-    powerLabel: drop.powerLabel,
-    shiny: drop.shiny,
+    baseMintValue: drop.baseMintValue,
     stars: drop.stars ?? 1,
     /** This monster's net worth — what it contributes to the pot. */
     netWorth: drop.value,

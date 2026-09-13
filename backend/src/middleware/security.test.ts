@@ -69,10 +69,10 @@ describe("admin token guard", () => {
     const reqHeaders = { ...headers };
     if (token) reqHeaders["x-admin-token"] = token;
     try {
-      return await fetch(`http://127.0.0.1:${port}/lootbox/keys/grant`, {
+      return await fetch(`http://127.0.0.1:${port}/lootbox/promos`, {
         method: "POST",
         headers: reqHeaders,
-        body: JSON.stringify({ amount: 10 })
+        body: JSON.stringify({ code: `SEC${Math.random().toString(36).slice(2, 8).toUpperCase()}`, reward: "coins:10" })
       });
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -99,8 +99,8 @@ describe("admin token guard", () => {
   it("allows admin routes with the correct token", async () => {
     process.env.NUTRIQUEST_ADMIN_TOKEN = "secret";
     const res = await adminCall("secret");
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { keys: number };
-    expect(body.keys).toBe(35); // 25 starting + 10 granted
+    expect(res.status).toBe(201);
+    const body = (await res.json()) as { promo: { reward: string } };
+    expect(body.promo.reward).toBe("coins:10");
   });
 });

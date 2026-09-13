@@ -22,26 +22,26 @@
 	<string>1</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
-		<!-- Dev: the in-memory backend is plain HTTP on localhost/LAN.
-		     Scoped to local networking only — not a global arbitrary-loads hole. -->
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
-	<key>UIAppFonts</key>
-	<array>
-		<string>Fonts/Baloo2.ttf</string>
-		<string>Fonts/Quicksand.ttf</string>
-	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>NutriQuest scans food barcodes and meal photos to summon characters.</string>
-	<key>NSPhotoLibraryUsageDescription</key>
-	<string>NutriQuest can use a meal photo from your library when the camera isn't available.</string>
-	<key>NSLocalNetworkUsageDescription</key>
-	<string>NutriQuest finds friends on the same Wi-Fi so you can battle nearby.</string>
 	<key>NSBonjourServices</key>
 	<array>
 		<string>_nq-lan._tcp</string>
 		<string>_nq-lan._udp</string>
+	</array>
+	<key>NSCameraUsageDescription</key>
+	<string>NutriQuest scans food barcodes and meal photos to summon characters.</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>NutriQuest reads your steps, heart rate, activity rings and workouts from Apple Watch to boost your daily stats.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>NutriQuest finds friends on the same Wi-Fi so you can battle nearby.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>NutriQuest can use a meal photo from your library when the camera isn't available.</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>Fonts/Baloo2.ttf</string>
+		<string>Fonts/Quicksand.ttf</string>
 	</array>
 </dict>
 </plist>

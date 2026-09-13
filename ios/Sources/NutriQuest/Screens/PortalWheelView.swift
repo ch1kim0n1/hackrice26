@@ -647,9 +647,7 @@ struct PortalWheelView: View {
             id: monster.character.id,
             name: monster.character.name,
             colorHex: monster.character.colorHex,
-            rarity: Rarity(rawValue: monster.character.rarity) ?? .common,
-            statType: StatType(rawValue: monster.character.statType) ?? .fiber,
-            isShiny: monster.shiny
+            rarity: Rarity(rawValue: monster.character.rarity) ?? .common
         )
     }
 
@@ -946,9 +944,7 @@ struct PortalWheelResultView: View {
                     id: reward.character.id,
                     name: reward.character.name,
                     colorHex: reward.character.colorHex,
-                    rarity: rarity,
-                    statType: StatType(rawValue: reward.character.statType) ?? .fiber,
-                    isShiny: reward.shiny
+                    rarity: rarity
                 )
             )
             .frame(width: 140, height: 140)

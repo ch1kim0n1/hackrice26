@@ -24,7 +24,6 @@ final class LANHost {
     var send: ((Data, LANPeer) -> Void)?
 
     private let clock: () -> Date
-    private let engine = BattleEngine()
 
     private(set) var players: [String: LANPlayer] = [:]
     /// Join order, for a stable roster.
@@ -38,7 +37,6 @@ final class LANHost {
     private var seenMessages: Set<UUID> = []
     private var inbox: [(Data, LANPeer)] = []
     private var draining = false
-    private var resolutions: [Task<Void, Never>] = []
 
     init(hostID: String, clock: @escaping () -> Date = { Date() }) {
         self.hostID = hostID
@@ -73,16 +71,9 @@ final class LANHost {
         }
     }
 
-    /// Tests: wait until every in-flight simulation has been delivered.
-    func waitForResolutions() async {
-        while !resolutions.isEmpty {
-            let pending = resolutions
-            resolutions.removeAll()
-            for task in pending {
-                await task.value
-            }
-        }
-    }
+    /// Tests: resolution is synchronous now, so there is never anything
+    /// in flight — kept so the test group's drive loop reads unchanged.
+    func waitForResolutions() async {}
 
     // MARK: - Serial processing
 
@@ -233,17 +224,14 @@ final class LANHost {
 
     /// Runs the unchanged BattleKit engine. Only the host ever simulates, so
     /// devices on different iOS versions can't disagree about an outcome.
+    /// The engine is synchronous and pure — resolution completes inline.
     private func resolve(_ resolution: LANResolution) {
-        let squadA = resolution.squadA.battleSquad(matchID: resolution.matchID, side: 0)
-        let squadB = resolution.squadB.battleSquad(matchID: resolution.matchID, side: 1)
-        let task = Task { @MainActor [weak self] in
-            guard let self else { return }
-            let replay = await self.engine.simulate(squadA: squadA, squadB: squadB, seed: resolution.seed)
-            self.serialized {
-                self.deliverResolution(resolution, replay: replay)
-            }
+        let squadA = resolution.squadA.battleSpecs(matchID: resolution.matchID, side: 0)
+        let squadB = resolution.squadB.battleSpecs(matchID: resolution.matchID, side: 1)
+        let replay = BattleEngine.simulate(squadA: squadA, squadB: squadB, seed: resolution.seed)
+        serialized {
+            deliverResolution(resolution, replay: replay)
         }
-        resolutions.append(task)
     }
 
     private func deliverResolution(_ resolution: LANResolution, replay: BattleReplay) {

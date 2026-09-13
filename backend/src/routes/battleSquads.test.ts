@@ -35,23 +35,20 @@ async function withBattle(
 ): Promise<void> {
   const { battleRouter } = await import("./battle");
   const { stateFor } = await import("../services/lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
 
   const playerId = `btl_${counter++}_${Date.now()}`;
   const session = stateFor(playerId);
   for (const s of stock) {
-    session.record({
+    session.record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS[s.characterId],
+      character: testCharacter("common", s.characterId),
       stars: s.stars ?? 1,
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
       value: s.value ?? 500,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
       openedAt: new Date().toISOString()
-    });
+    })).drop;
   }
 
   const app = express();
@@ -178,7 +175,7 @@ describe("squad trust boundary", () => {
     await withBattle(async (call, playerId) => {
       const { getOrCreate } = await import("./user");
       const response = await call("POST", "/battle/simulate", {
-        yourSquad: [STARTER, { id: "sushi-sam", name: "Sushi Sam", statType: "protein" }, { id: "grape-gus", name: "Grape Gus", statType: "hydration" }],
+        yourSquad: [STARTER, { id: "bean-sprout", name: "Bean Sprout" }, { id: "carrot-cadet", name: "Carrot Cadet" }],
         opponentSquad: [STARTER_OPP],
         seed: 42
       });
@@ -203,16 +200,17 @@ describe("squad trust boundary", () => {
     );
 
     await withBattle(async (call) => {
-      const response = await call("POST", "/battle/async/challenge", {
+      const response = await call("POST", "/battle/friendly", {
         opponentId: defenderId,
-        yourSquad: [STARTER]
+        squad: [STARTER, { id: "bean-sprout", name: "Bean Sprout" }, { id: "carrot-cadet", name: "Carrot Cadet" }]
       });
       expect(response.status).toBe(200);
       const body = (await response.json()) as {
         opponentSquad: { id: string; rarity: string; star: number }[];
       };
-      // Catalogue truth, defender-owned ★ (none → 1): never the stored claims.
-      expect(body.opponentSquad[0].rarity).toBe("rare");
+      // Instance truth, defender-owned ★ (none → 1, none → common): never the
+      // stored claims.
+      expect(body.opponentSquad[0].rarity).toBe("common");
       expect(body.opponentSquad[0].star).toBe(1);
     });
   });
@@ -235,24 +233,4 @@ describe("squad trust boundary", () => {
     });
   });
 
-  it("arena refuses a fabricated squad before touching the stake", async () => {
-    await withBattle(async (call, playerId) => {
-      const { db } = await import("../db");
-      const { stateFor } = await import("../services/lootboxState");
-      const stake = stateFor(playerId).inventory[0];
-      const defenderId = `btl_arena_def_${Date.now()}`;
-      db.prepare(
-        `INSERT INTO friend_squad (player_id, payload, updated_at) VALUES (?, ?, datetime('now'))`
-      ).run(defenderId, JSON.stringify([{ id: "sprout-wisp", name: "Sprout Wisp", statType: "fiber" }]));
-
-      const response = await call("POST", "/battle/arena/challenge", {
-        opponentId: defenderId,
-        yourSquad: [{ id: "god-mode", name: "God", statType: "protein", power: 500, star: 5, rarity: "secret" }],
-        stakeDropIds: [stake.id]
-      });
-      expect(response.status).toBe(400);
-      // The stake was never escrowed.
-      expect(stateFor(playerId).dropById(stake.id)!.lockedBy ?? null).toBeNull();
-    }, [{ characterId: "broccoli-bud" }]);
-  });
 });

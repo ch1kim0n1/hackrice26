@@ -27,30 +27,13 @@ struct BattleHubView: View {
         return Array((others + fallback).prefix(3))
     }
 
-    private var moves: [BattleMove] {
-        [
-            BattleMove(name: "Protein Punch", statType: .protein, description: "Power 45 · high crit"),
-            BattleMove(name: "Fiber Whirl", statType: .fiber, description: "Power 30 · hits twice"),
-            BattleMove(name: "Vitamin Beam", statType: .vitamin, description: "Power 38 · buffs squad"),
-            BattleMove(name: "Hydro Splash", statType: .hydration, description: "Power 26 · heals 10%")
-        ]
-    }
-
     var body: some View {
         ScrollView {
             VStack(spacing: NQTheme.spaceM) {
-                // "You were challenged" feed — async friend battles that
-                // resolved while you were away.
-                if !gameState.battleNotices.isEmpty {
-                    noticesCard
-                }
-
                 NavigationLink {
                     BattleView(
                         yourSquad: yourBattleSquad,
                         opponentSquad: opponentBattleSquad,
-                        fatigued: false,
-                        moves: moves,
                         gameState: gameState
                     )
                 } label: {
@@ -60,6 +43,23 @@ struct BattleHubView: View {
                         icon: .battle,
                         tint: NQTheme.info,
                         art: "battle-badge"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink {
+                    BattleView(
+                        yourSquad: yourBattleSquad,
+                        opponentSquad: opponentBattleSquad,
+                        gameState: gameState,
+                        mode: .practice
+                    )
+                } label: {
+                    hubCard(
+                        title: "Practice",
+                        subtitle: "Turn-based sparring — pick every move",
+                        icon: .leaf,
+                        tint: NQTheme.gold
                     )
                 }
                 .buttonStyle(.plain)
@@ -75,12 +75,6 @@ struct BattleHubView: View {
                     )
                 }
                 .buttonStyle(.plain)
-
-                // Squad set bonus — mono-type squads synergize; the chip makes
-                // the synergy visible so players hunt for matching members.
-                if let bonus = setBonus {
-                    bonusChip(bonus)
-                }
 
                 Button {
                     NQJuice.tap()
@@ -102,59 +96,6 @@ struct BattleHubView: View {
         .sheet(isPresented: $showLeaderboard) {
             NavigationStack { LeaderboardView() }
         }
-        .task {
-            await gameState.refreshBattleNotices()
-        }
-    }
-
-    /// Async battle feed: who attacked your stored squad, and whether it held.
-    private var noticesCard: some View {
-        VStack(alignment: .leading, spacing: NQTheme.spaceS) {
-            NQSectionHeader("While you were away")
-            ForEach(Array(gameState.battleNotices.enumerated()), id: \.offset) { _, notice in
-                HStack(spacing: NQTheme.spaceS) {
-                    Image(systemName: notice.defendedWin ? "shield.fill" : "bolt.fill")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundStyle(notice.defendedWin ? NQTheme.success : NQTheme.warning)
-                    Text(notice.defendedWin
-                         ? "\(notice.challengerName) attacked — your squad held in \(notice.rounds) rounds"
-                         : "\(notice.challengerName) beat your squad in \(notice.rounds) rounds")
-                        .font(NQText.caption.font.weight(.semibold))
-                        .foregroundStyle(NQTheme.ink)
-                    Spacer()
-                }
-            }
-        }
-        .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL + 2), elevation: .card)
-        .accessibilityElement(children: .combine)
-    }
-
-    /// Pair/trio of same-type members: 2-of-a-kind +5%, full trio +12%.
-    private var setBonus: (label: String, icon: NQIcon, tint: Color)? {
-        let counts = Dictionary(grouping: yourBattleSquad, by: \.statType)
-            .mapValues { $0.count }
-        guard let (type, n) = counts.max(by: { $0.value < $1.value }), n >= 2 else { return nil }
-        let icon: NQIcon = { switch type { case .protein: .battle; case .fiber: .leaf; case .vitamin: .star; case .hydration: .droplet } }()
-        let bonus = n >= 3 ? "+12%" : "+5%"
-        return ("\(type.label) ×\(n) set · \(bonus) stats", icon, accent.accent)
-    }
-
-    private func bonusChip(_ bonus: (label: String, icon: NQIcon, tint: Color)) -> some View {
-        HStack(spacing: NQTheme.spaceS) {
-            bonus.icon.view
-                .frame(width: 14, height: 14)
-                .foregroundStyle(bonus.tint)
-            Text(bonus.label)
-                .font(NQText.captionS.font.weight(.heavy))
-                .foregroundStyle(bonus.tint)
-            Spacer()
-        }
-        .nqPadding(.badge)
-        .padding(.horizontal, NQTheme.spaceS)
-        .background(bonus.tint.opacity(0.12))
-        .clipShape(Capsule())
-        .accessibilityLabel("Squad set bonus: \(bonus.label)")
     }
 
     private func hubCard(title: String, subtitle: String, icon: NQIcon, tint: Color, trailing: String? = nil, art: String? = nil) -> some View {

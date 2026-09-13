@@ -359,12 +359,15 @@ struct OBSpeedStep: View {
 
 /// "Connect to Apple Health" step with a recreated sync illustration.
 struct OBAppleHealthStep: View {
+    var isConnecting = false
     let onContinue: () -> Void
     let onSkip: () -> Void
 
     var body: some View {
         OBStepScaffold(
             title: "",
+            buttonTitle: isConnecting ? "Connecting…" : "Continue",
+            buttonEnabled: !isConnecting,
             secondaryTitle: "Not now",
             onSecondary: onSkip,
             onContinue: onContinue
@@ -452,14 +455,9 @@ struct OBAppleHealthStep: View {
 
 // MARK: - Plan ready
 
-/// Final step: celebration header, target pill, and the daily
-/// recommendation card with macro rings and health score.
+/// Final step: celebration header and the daily recommendation card with
+/// macro rings and health score.
 struct OBPlanReadyStep: View {
-    let goal: WeightGoal
-    /// Absolute weight change target, in kg.
-    let deltaKg: Double
-    /// Projected completion date for the target.
-    let targetDate: Date
     let plan: OBPlanTargets
     let onFinish: () -> Void
 
@@ -481,46 +479,12 @@ struct OBPlanReadyStep: View {
                         .foregroundStyle(OBTheme.ink)
                         .multilineTextAlignment(.center)
 
-                    Text(goalLabel)
-                        .font(NQFont.body.font(16))
-                        .foregroundStyle(OBTheme.subtitle)
-                        .padding(.top, 8)
-
-                    Text(targetPillText)
-                        .font(NQFont.heading.font(16))
-                        .foregroundStyle(OBTheme.ink)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .nqPlate(Capsule(), elevation: .sticker, inkStroke: true, lineWidth: 1.5)
-
                     recommendationCard
                         .padding(.top, 10)
                 }
                 .padding(.bottom, 14)
             }
             OBPrimaryButton(title: "Let's get started!", action: onFinish)
-        }
-    }
-
-    /// "You should lose:" / "gain:" / "maintain:" header above the pill.
-    private var goalLabel: String {
-        switch goal {
-        case .lose: return "You should lose:"
-        case .gain: return "You should gain:"
-        case .maintain: return "You should maintain:"
-        }
-    }
-
-    /// Target pill copy, e.g. "Lose 10 kg by October 31".
-    private var targetPillText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM d"
-        let date = formatter.string(from: targetDate)
-        let amount = String(format: deltaKg.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", deltaKg)
-        switch goal {
-        case .lose: return "Lose \(amount) kg by \(date)"
-        case .gain: return "Gain \(amount) kg by \(date)"
-        case .maintain: return "Maintain your weight"
         }
     }
 

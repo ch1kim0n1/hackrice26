@@ -1,14 +1,17 @@
 import SwiftUI
 import NutriQuestUI
 
-/// Loot crate opening screen — full capsule mechanic.
+/// Case opening screen — full capsule mechanic.
 ///
 /// Flow:
-///   1. Catalog: crate cards with odds, key balance, pull history, pity counter
+///   1. Cases: granted rarity Cases (ranked wins, promos) waiting to open
 ///   2. Open: capsule drops, shakes, cracks, reveals character
-///   3. Multi-open: 1/5/10 batch with stacked reveals
+///   3. Mailbox: inventory-overflow drops, claimable when there's room
 ///   4. Fairness: server seed hash shown, verify link
-///   5. Key store: earn keys (placeholder for gameplay integration)
+///   5. Promo: redeem a code for coins or a Case
+///
+/// Keys, pity meters and multi-opens are gone — the spec's economy buys
+/// Cookbooks with coins in the Shop and grants fixed-rarity Cases here.
 struct CrateOpeningView: View {
     @ObservedObject var gameState: GameState
     /// .sheet presents a fresh environment -- custom @Environment keys like
@@ -23,30 +26,28 @@ struct CrateOpeningView: View {
 
     @Environment(\.nqAccent) private var accent
     @Environment(\.dismiss) private var dismiss
-    @State private var crates: [CrateSummaryDTO] = []
-    @State private var loadingCrates = true
+    @State private var cases: [PendingCaseDTO] = []
+    @State private var loadingCases = true
     @State private var opening = false
-    @State private var revealedDrops: [CrateOpenResponse] = []
-    @State private var currentDropIndex = 0
+    @State private var revealedDrop: CrateOpenResponse?
     @State private var capsuleStage: NQCapsuleStage = .hidden
     @State private var chargeProgress: Double = 0
     @State private var chargeContinuation: CheckedContinuation<Void, Never>?
     @State private var holdTask: Task<Void, Never>?
     @State private var confettiTrigger = 0
-    @State private var batchCount = 1
     @State private var showFairness = false
-    @State private var tab: CrateTab = .catalog
+    @State private var tab: CrateTab = .cases
     @State private var promoCode = ""
     @State private var promoRedeeming = false
     @State private var promoResult: String?
-    @State private var openingCrateId = "starter-crate"
     @State private var pendingSale: InventoryItemDTO?
+    @State private var claiming = false
 
     enum CrateTab: String, CaseIterable {
-        case catalog = "Crates"
+        case cases = "Cases"
         case sell = "Sell"
         case history = "History"
-        case keys = "Keys"
+        case promo = "Promo"
     }
 
     var body: some View {
@@ -56,7 +57,7 @@ struct CrateOpeningView: View {
             } else {
                 NavigationStack {
                     shopBody
-                        .navigationTitle("Summon Crates")
+                        .navigationTitle("Cases")
                         .navigationBarTitleDisplayMode(.inline)
                         .toolbar {
                             ToolbarItem(placement: .navigationBarLeading) {
@@ -74,10 +75,15 @@ struct CrateOpeningView: View {
         }
         .nqAccentContext(accentContext)
         .task {
-            crates = await gameState.refreshCrates()
+            _ = await gameState.refreshPendingCases()
+            cases = gameState.pendingCases
             await gameState.refreshInventory(limit: 200)
+            cases = gameState.pendingCases
             await gameState.refreshCoins()
-            loadingCrates = false
+            loadingCases = false
+        }
+        .onChange(of: gameState.pendingCases) { updated in
+            cases = updated
         }
         .sheet(isPresented: $showFairness) {
             FairnessSheet(gameState: gameState)
@@ -118,18 +124,18 @@ struct CrateOpeningView: View {
                 tabPicker
 
                 switch tab {
-                case .catalog:
-                    catalogTab
+                case .cases:
+                    casesTab
                 case .sell:
                     sellTab
                 case .history:
                     historyTab
-                case .keys:
-                    keysTab
+                case .promo:
+                    promoTab
                 }
             }
 
-            if opening || !revealedDrops.isEmpty {
+            if opening || revealedDrop != nil {
                 capsuleOverlay
                     .transition(NQTransition.summon)
             }
@@ -172,29 +178,28 @@ struct CrateOpeningView: View {
         }
     }
 
-    // MARK: - Catalog tab
+    // MARK: - Cases tab
 
-    private var catalogTab: some View {
+    private var casesTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NQTheme.spaceL) {
-                keyBalance
+                caseSummary
 
-                // Welcome-back gift: armed after >3 days away, one free pull.
-                if gameState.comebackPending {
-                    comebackCard
+                if let mailbox = gameState.crateInventory?.mailbox, mailbox.count > 0 {
+                    mailboxBanner(mailbox)
                 }
 
-                if loadingCrates {
+                if loadingCases {
                     HStack(spacing: NQTheme.spaceM) {
                         NQSkeleton(width: 140, height: 180, cornerRadius: NQTheme.radiusL)
                         NQSkeleton(width: 140, height: 180, cornerRadius: NQTheme.radiusL)
                     }
                     .frame(maxWidth: .infinity)
-                } else if crates.isEmpty {
-                    emptyCratesState
+                } else if cases.isEmpty {
+                    emptyCasesState
                 } else {
-                    ForEach(crates, id: \.id) { crate in
-                        crateCard(crate)
+                    ForEach(cases) { pending in
+                        caseCard(pending)
                     }
                 }
 
@@ -206,169 +211,94 @@ struct CrateOpeningView: View {
         }
     }
 
-    private var keyBalance: some View {
+    private var caseSummary: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                NQSectionHeader("Your keys")
+                NQSectionHeader("Your cases")
                 if let inventory = gameState.crateInventory {
-                    Text("\(inventory.count) pulls · \(inventory.totalValue) total value")
+                    Text("\(inventory.count) monsters · \(inventory.totalValue) total value")
                         .font(NQText.micro.font)
                         .foregroundStyle(NQTheme.inkFaint)
                 }
             }
             Spacer()
-            if let keys = gameState.keysRemaining {
-                HStack(spacing: NQTheme.spaceXS) {
-                    NQAssetImage("key")
-                        .frame(width: 22, height: 22)
-                    AnimatedKeyCount(keys: keys)
-                }
-                .foregroundStyle(NQTheme.gold)
-                .accessibilityLabel("\(keys) keys available")
-            } else {
-                NQSkeleton(width: 40, height: 18)
+            HStack(spacing: NQTheme.spaceXS) {
+                NQIcon.sparkle.view.frame(width: 18, height: 18)
+                Text("\(gameState.coinBalance)")
+                    .font(NQText.heading.font)
             }
+            .foregroundStyle(NQTheme.gold)
+            .accessibilityLabel("\(gameState.coinBalance) coins")
         }
     }
 
-    private func crateCard(_ crate: CrateSummaryDTO) -> some View {
+    /// Inventory overflow lands here — nothing is ever evicted (spec
+    /// checklist). Claiming needs room below the 200-monster cap.
+    private func mailboxBanner(_ mailbox: MailboxDTO) -> some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
-            NQAssetImage(GameArt.crateClosed(crate.id))
-                .frame(height: 92)
-                .frame(maxWidth: .infinity)
             HStack {
-                Text(crate.name)
-                    .font(NQText.headingL.font)
+                Text("Mailbox")
+                    .font(NQText.heading.font.weight(.heavy))
                     .foregroundStyle(NQTheme.ink)
                 Spacer()
-                NQChip("\(crate.keyCost) key\(crate.keyCost == 1 ? "" : "s")", icon: .sparkle, filled: true)
+                NQChip("\(mailbox.count) waiting", icon: .sparkle, tint: NQTheme.warning, filled: true)
             }
-            Text(crate.description)
+            Text("Rewards that arrived while your inventory was full.")
                 .font(NQText.caption.font)
                 .foregroundStyle(NQTheme.inkMuted)
-
-            // Pity meters — visible proximity to a guaranteed pull is the
-            // "one more open" lever. Shown only while a guarantee is pending.
-            if let pity = crate.pity ?? gameState.pity {
-                pityRow(pity)
-            }
-
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: NQTheme.spaceXS) {
-                    ForEach(crate.odds, id: \.rarity) { odd in
-                        NQChip(odd.label, tint: Color(hex: oddColorHex(odd)))
-                            .fixedSize()
-                    }
-                }
-            }
-
-            // Multi-open selector
-            if canAfford(crate, count: 1) {
-                HStack(spacing: NQTheme.spaceS) {
-                    ForEach([1, 5, 10], id: \.self) { count in
-                        let affordable = canAfford(crate, count: count)
-                        Button {
-                            batchCount = count
-                            NQHaptic.light()
-                        } label: {
-                            Text("×\(count)")
-                                .font(NQText.caption.font.weight(.bold))
-                                .foregroundStyle(batchCount == count ? .white : (affordable ? NQTheme.ink : NQTheme.inkFaint))
-                                .frame(width: 36, height: 28)
-                                .background(batchCount == count ? accent.accent : NQTheme.hairline)
-                                .clipShape(Capsule())
-                        }
-                        .disabled(!affordable)
-                    }
+            ForEach(mailbox.items.prefix(5)) { item in
+                HStack(spacing: NQTheme.spaceM) {
+                    Text(item.character.name)
+                        .font(NQText.body.font.weight(.semibold))
+                        .foregroundStyle(NQTheme.ink)
                     Spacer()
-                }
-            }
-
-            Button {
-                openCrate(crate)
-            } label: {
-                HStack {
-                    if opening {
-                        ProgressView().tint(.white)
-                    } else {
-                        NQIcon.sparkle.view.frame(width: 15, height: 15)
+                    Text("\(item.value) coins")
+                        .font(NQText.micro.font)
+                        .foregroundStyle(NQTheme.inkMuted)
+                    Button {
+                        guard !claiming else { return }
+                        claiming = true
+                        Task {
+                            _ = await gameState.claimMailbox(dropIDs: [item.id])
+                            claiming = false
+                        }
+                    } label: {
+                        Text("Claim")
+                            .font(NQText.caption.font.weight(.heavy))
+                            .foregroundStyle(NQTheme.background)
+                            .nqPadding(.badge)
+                            .background(claiming ? NQTheme.lockedFill : accent.accent)
+                            .clipShape(Capsule())
                     }
-                    Text(opening ? "Opening…" : "Open ×\(batchCount)")
-                        .font(NQText.heading.font)
+                    .buttonStyle(.plain)
+                    .disabled(claiming)
+                    .accessibilityLabel("Claim \(item.character.name) from the mailbox")
                 }
-                .frame(maxWidth: .infinity)
-                .nqPadding(.button)
-                .background(canAfford(crate, count: batchCount) ? accent.accent : NQTheme.lockedFill)
-                .foregroundStyle(canAfford(crate, count: batchCount) ? accent.accent.readableTextColor() : NQTheme.inkMuted)
-                .clipShape(Capsule())
             }
-            .buttonStyle(NQPressableStyle())
-            .disabled(!canAfford(crate, count: batchCount) || opening)
-            .accessibilityLabel("Open \(crate.name) \(batchCount) times")
         }
         .nqPadding(.card)
         .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .card)
     }
 
-    /// "Epic+ in N" / "Legendary+ in M" — thin progress bars toward each
-    /// guarantee. Hidden once either counter is fresh.
-    private func pityRow(_ pity: PityDTO) -> some View {
-        HStack(spacing: NQTheme.spaceM) {
-            pityMeter(label: "Epic+", remaining: pity.epicIn, total: 15, tint: NQRarity.epic.outline)
-            pityMeter(label: "Legendary+", remaining: pity.legendaryIn, total: 40, tint: NQRarity.legendary.outline)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Epic or better guaranteed in \(pity.epicIn) opens. Legendary or better in \(pity.legendaryIn).")
-    }
-
-    private func pityMeter(label: String, remaining: Int, total: Int, tint: Color) -> some View {
-        let progress = Double(total - remaining) / Double(total)
-        return HStack(spacing: NQTheme.spaceS) {
-            ZStack {
-                Circle()
-                    .stroke(tint.opacity(0.25), lineWidth: 3)
-                Circle()
-                    .trim(from: 0, to: progress)
-                    .stroke(tint, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                    .rotationEffect(.degrees(-90))
-            }
-            .frame(width: 22, height: 22)
-            Text(remaining <= 1 ? "\(label) next!" : "\(label) in \(remaining)")
-                .font(NQText.micro.font.weight(.heavy))
-                .foregroundStyle(remaining <= 3 ? tint : NQTheme.inkMuted)
-        }
-    }
-
-    private func canAfford(_ crate: CrateSummaryDTO, count: Int) -> Bool {
-        (gameState.keysRemaining ?? 0) >= crate.keyCost * count
-    }
-
-    private func oddColorHex(_ odd: CrateOddsDTO) -> String {
-        odd.colorHex.hasPrefix("#") ? odd.colorHex : "#\(odd.colorHex)"
-    }
-
-    /// The comeback crate — free pull, gold-trimmed, opens through the same
-    /// capsule sequence as a paid open.
-    private var comebackCard: some View {
-        VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+    private func caseCard(_ pending: PendingCaseDTO) -> some View {
+        let rarity = nqRarity(from: pending.rarity)
+        return VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+            NQAssetImage(GameArt.rarityChest(closed: rarity, opened: false))
+                .frame(height: 92)
+                .frame(maxWidth: .infinity)
             HStack {
-                NQIcon.crown.view
-                    .frame(width: 22, height: 22)
-                    .foregroundStyle(NQTheme.gold)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Welcome back!")
-                        .font(NQText.headingL.font.weight(.heavy))
-                        .foregroundStyle(NQTheme.ink)
-                    Text(gameState.comebackDaysAway > 0
-                         ? "You were away \(gameState.comebackDaysAway) days — this one's on us."
-                         : "This one's on us.")
-                        .font(NQText.caption.font)
-                        .foregroundStyle(NQTheme.inkMuted)
-                }
+                Text("\(rarity.displayName) Case")
+                    .font(NQText.headingL.font)
+                    .foregroundStyle(NQTheme.ink)
                 Spacer()
+                NQChip(rarity.displayName, icon: .sparkle, tint: rarity.outline, filled: true)
             }
+            Text(sourceLine(pending.source))
+                .font(NQText.caption.font)
+                .foregroundStyle(NQTheme.inkMuted)
+
             Button {
-                openComebackCrate()
+                openCase(pending)
             } label: {
                 HStack {
                     if opening {
@@ -376,53 +306,39 @@ struct CrateOpeningView: View {
                     } else {
                         NQIcon.sparkle.view.frame(width: 15, height: 15)
                     }
-                    Text("Open free crate")
+                    Text(opening ? "Opening…" : "Open case")
                         .font(NQText.heading.font)
                 }
                 .frame(maxWidth: .infinity)
                 .nqPadding(.button)
-                .background(NQTheme.gold)
-                .foregroundStyle(NQTheme.ink)
+                .background(accent.accent)
+                .foregroundStyle(accent.accent.readableTextColor())
                 .clipShape(Capsule())
             }
             .buttonStyle(NQPressableStyle())
             .disabled(opening)
-            .accessibilityLabel("Open your free welcome-back crate")
+            .accessibilityLabel("Open \(rarity.displayName) Case")
         }
         .nqPadding(.card)
-        .background(NQTheme.gold.opacity(0.08))
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusL))
-        .overlay {
-            RoundedRectangle(cornerRadius: NQTheme.radiusL)
-                .strokeBorder(NQTheme.gold.opacity(0.5), lineWidth: 2)
-        }
+        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .card)
     }
 
-    private func openComebackCrate() {
-        opening = true
-        revealedDrops = []
-        currentDropIndex = 0
-        capsuleStage = .hidden
-
-        Task {
-            guard let drop = await gameState.claimComeback() else {
-                opening = false
-                return
-            }
-            revealedDrops = [drop]
-            await playCapsuleSequence(for: drop)
-        }
+    /// Where the Case came from, for the card's footnote.
+    private func sourceLine(_ source: String) -> String {
+        if source.hasPrefix("promo:") { return "From promo code \(source.dropFirst(6))." }
+        if source.hasPrefix("ranked") { return "Won in a ranked battle." }
+        return "Granted as a reward."
     }
 
-    private var emptyCratesState: some View {
+    private var emptyCasesState: some View {
         VStack(spacing: NQTheme.spaceM) {
             Image(systemName: "shippingbox")
                 .font(.system(size: 48))
                 .foregroundStyle(NQTheme.inkFaint)
-            Text("No crates available")
+            Text("No cases waiting")
                 .font(NQText.heading.font)
                 .foregroundStyle(NQTheme.inkMuted)
-            Text("Crates appear here when the backend is reachable.")
+            Text("Win ranked battles or redeem a promo code to earn a Case. Cookbooks live in the Shop.")
                 .font(NQText.caption.font)
                 .foregroundStyle(NQTheme.inkFaint)
                 .multilineTextAlignment(.center)
@@ -439,7 +355,7 @@ struct CrateOpeningView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 2) {
                         NQSectionHeader("Coin purse")
-                        Text("Sell a pulled monster for its full net worth.")
+                        Text("Sell a monster for its full net worth.")
                             .font(NQText.micro.font)
                             .foregroundStyle(NQTheme.inkFaint)
                     }
@@ -458,7 +374,7 @@ struct CrateOpeningView: View {
                         sellRow(item)
                     }
                 } else {
-                    NQEmptyState(message: "No pulled monsters to sell. Open a crate first.")
+                    NQEmptyState(message: "No monsters to sell. Open a Cookbook in the Shop first.")
                         .padding(.top, NQTheme.spaceXL)
                 }
             }
@@ -471,9 +387,7 @@ struct CrateOpeningView: View {
             id: "crate-\(item.character.id)",
             name: item.character.name,
             colorHex: item.character.colorHex,
-            rarity: Rarity(rawValue: item.character.rarity) ?? .common,
-            statType: StatType(rawValue: item.character.statType) ?? .fiber,
-            isShiny: item.shiny
+            rarity: Rarity(rawValue: item.character.rarity) ?? .common
         )
         return HStack(spacing: NQTheme.spaceM) {
             CharacterArtwork(character: character)
@@ -483,7 +397,7 @@ struct CrateOpeningView: View {
                     .font(NQText.heading.font)
                     .foregroundStyle(NQTheme.ink)
                     .lineLimit(1)
-                Text("\(item.character.rarity.capitalized) · \(item.value) coins")
+                Text("\(item.character.rarity.capitalized) · ★\(item.stars ?? 1) · \(item.value) coins")
                     .font(NQText.caption.font)
                     .foregroundStyle(NQTheme.inkMuted)
             }
@@ -529,7 +443,7 @@ struct CrateOpeningView: View {
                     rarityDistribution(inventory.items)
 
                     // Recent pulls
-                    NQSectionHeader("Recent pulls (\(inventory.items.count))")
+                    NQSectionHeader("Recent mints (\(inventory.items.count))")
                     if inventory.items.isEmpty {
                         emptyHistoryState
                     } else {
@@ -593,10 +507,7 @@ struct CrateOpeningView: View {
                     Text(item.character.rarity.capitalized)
                         .font(NQText.micro.font)
                         .foregroundStyle(NQTheme.inkMuted)
-                    if item.shiny {
-                        NQChip("Shiny", icon: .sparkle, tint: NQTheme.gold, filled: true)
-                    }
-                    Text("· \(item.powerLabel)")
+                    Text("· ★\(item.stars ?? 1)")
                         .font(NQText.micro.font)
                         .foregroundStyle(NQTheme.inkFaint)
                 }
@@ -623,10 +534,10 @@ struct CrateOpeningView: View {
             Image(systemName: "clock.arrow.circlepath")
                 .font(.system(size: 36))
                 .foregroundStyle(NQTheme.inkFaint)
-            Text("No pulls yet")
+            Text("No mints yet")
                 .font(NQText.heading.font)
                 .foregroundStyle(NQTheme.inkMuted)
-            Text("Open a crate to start your collection.")
+            Text("Open a Cookbook or a Case to start your collection.")
                 .font(NQText.caption.font)
                 .foregroundStyle(NQTheme.inkFaint)
         }
@@ -634,97 +545,22 @@ struct CrateOpeningView: View {
         .padding(NQTheme.spaceXL)
     }
 
-    // MARK: - Keys tab
+    // MARK: - Promo tab
 
-    private var keysTab: some View {
+    private var promoTab: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: NQTheme.spaceL) {
-                // Current balance
-                VStack(spacing: NQTheme.spaceS) {
-                    NQSectionHeader("Key balance")
-                    HStack {
-                        NQIcon.sparkle.view.frame(width: 28, height: 28)
-                            .foregroundStyle(NQTheme.gold)
-                        if let keys = gameState.keysRemaining {
-                            Text("\(keys)")
-                                .font(NQText.displayL.font)
-                                .foregroundStyle(NQTheme.ink)
-                        } else {
-                            NQSkeleton(width: 60, height: 40)
-                        }
-                        Spacer()
-                    }
+                VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+                    NQSectionHeader("Promo code")
+                    promoCodeSection
                 }
-                .nqPadding(.card)
-                .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), fill: NQTheme.surface, elevation: .card)
-
-                // Earn keys
-                NQSectionHeader("Earn keys")
-                keySourceCard(
-                    icon: "barcode.viewfinder",
-                    title: "Scan a food",
-                    desc: "Each daily scan grants 1 key",
-                    keys: "+1"
-                )
-                keySourceCard(
-                    icon: "figure.walk",
-                    title: "Close activity rings",
-                    desc: "All 3 rings → +2 keys (daily)",
-                    keys: "+2"
-                )
-                keySourceCard(
-                    icon: "trophy.fill",
-                    title: "Win a battle",
-                    desc: "Each PvP win grants +3 keys",
-                    keys: "+3"
-                )
-                keySourceCard(
-                    icon: "flame.fill",
-                    title: "7-day streak",
-                    desc: "Bonus +5 keys on day 7",
-                    keys: "+5"
-                )
-
-                // Promo code
-                NQSectionHeader("Promo code")
-                promoCodeSection
-
-                Text("Keys are granted by gameplay actions.")
+                Text("Promo codes grant coins or a fixed-rarity Case.")
                     .font(NQText.micro.font)
                     .foregroundStyle(NQTheme.inkFaint)
             }
             .padding(NQTheme.spaceL)
         }
     }
-
-    private func keySourceCard(icon: String, title: String, desc: String, keys: String) -> some View {
-        HStack(spacing: NQTheme.spaceM) {
-            Image(systemName: icon)
-                .font(.system(size: 20, weight: .semibold))
-                .foregroundStyle(accent.accent)
-                .frame(width: 40, height: 40)
-                .background(accent.accent.opacity(0.1))
-                .clipShape(Circle())
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(NQText.body.font.weight(.semibold))
-                    .foregroundStyle(NQTheme.ink)
-                Text(desc)
-                    .font(NQText.micro.font)
-                    .foregroundStyle(NQTheme.inkMuted)
-            }
-
-            Spacer()
-
-            NQChip(keys, icon: .sparkle, tint: NQTheme.gold, filled: true)
-        }
-        .nqPadding(.card)
-        .background(NQTheme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusM))
-    }
-
-    // MARK: - Promo code
 
     private var promoCodeSection: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
@@ -747,7 +583,7 @@ struct CrateOpeningView: View {
             if let message = promoResult {
                 Text(message)
                     .font(NQText.caption.font)
-                    .foregroundStyle(message.hasPrefix("+") ? NQTheme.success : Color.red)
+                    .foregroundStyle(message.hasPrefix("+") || message.hasPrefix("Redeemed") ? NQTheme.success : Color.red)
                     .transition(.opacity)
             }
         }
@@ -762,14 +598,14 @@ struct CrateOpeningView: View {
         promoResult = nil
 
         if let response = await gameState.redeemPromo(code: code) {
-            if let drop = response.result.drop {
-                promoResult = "+1 \(drop.character.name) from a free crate!"
-                revealedDrops = [drop]
-                currentDropIndex = 0
-                await playCapsuleSequence(for: drop)
-            } else if response.result.reward.hasPrefix("keys:") {
-                promoResult = "+\(response.result.keys) keys added!"
-                NQJuice.keys()
+            if let granted = response.result.grantedCase {
+                let rarity = nqRarity(from: granted.rarity)
+                promoResult = "+1 \(rarity.displayName) Case added!"
+                NQJuice.success()
+                tab = .cases
+            } else if response.result.reward.hasPrefix("coins:") {
+                promoResult = "+\(response.result.reward.dropFirst(6)) coins added!"
+                NQSound.play(.coins)
             } else {
                 promoResult = "Redeemed \(response.result.reward)"
             }
@@ -796,8 +632,7 @@ struct CrateOpeningView: View {
             VStack(spacing: NQTheme.spaceL) {
                 Spacer()
 
-                if currentDropIndex < revealedDrops.count {
-                    let drop = revealedDrops[currentDropIndex]
+                if let drop = revealedDrop {
                     let rarity = nqRarity(from: drop.character.rarity)
 
                     NQCapsule(
@@ -838,7 +673,7 @@ struct CrateOpeningView: View {
 
                     // Drop info (visible at .open)
                     if capsuleStage == .open {
-                        dropInfo(drop, index: currentDropIndex, total: revealedDrops.count)
+                        dropInfo(drop)
                             .transition(.opacity.combined(with: .move(edge: .bottom)))
                     }
                 }
@@ -855,10 +690,10 @@ struct CrateOpeningView: View {
         }
     }
 
-    private func dropInfo(_ drop: CrateOpenResponse, index: Int, total: Int) -> some View {
+    private func dropInfo(_ drop: CrateOpenResponse) -> some View {
         VStack(spacing: NQTheme.spaceS) {
-            if total > 1 {
-                Text("Pull \(index + 1) of \(total)")
+            if let caseRarity = drop.caseRarity {
+                Text("\(nqRarity(from: caseRarity).displayName) Case")
                     .font(NQText.micro.font)
                     .foregroundStyle(.white.opacity(0.7))
             }
@@ -881,30 +716,14 @@ struct CrateOpeningView: View {
                     .padding(.horizontal, NQTheme.spaceL)
             }
 
-            HStack(spacing: NQTheme.spaceL) {
-                statPill("Power", String(format: "%.0f", drop.power), drop.powerLabel)
-                if drop.shiny {
-                    HStack(spacing: 4) {
-                        NQAssetImage("star-badge")
-                            .frame(width: 22, height: 22)
-                        NQChip("Shiny", icon: .sparkle, tint: NQTheme.gold, filled: true)
-                    }
-                }
-                statPill("Value", "\(drop.value)", "points")
-            }
+            statPill("Value", "\(drop.value)", "net worth")
         }
     }
 
     private var capsuleControls: some View {
         HStack(spacing: NQTheme.spaceM) {
-            if currentDropIndex < revealedDrops.count - 1 {
-                NQButton("Next pull", icon: .sparkle, style: .primary, fullWidth: false) {
-                    advanceToNextDrop()
-                }
-            } else {
-                NQButton("Open another", icon: .sparkle, style: .primary, fullWidth: false) {
-                    closeCapsuleOverlay()
-                }
+            NQButton("Done", icon: .checkCircle, style: .primary, fullWidth: false) {
+                closeCapsuleOverlay()
             }
 
             Button("Skip") {
@@ -933,29 +752,20 @@ struct CrateOpeningView: View {
 
     // MARK: - Open sequence
 
-    private func openCrate(_ crate: CrateSummaryDTO) {
+    private func openCase(_ pending: PendingCaseDTO) {
         opening = true
-        openingCrateId = crate.id
-        revealedDrops = []
-        currentDropIndex = 0
+        revealedDrop = nil
         capsuleStage = .hidden
 
         Task {
-            var drops: [CrateOpenResponse] = []
-            for _ in 0..<batchCount {
-                if let drop = await gameState.openCrate(crateID: crate.id) {
-                    drops.append(drop)
-                    gameState.addCrateCharacter(drop: drop)
-                }
-            }
-
-            guard !drops.isEmpty else {
+            guard let drop = await gameState.openPendingCase(caseID: pending.caseId) else {
                 opening = false
                 return
             }
 
-            revealedDrops = drops
-            await playCapsuleSequence(for: drops[0])
+            gameState.addCrateCharacter(drop: drop)
+            revealedDrop = drop
+            await playCapsuleSequence(for: drop)
         }
     }
 
@@ -1044,9 +854,9 @@ struct CrateOpeningView: View {
     }
 
     private func beginHold() {
-        guard capsuleStage == .charging, holdTask == nil else { return }
+        guard capsuleStage == .charging, holdTask == nil, revealedDrop != nil else { return }
         NQSound.play(.hover)
-        let duration = chargeDuration(for: revealedDrops[currentDropIndex].character.rarity)
+        let duration = chargeDuration(for: revealedDrop!.character.rarity)
         var lastTick = chargeProgress
         holdTask = Task { @MainActor in
             var last = Date()
@@ -1095,46 +905,24 @@ struct CrateOpeningView: View {
         }
     }
 
-    private func advanceToNextDrop() {
-        let next = currentDropIndex + 1
-        guard next < revealedDrops.count else {
-            closeCapsuleOverlay()
-            return
-        }
-
-        withAnimation(NQMotion.quick) {
-            capsuleStage = .hidden
-            currentDropIndex = next
-        }
-
-        Task {
-            try? await Task.sleep(nanoseconds: 200_000_000)
-            await playCapsuleSequence(for: revealedDrops[next])
-        }
-    }
-
     private func closeCapsuleOverlay() {
         withAnimation(NQMotion.quick) {
             capsuleStage = .hidden
-            revealedDrops = []
-            currentDropIndex = 0
+            revealedDrop = nil
             opening = false
         }
-        Task { await gameState.refreshInventory() }
+        Task {
+            _ = await gameState.refreshPendingCases()
+            await gameState.refreshInventory()
+        }
     }
 
     // MARK: - Helpers
 
-    /// Themed crate art from `game-assets/`. Falls back to the pull's rarity chest.
+    /// Themed case art from `game-assets/` — the chest for the Case's rarity.
     private func caseArtwork(_ rarity: NQRarity, opened: Bool) -> AnyView {
-        let themed = opened
-            ? GameArt.crateOpened(openingCrateId)
-            : GameArt.crateClosed(openingCrateId)
-        let name = NQAsset.uiImage(themed) == nil
-            ? GameArt.rarityChest(closed: rarity, opened: opened)
-            : themed
-        return AnyView(
-            NQAssetImage(name)
+        AnyView(
+            NQAssetImage(GameArt.rarityChest(closed: rarity, opened: opened))
                 .aspectRatio(contentMode: .fit)
         )
     }
@@ -1145,38 +933,6 @@ struct CrateOpeningView: View {
 
     private func nqRarity(from string: String) -> NQRarity {
         NQRarity(rawValue: string.lowercased()) ?? .common
-    }
-}
-
-// MARK: - Animated key counter
-
-private struct AnimatedKeyCount: View {
-    let keys: Int
-    @State private var displayKeys: Int
-    @State private var bump = false
-
-    init(keys: Int) {
-        self.keys = keys
-        _displayKeys = State(initialValue: keys)
-    }
-
-    var body: some View {
-        Text("\(displayKeys)")
-            .font(NQText.heading.font)
-            .scaleEffect(bump ? 1.3 : 1.0)
-            .onChange(of: keys) { newValue in
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.5)) {
-                    bump = true
-                }
-                withAnimation(.easeOut(duration: 0.4)) {
-                    displayKeys = newValue
-                }
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        bump = false
-                    }
-                }
-            }
     }
 }
 
@@ -1296,11 +1052,6 @@ private struct FairnessSheet: View {
 }
 
 // MARK: - Helpers
-
-private func hexToUInt32(_ hex: String) -> UInt32 {
-    let cleaned = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
-    return UInt32(cleaned, radix: 16) ?? 0x9C978F
-}
 
 private extension String {
     func slice(_ start: Int, _ end: Int) -> String {

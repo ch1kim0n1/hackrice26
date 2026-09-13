@@ -3,6 +3,11 @@
 A hackathon prototype pipeline that reads Apple Watch data from HealthKit on an
 iPhone, normalizes it into JSON, and POSTs it to a local backend.
 
+> **Shipped copy:** the main app now carries this reader at
+> `ios/Sources/NutriQuest/Health/` (`HealthKitManager`, `HealthKitSnapshot`,
+> `HealthSyncService`) and posts with the player's auth header. This folder
+> stays as the standalone reference prototype.
+
 ```
 Apple Watch → Apple Health / HealthKit → iOS app → HealthSnapshot JSON → POST /vitals → backend processing
 ```

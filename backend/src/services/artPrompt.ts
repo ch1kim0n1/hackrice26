@@ -9,7 +9,9 @@ export interface ArtInput {
   name: string;
   colorHex: string;
   rarity: string;
-  statType: string;
+  /** Optional personality hint. The old stat-driven vibe table is gone with
+   *  the type system — pass `flavor` for character voice instead. */
+  statType?: string;
   flavor?: string;
 }
 
@@ -31,7 +33,7 @@ const RARITY_AURA: Record<string, string> = {
 };
 
 export function characterArtPrompt(input: ArtInput): string {
-  const vibe = STAT_VIBE[input.statType] ?? "cheerful energy";
+  const vibe = (input.statType ? STAT_VIBE[input.statType] : undefined) ?? "cheerful energy";
   const aura = RARITY_AURA[input.rarity];
   return [
     "cute chibi anime mascot character",

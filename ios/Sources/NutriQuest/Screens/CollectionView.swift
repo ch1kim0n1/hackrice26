@@ -183,19 +183,10 @@ struct CollectionView: View {
                     CharacterArtwork(character: character)
                         .frame(width: 128, height: 166)
                 ),
-                shiny: character.isShiny,
                 artworkSize: CGSize(width: 128, height: 166)
             )
             .overlay {
                 rarityAura(for: character)
-            }
-            .overlay(alignment: .topLeading) {
-                if character.isShiny && !character.isLocked {
-                    NQAssetImage("star-badge")
-                        .frame(width: 36, height: 36)
-                        .padding(NQTheme.spaceS)
-                        .allowsHitTesting(false)
-                }
             }
             .overlay(alignment: .bottomTrailing) {
                 if character.starLevel > 1 && !character.isLocked {
@@ -219,7 +210,7 @@ struct CollectionView: View {
         }
         .buttonStyle(NQPressableStyle(scale: 0.96, haptic: false))
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(character.name), \(character.isShiny ? "shiny " : "")\(character.rarity.label) rarity, \(character.statType.label) type\(character.isLocked ? "" : ", \(character.starLevel) star\(character.starLevel == 1 ? "" : "s")")")
+        .accessibilityLabel("\(character.name), \(character.rarity.label) rarity\(character.isLocked ? "" : ", \(character.starLevel) star\(character.starLevel == 1 ? "" : "s")")")
         .accessibilityHint(cardHint(for: character, isSelected: isSelected, isCentered: isCentered))
         .nqShineSweep(active: character.rarity >= .legendary)
     }
@@ -376,11 +367,11 @@ struct CollectionView: View {
         }
     }
 
-    /// Filters the grid by stat type. "All" shows every character.
+    /// Filters the grid by rarity tier. "All" shows every character.
     private var filterPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: NQTheme.spaceS) {
-                ForEach(["All", "Protein", "Fiber", "Vitamin", "Hydration"], id: \.self) { filter in
+                ForEach(["All"] + Rarity.allCases.map(\.label), id: \.self) { filter in
                     filterPill(filter, selected: selectedFilter == filter)
                 }
             }
@@ -419,7 +410,7 @@ struct CollectionView: View {
             ? characters.map { var c = $0; c.isLocked = true; return c }
             : characters
         if selectedFilter != "All" {
-            list = list.filter { $0.statType.rawValue == selectedFilter.lowercased() }
+            list = list.filter { $0.rarity.label == selectedFilter }
         }
         return list.sorted { a, b in
             if a.isLocked != b.isLocked { return !a.isLocked }

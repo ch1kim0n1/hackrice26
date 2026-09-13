@@ -62,9 +62,7 @@ function monsterPayload(monster: StoredDrop) {
   return {
     id: monster.id,
     character: characterPayload(monster.character.id, monster.character),
-    power: monster.power,
-    powerLabel: monster.powerLabel,
-    shiny: monster.shiny,
+    baseMintValue: monster.baseMintValue,
     stars: monster.stars ?? 1,
     netWorth: monster.value,
     acquiredAt: monster.openedAt

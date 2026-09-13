@@ -35,23 +35,20 @@ async function withPlayer(
 ): Promise<void> {
   const { portalWheelRouter } = await import("./portalWheel");
   const { stateFor } = await import("../services/lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
 
   const playerId = `wheel_${counter++}_${Date.now()}`;
   const session = stateFor(playerId);
 
   const seeded = Array.from({ length: count }, (_, i) =>
-    session.record({
+    session.record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS["salmon-striker"],
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
+      character: testCharacter("common", "salmon-striker"),
       value: 20_000,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
       openedAt: new Date().toISOString()
-    })
+    })).drop
   );
 
   const app = express();

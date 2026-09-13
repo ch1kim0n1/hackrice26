@@ -13,12 +13,23 @@ struct RootTabView: View {
     }()
     @State private var colorMode: ColorMode = .active
     @State private var showCrateOpening = false
-    @State private var showOnboarding = !UserDefaults.standard.bool(forKey: "onboarding.done")
+    @State private var showOnboarding = !OnboardingGate.isDoneForCurrentBuild
     @State private var showLeaderboard = false
     /// One stack shared by every tab. A push from inside a tab (e.g. Casino's
     /// "Loot Box Shop") must not survive a tab switch, or the bottom nav
     /// stops navigating and just sits on top of whatever was last pushed.
     @State private var navPath = NavigationPath()
+    @Environment(\.scenePhase) private var scenePhase
+
+    /// "Synced 3m ago" once a HealthKit snapshot has been uploaded; plain
+    /// Connected / Not Connected otherwise.
+    private var watchRowTrailing: String {
+        guard gameState.watchLinked else { return "Not Connected" }
+        guard let at = gameState.lastHealthSyncAt else { return "Connected" }
+        let f = RelativeDateTimeFormatter()
+        f.unitsStyle = .abbreviated
+        return "Synced \(f.localizedString(for: at, relativeTo: Date()))"
+    }
 
     /// Single source of truth: starter roster + scans + crate pulls.
     private var characters: [Character] { gameState.collection }
@@ -73,7 +84,7 @@ struct RootTabView: View {
                             ],
                             rows: [
                                 ProfileSettingsRow(label: "Leaderboard", systemImage: "trophy.fill", action: { showLeaderboard = true }),
-                                ProfileSettingsRow(label: "Connected devices", systemImage: "applewatch", trailing: gameState.watchLinked ? "Connected" : "Not Connected", isWatchRow: true)
+                                ProfileSettingsRow(label: "Connected devices", systemImage: "applewatch", trailing: watchRowTrailing, isWatchRow: true)
                             ]
                         )
                     }
@@ -134,7 +145,7 @@ struct RootTabView: View {
         }
         .fullScreenCover(isPresented: $showOnboarding) {
             OnboardingView {
-                UserDefaults.standard.set(true, forKey: "onboarding.done")
+                OnboardingGate.markDoneForCurrentBuild()
                 showOnboarding = false
                 selectedTab = .scan
             }
@@ -144,6 +155,13 @@ struct RootTabView: View {
             await gameState.loadProfile()
             await gameState.refreshVitals()
             await gameState.loadCharacterCatalog()
+            await gameState.syncHealthIfLinked()
+        }
+        // Foreground re-sync: the watch pushes to HealthKit while the phone
+        // is idle, so "app became active" is the moment fresh data exists.
+        .onChange(of: scenePhase) { phase in
+            guard phase == .active else { return }
+            Task { await gameState.syncHealthIfLinked() }
         }
         .task {
             if ProcessInfo.processInfo.arguments.contains("-showCrates") {
@@ -246,5 +264,41 @@ struct StreakMilestoneCelebration: View {
     private func dismiss() {
         NQHaptic.light()
         onDismiss()
+    }
+}
+
+// MARK: - Onboarding gate
+
+/// Onboarding shows once per *build*, not once per install. The "done" mark
+/// is stamped with the current build's identity, so every fresh build from
+/// Xcode (or a new TestFlight/App Store version) walks the user through it
+/// again while re-launching the same build does not.
+///
+/// Dev builds don't bump CFBundleVersion (project.yml sets none), so the
+/// version string alone can't tell two builds apart. The executable's
+/// modification date changes on every build, so it's folded into the stamp.
+enum OnboardingGate {
+    private static let key = "onboarding.doneBuildStamp"
+
+    /// Identity of the running build: version + build number + executable mtime.
+    static var currentBuildStamp: String {
+        let info = Bundle.main.infoDictionary ?? [:]
+        let version = info["CFBundleShortVersionString"] as? String ?? "0"
+        let build = info["CFBundleVersion"] as? String ?? "0"
+        var mtime = "0"
+        if let url = Bundle.main.executableURL,
+           let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+           let date = attrs[.modificationDate] as? Date {
+            mtime = String(Int(date.timeIntervalSince1970))
+        }
+        return "\(version)-\(build)-\(mtime)"
+    }
+
+    static var isDoneForCurrentBuild: Bool {
+        UserDefaults.standard.string(forKey: key) == currentBuildStamp
+    }
+
+    static func markDoneForCurrentBuild() {
+        UserDefaults.standard.set(currentBuildStamp, forKey: key)
     }
 }

@@ -16,6 +16,7 @@ import {
 import { HOUSE_EDGE } from "../data/cauldron";
 import { RARITY_BANDS } from "../game/rarityBands";
 import { RARITY_ORDER } from "../data/lootTable";
+import { ROSTER } from "../data/roster";
 import { Rarity } from "../types";
 
 // ============================================================================
@@ -214,23 +215,27 @@ describe("reward selection", () => {
     }
   });
 
-  it("keeps power inside the band that priced it", () => {
+  it("keeps the mint value inside the band that priced it", () => {
     for (let i = 0; i < 20; i++) {
       const reward = rewardFor(25_000, i / 20, i / 20);
-      expect(reward.power).toBeGreaterThanOrEqual(0);
-      expect(reward.power).toBeLessThanOrEqual(100);
+      const band = RARITY_BANDS[reward.rarity];
+      expect(reward.baseMintValue).toBeGreaterThanOrEqual(band.min);
+      expect(reward.baseMintValue).toBeLessThanOrEqual(band.max);
+      expect(reward.value).toBe(reward.baseMintValue); // rewards are always ★1
     }
   });
 
   it("can mint something for every bracket", () => {
     for (const rarity of RARITY_ORDER as Rarity[]) {
-      expect(rewardPool(rarity).length).toBeGreaterThan(0);
+      expect(rewardPool().length).toBeGreaterThan(0);
       const budget = RARITY_BANDS[rarity].min + 1;
       expect(rewardFor(budget, 0.5, 0.5).rarity).toBe(rarity);
     }
   });
 
-  it("keeps brainrot out of casino secret cash-outs", () => {
-    expect(rewardPool("secret").map((c) => c.id)).toEqual(["the-first-seed"]);
+  it("mints casino rewards from the whole catalog — rarity is on the instance", () => {
+    // No separate secret pool: the budget bought the rarity, and any of the
+    // 14 designs can be the monster that carries it (spec §2).
+    expect([...rewardPool().map((c) => c.id)].sort()).toEqual([...ROSTER.map((c) => c.id)].sort());
   });
 });

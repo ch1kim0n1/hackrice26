@@ -1,106 +1,144 @@
-// The MVP roster (issue #92): 14 established characters, Pokédex-style.
+// The master authored-character catalog — the spec §2 "master catalog with
+// immutable IDs" contract — enforced at import time so a malformed
+// characters.json fails the boot, not the user.
 //
-// characters.json is the authored data; this module is the contract it has to
-// satisfy. The schema runs at import time, so a roster with a missing bio, an
-// illegal stat, or an element that disagrees with its own stat line fails at
-// boot rather than halfway through a demo.
-//
-// Deliberately absent: base net worth. What a monster is worth is decided at
-// mint time by its rarity band (game/rarityBands.ts) and the valuation work is
-// still ahead; putting a price here now would create a second source of truth
-// for exactly the thing the economy is being unified around.
+// The schema this enforces (schemas/monster.ts catalogCharacterSchema, plus
+// the roster-local rules below):
+//   - `id` is permanent and independent of the display name: lower-kebab,
+//     unique, and carried verbatim through the API and DB so a rename is
+//     always cosmetic (immutable-ID requirement).
+//   - Combat stats are `baseHealth` + `baseAttack` + `baseMana` and nothing
+//     else: there is no `element`, no four-stat `baseStats` blob, and no
+//     `statType` anywhere in the catalog.
+//   - There is no `rarity` on a catalog entry. Rarity is rolled per monster
+//     instance at mint (NutritionScore roll for barcodes, cookbook table for
+//     crates) — a character design is never intrinsically rare.
+//   - Every character embeds exactly 3 authored standard moves and one Mana
+//     Special (move shape: schemas/monster.ts moveSchema); `special` +
+//     `baseMana` only come into play when the monster instance is Epic+.
+//   - `imageKey` names the sprite set under public/monster/ (see
+//     characterArt.ts) and `bio`/`tagline` are the lore fields.
 
-import raw from "./characters.json";
 import { z } from "zod";
-import {
-  STAT_ELEMENT,
-  STAT_KEYS,
-  baseStatsSchema,
-  elementSchema,
-  raritySchema
-} from "../schemas/gameSchemas";
-import { Rarity, StatType } from "../types";
+import fs from "fs";
+import path from "path";
+import { Character, Rarity } from "../types";
+import { catalogCharacterObjectSchema } from "../schemas/monster";
+import { hasMana } from "../game/spec";
 
-/** How many characters the MVP roster is specified to contain. */
-export const ROSTER_SIZE = 14;
-
-export const rosterCharacterSchema = z.object({
-  /** Stable key. Also the art seed and the image key, so it must never change. */
-  id: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/, "id must be lower-kebab-case"),
-  name: z.string().min(2).max(40),
-  rarity: raritySchema,
-  element: elementSchema,
-  colorHex: z.string().regex(/^#[0-9A-Fa-f]{6}$/),
-  /** One line, shown on cards. */
-  tagline: z.string().min(8).max(120),
-  /** The Pokédex paragraph, shown on the character sheet. */
-  bio: z.string().min(40).max(400),
-  /** Resolves to art. Matches the checked-in asset name (issue #93). */
-  imageKey: z.string().regex(/^[a-z][a-z0-9-]{2,39}$/),
-  baseStats: baseStatsSchema
-});
-
-export const rosterSchema = z.object({
-  version: z.number().int().positive(),
-  characters: z.array(rosterCharacterSchema).length(ROSTER_SIZE)
+/**
+ * The catalog schema is the shared contract; the roster adds the two rules
+ * that are this file's job rather than the protocol's: lore is mandatory
+ * (not optional) and authored stats sit inside the sane design envelope.
+ */
+export const rosterCharacterSchema = catalogCharacterObjectSchema.extend({
+  // Re-applied manually below: extend() is only legal on the unrefined
+  // object, so the special->baseMana rule is re-checked after extension.
+  tagline: z.string().min(1).max(80),
+  bio: z.string().min(10).max(500),
+  baseHealth: z.number().int().min(40).max(200),
+  baseAttack: z.number().int().min(20).max(100),
+  baseMana: z.number().int().min(40).max(200)
+}).superRefine((c, ctx) => {
+  if (c.special && !c.baseMana) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "special requires baseMana", path: ["special"] });
+  }
 });
 
 export type RosterCharacter = z.infer<typeof rosterCharacterSchema>;
 
+interface RosterFile {
+  characters: unknown[];
+}
+
 function loadRoster(): RosterCharacter[] {
-  const parsed = rosterSchema.safeParse(raw);
-  if (!parsed.success) {
-    throw new Error(`characters.json is invalid: ${parsed.error.issues
-      .map((issue) => `${issue.path.join(".")} ${issue.message}`)
-      .join("; ")}`);
-  }
-  const characters = parsed.data.characters;
-
-  const ids = new Set<string>();
-  for (const character of characters) {
-    if (ids.has(character.id)) throw new Error(`duplicate roster id '${character.id}'`);
-    ids.add(character.id);
-
-    // A character's element must be the one its own stat line implies, or the
-    // Pokédex and the battle engine would disagree about what it is. Mirrors
-    // element_from_stats() in SQL and elementFor() in game/baseStats.ts.
-    const dominant = STAT_KEYS.reduce((best, key) =>
-      character.baseStats[key] > character.baseStats[best] ? key : best
-    );
-    if (STAT_ELEMENT[dominant] !== character.element) {
-      throw new Error(
-        `${character.id} is element '${character.element}' but its highest stat is ` +
-          `${dominant}, which is '${STAT_ELEMENT[dominant]}'`
-      );
+  const file = path.join(__dirname, "characters.json");
+  const raw = JSON.parse(fs.readFileSync(file, "utf8")) as RosterFile;
+  const parsed = raw.characters.map((entry, index) => {
+    const result = rosterCharacterSchema.safeParse(entry);
+    if (!result.success) {
+      const issues = result.error.issues.map((i) => `${i.path.join(".")}: ${i.message}`).join("; ");
+      throw new Error(`characters.json entry ${index}: ${issues}`);
     }
-  }
+    return result.data;
+  });
 
-  return characters;
+  const seen = new Set<string>();
+  for (const character of parsed) {
+    if (seen.has(character.id)) {
+      throw new Error(`duplicate roster id '${character.id}'`);
+    }
+    seen.add(character.id);
+  }
+  return parsed;
 }
 
 export const ROSTER: RosterCharacter[] = loadRoster();
-
-export const ROSTER_BY_ID: Record<string, RosterCharacter> = Object.fromEntries(
-  ROSTER.map((character) => [character.id, character])
-);
+export const ROSTER_SIZE = ROSTER.length;
 
 export function rosterCharacter(id: string): RosterCharacter | undefined {
-  return ROSTER_BY_ID[id];
+  return ROSTER.find((c) => c.id === id);
 }
 
-/** Roster entries of one rarity, in authored order. */
-export function rosterByRarity(rarity: Rarity): RosterCharacter[] {
-  return ROSTER.filter((character) => character.rarity === rarity);
+export function isRosterCharacterId(id: string): boolean {
+  return rosterCharacter(id) !== undefined;
 }
 
-/** The roster entry as the rest of the backend's `Character` shape. */
-export function asCharacter(entry: RosterCharacter) {
+/**
+ * A minted monster's identity view of a catalog entry: the same shape the
+ * API serves for owned instances. `rarity` lives on the instance, never the
+ * design — callers pass the rolled rarity in. The instance's combat base is
+ * the catalog's by default; barcode mints may override baseHealth/baseAttack
+ * with their nutrition-derived profile via `stats` (source-neutral combat:
+ * the monster fights on its stored numbers, not on where it came from).
+ */
+export function asCharacter(
+  entry: RosterCharacter,
+  rarity: Rarity,
+  stats?: { baseHealth: number; baseAttack: number }
+): Character {
   return {
     id: entry.id,
     name: entry.name,
     colorHex: entry.colorHex,
-    rarity: entry.rarity as Rarity,
-    statType: entry.element as StatType,
+    imageKey: entry.imageKey,
+    tagline: entry.tagline,
+    bio: entry.bio,
+    rarity,
+    baseHealth: stats?.baseHealth ?? entry.baseHealth,
+    baseAttack: stats?.baseAttack ?? entry.baseAttack,
+    // Only Epic+ instances carry Mana — the catalog always lists it because
+    // any design can mint at Epic+.
+    ...(hasMana(rarity) ? { baseMana: entry.baseMana } : {}),
+    moves: entry.moves.map((m) => m.id),
+    ...(hasMana(rarity) && entry.special ? { special: entry.special.id } : {}),
     isLocked: false
   };
+}
+
+// --- Invariants: hard errors at import, not lint warnings -------------------
+
+if (ROSTER_SIZE !== 14) {
+  throw new Error(`catalog must hold exactly 14 characters (spec §2), has ${ROSTER_SIZE}`);
+}
+
+for (const character of ROSTER) {
+  const moveIds = new Set(character.moves.map((m) => m.id));
+  if (moveIds.size !== 3) {
+    throw new Error(`${character.id} has duplicate standard-move ids`);
+  }
+  for (const move of character.moves) {
+    if (!move.id.startsWith(`${character.id}-`)) {
+      throw new Error(`${character.id} move '${move.id}' is not namespaced to its owner`);
+    }
+    if (move.statusChance !== undefined && move.statusEffect === undefined) {
+      throw new Error(`${character.id} move '${move.id}' has statusChance without statusEffect`);
+    }
+  }
+  if (!character.special) {
+    throw new Error(`${character.id} must author a Mana Special`);
+  }
+  if (!character.special.id.startsWith(`${character.id}-`)) {
+    throw new Error(`${character.id} special '${character.special.id}' is not namespaced to its owner`);
+  }
 }

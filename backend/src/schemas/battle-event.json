@@ -2,47 +2,107 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://nutriquest.dev/schemas/battle-event.json",
   "title": "Battle Event",
-  "description": "One event in the battle replay stream. Event types: battleStart, roundStart, miss, attack, faint, roundEnd, victory. Mirrors BattleKit BattleEngine event emission.",
+  "description": "One event in the battle replay stream emitted by backend/src/services/battleEngine.ts (mirrored by ios/Sources/BattleKit/BattleEngine.swift). Event types: battleStart, turnStart, turnEnd, attack, miss, status, statusTick, heal, stunned, switch, faint, victory. There is no element/typeMod semantics — typeMod is a legacy echo fixed at 1.0.",
   "oneOf": [
     {
       "type": "object",
-      "required": ["event", "seed"],
+      "required": ["event", "seed", "first"],
       "properties": {
         "event": { "const": "battleStart" },
-        "seed": { "type": "string", "description": "BigInt seed as string." }
+        "seed": { "type": "string", "description": "BigInt seed as string." },
+        "first": { "type": "string", "enum": ["A", "B"], "description": "First mover. A in PvE; seeded 50/50 in PvP." }
       },
       "additionalProperties": false
     },
     {
       "type": "object",
-      "required": ["event", "round"],
+      "required": ["event", "turn", "side", "unit"],
       "properties": {
-        "event": { "const": "roundStart" },
-        "round": { "type": "integer", "minimum": 1 }
+        "event": { "const": "turnStart" },
+        "turn": { "type": "integer", "minimum": 1 },
+        "side": { "type": "string", "enum": ["A", "B"] },
+        "unit": { "type": "string", "description": "Acting unit id." }
       },
       "additionalProperties": false
     },
     {
       "type": "object",
-      "required": ["event", "attacker", "defender"],
+      "required": ["event", "attacker", "defender", "move", "moveId", "damage", "crit", "typeMod"],
+      "properties": {
+        "event": { "const": "attack" },
+        "attacker": { "type": "string" },
+        "defender": { "type": "string" },
+        "move": { "type": "string", "description": "Move display name." },
+        "moveId": { "type": "string", "description": "Authored move id." },
+        "damage": { "type": "integer", "minimum": 1, "description": "Damage dealt. A hit never deals less than 1." },
+        "crit": { "type": "boolean", "description": "Critical hit (1/24, ×1.5)." },
+        "typeMod": { "type": "number", "description": "Legacy echo, always 1.0 — the type system was removed." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "attacker", "defender", "move", "moveId"],
       "properties": {
         "event": { "const": "miss" },
         "attacker": { "type": "string" },
-        "defender": { "type": "string" }
+        "defender": { "type": "string" },
+        "move": { "type": "string" },
+        "moveId": { "type": "string" }
       },
       "additionalProperties": false
     },
     {
       "type": "object",
-      "required": ["event", "attacker", "defender", "move", "damage", "crit", "typeMod"],
+      "required": ["event", "unit", "kind"],
       "properties": {
-        "event": { "const": "attack" },
-        "attacker": { "type": "string", "description": "Attacking unit id." },
-        "defender": { "type": "string", "description": "Defending unit id." },
-        "move": { "type": "string", "description": "Move name ('Strike' or '{name} Special')." },
-        "damage": { "type": "integer", "minimum": 0, "description": "Damage dealt after mitigation." },
-        "crit": { "type": "boolean", "description": "Whether this was a critical hit (×1.6)." },
-        "typeMod": { "type": "number", "description": "Type effectiveness multiplier." }
+        "event": { "const": "status" },
+        "unit": { "type": "string" },
+        "kind": { "type": "string", "enum": ["burn", "acc_down", "atk_up", "guard_up", "stun"] },
+        "source": { "type": "string", "description": "Unit that applied it (absent for self-buffs)." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "unit", "kind", "damage"],
+      "properties": {
+        "event": { "const": "statusTick" },
+        "unit": { "type": "string" },
+        "kind": { "const": "burn" },
+        "damage": { "type": "number", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "unit", "amount"],
+      "properties": {
+        "event": { "const": "heal" },
+        "unit": { "type": "string" },
+        "amount": { "type": "number", "minimum": 0 },
+        "kind": { "type": "string", "enum": ["heal", "leech"], "description": "Absent = plain heal." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "unit"],
+      "properties": {
+        "event": { "const": "stunned" },
+        "unit": { "type": "string", "description": "Unit whose action was consumed by stun." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "side", "in", "forced"],
+      "properties": {
+        "event": { "const": "switch" },
+        "side": { "type": "string", "enum": ["A", "B"] },
+        "out": { "type": "string", "description": "Unit leaving the active slot." },
+        "in": { "type": "string", "description": "Unit entering the active slot." },
+        "forced": { "type": "boolean", "description": "true = free faint replacement; false = voluntary switch (consumes the turn)." }
       },
       "additionalProperties": false
     },
@@ -57,20 +117,21 @@
     },
     {
       "type": "object",
-      "required": ["event", "round"],
+      "required": ["event", "turn"],
       "properties": {
-        "event": { "const": "roundEnd" },
-        "round": { "type": "integer", "minimum": 1 }
+        "event": { "const": "turnEnd" },
+        "turn": { "type": "integer", "minimum": 1 }
       },
       "additionalProperties": false
     },
     {
       "type": "object",
-      "required": ["event", "winner", "rounds"],
+      "required": ["event", "winner", "turns", "reason"],
       "properties": {
         "event": { "const": "victory" },
         "winner": { "type": "string", "enum": ["A", "B"] },
-        "rounds": { "type": "integer", "minimum": 1 }
+        "turns": { "type": "integer", "minimum": 1 },
+        "reason": { "type": "string", "enum": ["wipeout", "turnLimit"], "description": "wipeout = all three fainted; turnLimit = anti-stall resolution." }
       },
       "additionalProperties": false
     }

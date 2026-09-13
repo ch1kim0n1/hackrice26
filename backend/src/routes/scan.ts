@@ -1,23 +1,59 @@
+// Scan pipeline (spec §1) — the only user food path that mints a monster.
+//
+//   POST /scan                barcode -> nutrition -> (once ever) a ★1 monster
+//   POST /scan/photo/analyze  dish photo -> a draft breakdown, nothing else
+//   POST /scan/photo/confirm  reviewed draft -> a meal-log entry, nothing else
+//   POST /scan/meals          manual entry -> a meal-log entry
+//   GET/PATCH/DELETE /scan/meals*  the intake log + dashboard totals
+//
+// The spec's hard rules, all enforced here:
+//   - Barcode is the ONLY mint path. Photo and manual never create a monster.
+//   - A barcode mints once per user, ever (the scan_mint PK enforces it at
+//     the data layer — a retried or racing insert fails, not double-mints).
+//     Re-scans still log nutrition and count for tasks.
+//   - Anti-cheat: every mint persists the barcode, the exact nutrition
+//     snapshot used, the source, and the timestamp (scan_mint). Impossible
+//     nutrition is rejected before anything mints.
+//   - Photo estimates are advisory until the user confirms or edits them;
+//     low-confidence and implausible results are flagged, and only confirmed
+//     plates are logged.
+
+import { randomBytes, randomUUID } from "crypto";
 import { Router, Response } from "express";
-import type { ScanResult, Character, StatType, Rarity } from "../types";
+import type { ScanResult, ScanNutrition, Character, Rarity } from "../types";
 import { PlayerRequest, requirePlayerId } from "../middleware/player";
 import { rateLimitByPlayer } from "../middleware/security";
 import { db } from "../db";
 import { hasDatabaseUrl } from "../db/pg";
 import { analyzeDishPhoto, imageKind } from "../nutrition/analyze";
 import { applyEdits, parseEdits } from "../nutrition/edits";
-import { dishRarity, dishToProduct } from "../nutrition/character";
 import { DishAnalysis, NotFoodError, VisionUnavailableError } from "../nutrition/types";
-import { awardXP, awardRankPoints } from "./user";
-import { RP_PER_SCAN } from "../game/rankPoints";
+import {
+  nutritionScore,
+  rollRarity,
+  combatBase,
+  checkPlausibility,
+  NutritionInput
+} from "../game/nutritionScore";
+import { mintValue } from "../game/rarityBands";
+import { SCAN_MINT_STAR } from "../game/spec";
+import { ROSTER, asCharacter } from "../data/roster";
+import { recordNutritionAction } from "./user";
 import { enqueueMirror } from "../services/mirrorQueue";
 import { mintCollectionDrop } from "../services/lootboxState";
+import { scanSchema, manualMealSchema, mealEditSchema } from "../schemas/gameSchemas";
 
 interface OFFNutriments {
   "energy-kcal_100g"?: number;
+  energy_100g?: number;
   proteins_100g?: number;
+  carbohydrates_100g?: number;
+  fat_100g?: number;
   "fiber_100g"?: number;
   sugars_100g?: number;
+  sodium_100g?: number;
+  salt_100g?: number;
+  "saturated-fat_100g"?: number;
   [key: string]: number | string | undefined;
 }
 
@@ -30,82 +66,152 @@ export interface OFFProduct {
     nutriments?: OFFNutriments;
     nova_group?: number;
     labels_tags?: string[];
-    vitamins_tags?: string[];
-    minerals_tags?: string[];
+    serving_size?: string;
   };
 }
 
-export function createScanRouter(
-  fetchProduct?: (barcode: string) => Promise<OFFProduct | null>,
-  analyzeDish?: (imageBase64: string) => Promise<DishAnalysis>
-): Router {
-const scanRouter = Router();
-scanRouter.use(requirePlayerId);
-const fetchOFFOrDefault = fetchProduct ?? fetchOFF;
-// Injectable so the dish-photo tests never make a vision call.
-const analyzeDishOrDefault = analyzeDish ?? ((image: string) => analyzeDishPhoto(image));
+/** Uniform roll unit in [0,1) from crypto bytes — the mint rolls are
+ *  server-side and auditable, never client-supplied. */
+const unit = () => randomBytes(4).readUInt32BE(0) / 0x1_0000_0000;
 
-// Day log + collection are persisted per player in SQLite (issue #23), so
-// the one-barcode rule and minted characters survive restarts. The
-// one-barcode rule is per-day: a player can re-scan the same barcode on a
-// new calendar day (UTC) and mint a fresh character.
-const seenBarcode = (playerId: string, barcode: string): boolean =>
-  !!db
-    .prepare(`SELECT 1 FROM scan_seen WHERE player_id = ? AND barcode = ? AND date(seen_at) = date('now')`)
-    .get(playerId, barcode);
+/**
+ * The nutrition snapshot for a product — the exact numbers the monster is
+ * generated from, stored verbatim in scan_mint at mint time (anti-cheat).
+ * OFF reports sodium in grams; the game scores in milligrams, so the snapshot
+ * normalises once, here, and nothing downstream re-interprets the feed.
+ */
+function nutritionFromOFF(product: OFFProduct["product"]): NutritionInput {
+  const n = (product?.nutriments ?? {}) as OFFNutriments;
+  const num = (v: unknown): number | undefined =>
+    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  const sodiumG = num(n.sodium_100g) ?? (num(n.salt_100g) !== undefined ? num(n.salt_100g)! / 2.5 : undefined);
+  const kcal = num(n["energy-kcal_100g"]) ?? (num(n.energy_100g) !== undefined ? num(n.energy_100g)! / 4.184 : undefined);
+  return {
+    calories: kcal,
+    proteinG: num(n.proteins_100g),
+    carbsG: num(n.carbohydrates_100g),
+    fatG: num(n.fat_100g),
+    fiberG: num(n["fiber_100g"]),
+    sugarG: num(n.sugars_100g),
+    sodiumMg: sodiumG !== undefined ? sodiumG * 1000 : undefined,
+    satFatG: num(n["saturated-fat_100g"])
+  };
+}
+
+function asScanNutrition(n: NutritionInput): ScanNutrition {
+  return {
+    calories: n.calories,
+    proteinG: n.proteinG,
+    carbsG: n.carbsG,
+    fatG: n.fatG,
+    fiberG: n.fiberG,
+    sugarG: n.sugarG,
+    sodiumMg: n.sodiumMg,
+    satFatG: n.satFatG
+  };
+}
+
+// --- persistence helpers ----------------------------------------------------
+
+/** True when this player has already minted from this barcode — ever.
+ *  scan_mint is authoritative; scan_seen keeps pre-016 mints honoured. */
+const hasMinted = (playerId: string, barcode: string): boolean =>
+  !!db.prepare(`SELECT 1 FROM scan_mint WHERE player_id = ? AND barcode = ?`).get(playerId, barcode) ||
+  !!db.prepare(`SELECT 1 FROM scan_seen WHERE player_id = ? AND barcode = ?`).get(playerId, barcode);
+
 const markSeen = (playerId: string, barcode: string) =>
   db.prepare(`INSERT INTO scan_seen (player_id, barcode, seen_at) VALUES (?, ?, datetime('now'))
               ON CONFLICT(player_id, barcode) DO UPDATE SET seen_at = datetime('now')`).run(playerId, barcode);
+
+interface MintRecord {
+  dropId: string;
+  characterId: string;
+  nutrition: string;
+  source: string;
+}
+
+/** Anti-cheat snapshot: one row per (player, barcode) for all time. The PK
+ *  is the enforcement — a second insert throws rather than double-minting. */
+const recordMint = (playerId: string, barcode: string, mint: MintRecord) =>
+  db.prepare(
+    `INSERT INTO scan_mint (player_id, barcode, drop_id, character_id, nutrition, source)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(playerId, barcode, mint.dropId, mint.characterId, mint.nutrition, mint.source);
+
 const loadCharacters = (playerId: string): Character[] =>
-  (db.prepare(`SELECT payload FROM scan_character WHERE player_id = ?`).all(playerId) as any[])
+  (db.prepare(`SELECT payload FROM scan_character WHERE player_id = ?`).all(playerId) as { payload: string }[])
     .map((r) => JSON.parse(r.payload) as Character);
+
 const saveCharacter = (playerId: string, character: Character) =>
   db.prepare(`INSERT OR IGNORE INTO scan_character (player_id, char_id, payload) VALUES (?, ?, ?)`)
     .run(playerId, character.id, JSON.stringify(character));
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+interface MealRow {
+  meal_id: string;
+  player_id: string;
+  source: "barcode" | "photo" | "manual";
+  name: string;
+  calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  fiber_g: number | null;
+  sugar_g: number | null;
+  sodium_mg: number | null;
+  sat_fat_g: number | null;
+  barcode: string | null;
+  analysis_id: string | null;
+  flagged: number;
+  logged_at: string;
+  updated_at: string;
+  removed: number;
+}
 
-// Mirrors BattleKit CharacterFactory (ios/Sources/NutriQuest/Scanning).
-//
-// `microScoreOverride` exists for the dish-photo path: an analysed plate knows
-// exactly which of the six tracked micronutrients it carries (0..1), which is
-// a far better signal than Open Food Facts' "are there any vitamin tags?"
-// heuristic. Barcode scans pass nothing and keep their original behaviour.
-function deriveStats(n: OFFProduct["product"], microScoreOverride?: number) {
-  const nutriments = (n?.nutriments ?? {}) as OFFNutriments;
-  const protein = Number(nutriments.proteins_100g ?? 0);
-  const fiber = Number(nutriments["fiber_100g"] ?? 0);
-  const sugar = Number(nutriments.sugars_100g ?? 0);
+function insertMeal(playerId: string, meal: {
+  source: "barcode" | "photo" | "manual";
+  name: string;
+  nutrition: NutritionInput;
+  barcode?: string;
+  analysisId?: string;
+  flagged?: boolean;
+}): string {
+  const mealId = randomUUID();
+  db.prepare(
+    `INSERT INTO meal_log (meal_id, player_id, source, name, calories, protein_g, carbs_g, fat_g,
+                           fiber_g, sugar_g, sodium_mg, sat_fat_g, barcode, analysis_id, flagged)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    mealId,
+    playerId,
+    meal.source,
+    meal.name,
+    meal.nutrition.calories ?? null,
+    meal.nutrition.proteinG ?? null,
+    meal.nutrition.carbsG ?? null,
+    meal.nutrition.fatG ?? null,
+    meal.nutrition.fiberG ?? null,
+    meal.nutrition.sugarG ?? null,
+    meal.nutrition.sodiumMg ?? null,
+    meal.nutrition.satFatG ?? null,
+    meal.barcode ?? null,
+    meal.analysisId ?? null,
+    meal.flagged ? 1 : 0
+  );
+  return mealId;
+}
 
-  const microScore =
-    microScoreOverride ??
-    (((n?.vitamins_tags?.length ?? 0) > 0 ? 0.5 : 0) +
-      ((n?.minerals_tags?.length ?? 0) > 0 ? 0.5 : 0) || 0.3);
-
+function mealDto(row: MealRow) {
   return {
-    power: clamp(20 + protein * 4, 10, 100),
-    guard: clamp(20 + fiber * 5, 10, 100),
-    vitality: clamp(20 + microScore * 45, 10, 100),
-    tempo: clamp(20 + (protein / Math.max(sugar, 1)) * 10 + (50 - sugar) * 0.6, 10, 100)
+    mealId: row.meal_id,
+    source: row.source,
+    name: row.name,
+    calories: row.calories,
+    proteinG: row.protein_g,
+    carbsG: row.carbs_g,
+    fatG: row.fat_g,
+    flagged: row.flagged === 1,
+    loggedAt: row.logged_at
   };
-}
-
-function rarityFor(n: OFFProduct["product"]): Rarity {
-  if (n?.nova_group === 4) return "common";
-  const labels = (n?.labels_tags?.length ?? 0) + (n?.vitamins_tags?.length ?? 0);
-  if (labels >= 8) return "epic";
-  if (labels >= 4) return "rare";
-  return "common";
-}
-
-function elementFor(stats: { power: number; guard: number; vitality: number; tempo: number }): StatType {
-  const pairs: [StatType, number][] = [
-    ["protein", stats.power],
-    ["fiber", stats.guard],
-    ["vitamin", stats.vitality],
-    ["hydration", stats.tempo]
-  ];
-  return pairs.sort((a, b) => b[1] - a[1])[0][0];
 }
 
 async function fetchOFF(barcode: string): Promise<OFFProduct | null> {
@@ -137,16 +243,31 @@ function requireOwnId(req: PlayerRequest, res: Response): boolean {
   return true;
 }
 
-// POST /scan { barcode } -- real Open Food Facts lookup, derives battle stats
-// server-side (mirrors BattleKit CharacterFactory), mints a character, applies
-// the one-barcode-per-day rule. Player identity comes from the X-Player-Id
-// header (requirePlayerId middleware), NOT the request body -- a body field
-// could let any client write into another player's collection.
-// Rate-limited to avoid OFF API abuse and barcode spam.
-scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "scan", message: "Too many scans. Try again later." }), async (req: PlayerRequest, res) => {
-  const { barcode } = req.body as { barcode?: string };
+export function createScanRouter(
+  fetchProduct?: (barcode: string) => Promise<OFFProduct | null>,
+  analyzeDish?: (imageBase64: string) => Promise<DishAnalysis>
+): Router {
+const scanRouter = Router();
+scanRouter.use(requirePlayerId);
+const fetchOFFOrDefault = fetchProduct ?? fetchOFF;
+// Injectable so the dish-photo tests never make a vision call.
+const analyzeDishOrDefault = analyzeDish ?? ((image: string) => analyzeDishPhoto(image));
 
-  if (typeof barcode !== "string" || !/^\d{6,20}$/.test(barcode)) {
+// POST /scan { barcode } — the only mint path. Fetches nutrition from Open
+// Food Facts (never the client), scores it holistically, and on the FIRST
+// scan of this barcode by this player mints a ★1 monster: rarity from the
+// NutritionScore-tilted roll, character design picked uniformly from the
+// catalog, combat base from the Attack/Health profiles, mint value from the
+// §2 segment roll. Re-scans log nutrition and earn task credit but never
+// mint again — the scan_mint PK makes a double-mint impossible even if two
+// requests race.
+scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "scan", message: "Too many scans. Try again later." }), async (req: PlayerRequest, res) => {
+  const parsed = scanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ error: "barcode must be a string of 6-20 digits (EAN/UPC)." });
+  }
+  const { barcode } = parsed.data;
+  if (!/^\d{6,20}$/.test(barcode)) {
     return res.status(400).json({ error: "barcode must be a string of 6-20 digits (EAN/UPC)." });
   }
 
@@ -155,67 +276,119 @@ scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "
     return res.status(404).json({ error: "product not found in Open Food Facts" });
   }
 
-  const stats = deriveStats(off.product);
-  const name = off.product.product_name_en ?? off.product.product_name ?? "Unknown food";
-
-  // One barcode per day per player. Keyed by the trusted header, not body.
   const key = req.playerId!;
-  const isNew = !seenBarcode(key, barcode);
-  markSeen(key, barcode);
+  const name = off.product.product_name_en ?? off.product.product_name ?? "Unknown food";
+  const nutrition = nutritionFromOFF(off.product);
 
-  const character: Character = {
-    id: `scan-${barcode}`,
-    name,
-    colorHex: "#5FCB82",
-    rarity: rarityFor(off.product),
-    statType: elementFor(stats),
-    isLocked: false
-  };
-
-  if (isNew) {
-    saveCharacter(key, character);
-    // Mint the real owned drop alongside the collection entry — a scanned
-    // monster is sellable and wagerable like any crate pull.
-    mintCollectionDrop(key, character, "scan");
-    awardXP(key, 30, "scan");
-    // Consistency ladder (#83): a unique scan is a logged meal.
-    awardRankPoints(key, RP_PER_SCAN, "scan");
+  // Reject impossible/outlier nutrition before it can mint anything
+  // (checklist anti-cheat). An implausible feed also doesn't get logged as
+  // fact — the meal log is a ledger, not a scratchpad.
+  const plausibility = checkPlausibility(nutrition);
+  if (!plausibility.plausible) {
+    return res.status(422).json({
+      error: {
+        code: "IMPLAUSIBLE_NUTRITION",
+        message: "The nutrition data for this product failed sanity checks.",
+        reasons: plausibility.reasons
+      }
+    });
   }
 
-  const result: ScanResult & { stats: typeof stats; duplicate: boolean } = {
+  const score = nutritionScore(nutrition);
+  const duplicate = hasMinted(key, barcode);
+
+  let character: Character | undefined;
+  let mint: { dropId: string; netWorth: number; stars: number } | undefined;
+
+  if (!duplicate) {
+    // Draw the monster: NutritionScore tilts the rarity roll, the design is a
+    // uniform pick across the 14, and the mint value uses the §2 segment roll.
+    const rarityUnit = unit();
+    const rarity: Rarity = rollRarity(score, rarityUnit);
+    const characterUnit = unit();
+    const entry = ROSTER[Math.floor(characterUnit * ROSTER.length)];
+    const stats = combatBase(nutrition);
+    const segmentUnit = unit();
+    const positionUnit = unit();
+    const netWorth = mintValue(rarity, segmentUnit, positionUnit);
+    character = asCharacter(entry, rarity, stats);
+
+    // Atomic: the drop, the collection entry and the anti-cheat record all
+    // commit together — a crash mid-mint can never leave a monster without
+    // its provenance, or provenance for a monster that doesn't exist.
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const drop = mintCollectionDrop(key, character, "scan", {
+        value: netWorth,
+        rolls: { rarity: rarityUnit, character: characterUnit, mintSegment: segmentUnit, mintPosition: positionUnit }
+      });
+      recordMint(key, barcode, {
+        dropId: drop.id,
+        characterId: entry.id,
+        nutrition: JSON.stringify(asScanNutrition(nutrition)),
+        source: "openfoodfacts"
+      });
+      saveCharacter(key, character);
+      db.exec("COMMIT");
+      mint = { dropId: drop.id, netWorth, stars: SCAN_MINT_STAR };
+    } catch (err) {
+      db.exec("ROLLBACK");
+      throw err;
+    }
+    markSeen(key, barcode);
+  } else {
+    markSeen(key, barcode);
+  }
+
+  // Every successful scan logs the meal — mint or not (spec: re-scans still
+  // log nutrition and count for tasks).
+  const mealId = insertMeal(key, { source: "barcode", name, nutrition, barcode });
+  // An eligible nutrition action — feeds the streak (spec §6), not RR.
+  recordNutritionAction(key);
+
+  const result: ScanResult & { mealId: string; mint?: typeof mint } = {
     barcode,
     foodName: name,
-    statType: character.statType,
-    summonedCharacter: isNew ? character : undefined,
-    stats,
-    duplicate: !isNew
+    nutritionScore: Math.round(score * 10) / 10,
+    summonedCharacter: character,
+    nutrition: asScanNutrition(nutrition),
+    duplicate,
+    mealId,
+    ...(mint ? { mint } : {})
   };
 
   // Best-effort gameplay-event mirror into the TigerData hypertable.
   if (hasDatabaseUrl()) {
-    // One scan per barcode per day, so barcode+day is the event's own identity
-    // and a retried request cannot double-count the scan.
-    const day = new Date().toISOString().slice(0, 10);
-    enqueueMirror("gameplay_event", `scan:${key}:${barcode}:${day}`, {
+    enqueueMirror("gameplay_event", `scan:${key}:${barcode}:${mealId}`, {
       playerId: key,
       type: "scan",
-      detail: { barcode, duplicate: !isNew },
+      detail: { barcode, duplicate, nutritionScore: result.nutritionScore },
     });
-    if (isNew) {
-      enqueueMirror("gameplay_event", `collect:${key}:${character.id}:${day}`, {
+    if (character && mint) {
+      enqueueMirror("gameplay_event", `collect:${key}:${mint.dropId}`, {
         playerId: key,
         type: "collect",
-        detail: { characterId: character.id, rarity: character.rarity },
+        detail: { characterId: character.id, rarity: character.rarity, source: "scan" },
       });
-      enqueueMirror("acquisition_event", `${key}:${character.id}:${day}`, {
+      enqueueMirror("acquisition_event", mint.dropId, {
         playerId: key,
         sourceKind: "scan",
         rarity: character.rarity,
-        netWorth: 0,   // a scan summon carries no wagered worth
-        starLevel: 1,
-        characterRef: `${character.id}:${day}`,
+        netWorth: mint.netWorth,
+        starLevel: SCAN_MINT_STAR,
+        characterRef: character.id,
       });
     }
+    enqueueMirror("meal_intake", `${mealId}:intake`, {
+      playerId: key,
+      meal: {
+        calories: nutrition.calories ?? 0,
+        proteinG: nutrition.proteinG ?? 0,
+        carbsG: nutrition.carbsG ?? 0,
+        fatG: nutrition.fatG ?? 0,
+        sodiumMg: nutrition.sodiumMg ?? 0,
+      },
+    });
   }
 
   res.json({ result });
@@ -223,17 +396,14 @@ scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "
 
 // ===== Dish photo scan (no barcode) =====
 //
-// Two steps, deliberately. Analysis has to stand on its own before its numbers
-// are trusted enough to mint a character from:
+// Two steps, deliberately. Analysis produces a draft breakdown the user must
+// review; confirmation logs the meal. Per the spec a photographed dish NEVER
+// mints a monster — barcode is the only food path that can. What the photo
+// path does produce is a nutrition log entry, flagged for review when the
+// estimate is shaky (low confidence) or the totals are implausible.
 //
-//   POST /scan/photo/analyze  { image }              -> a draft breakdown
-//   POST /scan/photo/confirm  { analysisId, edits }  -> mints the character
-//
-// The draft lists every food the model found on the plate with its own portion
-// and nutrients. The user reviews it, fixes what's wrong, and only then does
-// the confirmed total flow into the same stat/element pipeline barcode scans
-// use. The draft is held server-side so the confirm step can only rescale,
-// rename or drop items the server itself analysed — a client can never hand us
+// The draft is held server-side so the confirm step can only rescale, rename
+// or drop items the server itself analysed — a client can never hand us
 // nutrition numbers directly (see nutrition/edits.ts).
 //
 // The body limit is raised for /scan/photo* only (see index.ts).
@@ -259,9 +429,9 @@ const loadAnalysis = (playerId: string, analysisId: string): StoredAnalysis | nu
 const markAnalysisConsumed = (analysisId: string) =>
   db.prepare(`UPDATE dish_analysis SET consumed = 1 WHERE analysis_id = ?`).run(analysisId);
 
-// Step 1 — analyse. Nothing is minted here; this call only produces the
-// breakdown the user is about to review. Rate-limited tighter than barcode
-// scans because each call is a vision request.
+// Step 1 — analyse. Produces the draft the user reviews; nothing is logged or
+// minted. Rate-limited tighter than barcode scans because each call is a
+// vision request.
 scanRouter.post(
   "/photo/analyze",
   rateLimitByPlayer({ windowMs: 60_000, max: 5, keyPrefix: "scan:photo", message: "Photo scans are heavy — max 5 per minute." }),
@@ -296,7 +466,11 @@ scanRouter.post(
 );
 
 // Step 2 — confirm. Applies the user's corrections, recomputes every total
-// server-side, then mints exactly one character from the confirmed plate.
+// server-side, and logs the meal. No monster is minted here — ever. The
+// response flags the estimate for review when confidence is low or the
+// confirmed totals are implausible; flagging is advisory (the user already
+// reviewed the plate), but it is persisted on the meal row so the app can
+// distinguish estimates it should double-check later.
 scanRouter.post(
   "/photo/confirm",
   rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "scan:confirm", message: "Too many confirmations. Try again shortly." }),
@@ -310,7 +484,7 @@ scanRouter.post(
     if (!stored) {
       return res.status(404).json({ error: { code: "ANALYSIS_NOT_FOUND", message: "No such analysis for this player" } });
     }
-    // One analysis mints one character — a confirm can't be replayed for more.
+    // One analysis logs one meal — a confirm can't be replayed for more.
     if (stored.consumed) {
       return res.status(409).json({ error: { code: "ANALYSIS_ALREADY_USED", message: "That plate has already been logged" } });
     }
@@ -323,34 +497,45 @@ scanRouter.post(
       return res.status(400).json({ error: { code: "EMPTY_PLATE", message } });
     }
 
-    // Same stat math as a barcode scan — the plate is just expressed as an
-    // OFF-shaped product first. The micro score is the real measured one.
-    const stats = deriveStats(dishToProduct(confirmed), confirmed.totals.microScore);
-
-    const character: Character = {
-      id: `dish-${confirmed.analysisId}`,
-      name: confirmed.dishName,
-      colorHex: confirmed.colorHex,
-      rarity: dishRarity(confirmed),
-      statType: elementFor(stats),
-      isLocked: false,
-      // Drives the procedural artwork so a salad and a steak don't render as
-      // the same silhouette (ChibiCharacterView).
-      foodGroup: confirmed.totals.dominantFoodGroup
+    // The confirmed plate, expressed per-100g, goes through the same
+    // plausibility gate a barcode feed would — a plate whose totals are
+    // physically impossible is flagged even after the user OK'd it.
+    const t = confirmed.totals;
+    const grams = t.portionG > 0 ? t.portionG : 100;
+    const per100 = (v: number) => (v * 100) / grams;
+    const nutrition: NutritionInput = {
+      calories: per100(t.calories),
+      proteinG: per100(t.proteinG),
+      carbsG: per100(t.carbsG),
+      fatG: per100(t.fatG),
+      fiberG: per100(t.fiberG),
+      sugarG: per100(t.sugarG),
+      sodiumMg: per100(t.sodiumMg)
     };
+    const implausible = !checkPlausibility(nutrition).plausible;
+    const flagged = confirmed.lowConfidence || implausible;
 
-    saveCharacter(req.playerId!, character);
-    mintCollectionDrop(req.playerId!, character, "dish");
     markAnalysisConsumed(confirmed.analysisId);
-    // XP lands here rather than on analyze: confirming is the moment a plate
-    // actually becomes a character, so an abandoned review earns nothing.
-    awardXP(req.playerId!, 15, "meal-photo");
-    awardRankPoints(req.playerId!, RP_PER_SCAN, "meal-photo");
+    const mealId = insertMeal(req.playerId!, {
+      source: "photo",
+      name: confirmed.dishName,
+      // The meal row stores what was actually eaten — absolute totals, not
+      // per-100g figures.
+      nutrition: {
+        calories: t.calories,
+        proteinG: t.proteinG,
+        carbsG: t.carbsG,
+        fatG: t.fatG,
+        fiberG: t.fiberG,
+        sugarG: t.sugarG,
+        sodiumMg: t.sodiumMg
+      },
+      analysisId: confirmed.analysisId,
+      flagged
+    });
+    recordNutritionAction(req.playerId!);
 
-    // Best-effort mirror: confirmed intake -> nutrition_deltas hypertable, plus a
-    // collect gameplay event. SQLite above stays authoritative.
     if (hasDatabaseUrl()) {
-      const t = confirmed.totals;
       enqueueMirror("meal_intake", `${analysisId}:intake`, {
         playerId: req.playerId!,
         meal: {
@@ -358,36 +543,136 @@ scanRouter.post(
           sodiumMg: t.sodiumMg, foodGroup: t.dominantFoodGroup, microScore: t.microScore,
         },
       });
-      enqueueMirror("gameplay_event", `collect:${character.id}:${analysisId}`, {
-        playerId: req.playerId!,
-        type: "collect",
-        detail: { source: "photo", characterId: character.id },
-      });
-      enqueueMirror("acquisition_event", character.id, {
-        playerId: req.playerId!,
-        sourceKind: "dish",
-        rarity: character.rarity,
-        netWorth: 0,   // a dish summon has no wagered worth of its own
-        starLevel: 1,
-        characterRef: character.id,
-      });
     }
 
     res.json({
       result: {
-        barcode: null,
         source: "photo",
         foodName: confirmed.dishName,
-        statType: character.statType,
-        summonedCharacter: character,
-        stats,
+        mealId,
         items: confirmed.items,
         nutrition: confirmed.totals,
-        duplicate: false
+        lowConfidence: confirmed.lowConfidence,
+        implausible,
+        flagged
       }
     });
   }
 );
+
+// ===== Meal logging =====
+//
+// One intake record across barcode / photo / manual. The dashboard contract
+// is kcal + protein + carbs + fat only — that's what /scan/meals/today and
+// the list endpoint's totals carry.
+
+// POST /scan/meals — manual entry. Like everything else it never mints.
+scanRouter.post("/meals", (req: PlayerRequest, res) => {
+  const parsed = manualMealSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: { code: "INVALID_MEAL", message: parsed.error.issues[0]?.message ?? "invalid meal" }
+    });
+  }
+  const meal = parsed.data;
+  const mealId = insertMeal(req.playerId!, {
+    source: "manual",
+    name: meal.name,
+    nutrition: {
+      calories: meal.calories,
+      proteinG: meal.proteinG,
+      carbsG: meal.carbsG,
+      fatG: meal.fatG,
+      fiberG: meal.fiberG,
+      sugarG: meal.sugarG,
+      sodiumMg: meal.sodiumMg,
+      satFatG: meal.satFatG
+    }
+  });
+  recordNutritionAction(req.playerId!);
+  res.status(201).json({ mealId });
+});
+
+// GET /scan/meals?date=YYYY-MM-DD — one day's log plus its totals. Omitting
+// the date returns today's.
+scanRouter.get("/meals", (req: PlayerRequest, res) => {
+  const date = typeof req.query.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date)
+    ? req.query.date
+    : new Date().toISOString().slice(0, 10);
+  const rows = db
+    .prepare(`SELECT * FROM meal_log WHERE player_id = ? AND removed = 0 AND date(logged_at) = ? ORDER BY logged_at`)
+    .all(req.playerId!, date) as unknown as MealRow[];
+  const totals = rows.reduce(
+    (acc, r) => ({
+      calories: acc.calories + (r.calories ?? 0),
+      proteinG: acc.proteinG + (r.protein_g ?? 0),
+      carbsG: acc.carbsG + (r.carbs_g ?? 0),
+      fatG: acc.fatG + (r.fat_g ?? 0)
+    }),
+    { calories: 0, proteinG: 0, carbsG: 0, fatG: 0 }
+  );
+  res.json({ date, meals: rows.map(mealDto), totals });
+});
+
+// GET /scan/meals/today — the dashboard feed (spec: kcal/protein/carbs/fat
+// only). W4's home screen reads exactly this shape.
+scanRouter.get("/meals/today", (req: PlayerRequest, res) => {
+  const today = new Date().toISOString().slice(0, 10);
+  const row = db
+    .prepare(
+      `SELECT COALESCE(SUM(calories), 0) AS calories,
+              COALESCE(SUM(protein_g), 0) AS protein,
+              COALESCE(SUM(carbs_g), 0) AS carbs,
+              COALESCE(SUM(fat_g), 0) AS fat
+       FROM meal_log WHERE player_id = ? AND removed = 0 AND date(logged_at) = ?`
+    )
+    .get(req.playerId!, today) as { calories: number; protein: number; carbs: number; fat: number };
+  res.json({ date: today, totals: row });
+});
+
+// PATCH /scan/meals/:mealId — correct a logged entry. Name and the four
+// dashboard macros are editable; everything else stays as recorded.
+scanRouter.patch("/meals/:mealId", (req: PlayerRequest, res) => {
+  const parsed = mealEditSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({
+      error: { code: "INVALID_MEAL_EDIT", message: parsed.error.issues[0]?.message ?? "invalid edit" }
+    });
+  }
+  const edit = parsed.data;
+  const row = db
+    .prepare(`SELECT * FROM meal_log WHERE meal_id = ? AND player_id = ? AND removed = 0`)
+    .get(req.params.mealId, req.playerId!) as MealRow | undefined;
+  if (!row) {
+    return res.status(404).json({ error: { code: "MEAL_NOT_FOUND", message: "No such meal" } });
+  }
+  db.prepare(
+    `UPDATE meal_log SET name = ?, calories = ?, protein_g = ?, carbs_g = ?, fat_g = ?, updated_at = datetime('now')
+     WHERE meal_id = ?`
+  ).run(
+    edit.name ?? row.name,
+    edit.calories ?? row.calories,
+    edit.proteinG ?? row.protein_g,
+    edit.carbsG ?? row.carbs_g,
+    edit.fatG ?? row.fat_g,
+    row.meal_id
+  );
+  res.json({ mealId: row.meal_id });
+});
+
+// DELETE /scan/meals/:mealId — tombstone, not a hard delete: ledgers and
+// mirrors stay replayable.
+scanRouter.delete("/meals/:mealId", (req: PlayerRequest, res) => {
+  const row = db
+    .prepare(`SELECT 1 FROM meal_log WHERE meal_id = ? AND player_id = ? AND removed = 0`)
+    .get(req.params.mealId, req.playerId!);
+  if (!row) {
+    return res.status(404).json({ error: { code: "MEAL_NOT_FOUND", message: "No such meal" } });
+  }
+  db.prepare(`UPDATE meal_log SET removed = 1, updated_at = datetime('now') WHERE meal_id = ?`)
+    .run(req.params.mealId);
+  res.json({ removed: true });
+});
 
 // GET /scan/collection/:playerId -- characters minted from scans. :playerId
 // must match the caller's X-Player-Id; otherwise anyone could read anyone's

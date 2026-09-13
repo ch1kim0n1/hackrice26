@@ -54,14 +54,14 @@ struct EditableDishItem: Identifiable, Equatable {
 }
 
 /// The confirm-and-correct step: the user sees every food the analysis found,
-/// fixes what's wrong, and only then turns the plate into a character.
+/// fixes what's wrong, and only then logs the plate as a meal.
 ///
-/// This screen is what makes a photo-only estimate trustworthy enough to feed
-/// the game — an AI guess nobody checked would be a fragile thing to mint
-/// permanent collection data from.
+/// A photographed dish is always an estimate — the screen says so plainly —
+/// and it never mints a monster. This review step is what makes a photo-only
+/// guess safe enough to write into the meal log.
 struct DishReviewView: View {
     let analysis: DishAnalysisDTO
-    let isSummoning: Bool
+    let isConfirming: Bool
     let onConfirm: ([DishItemEdit]) -> Void
     let onRetake: () -> Void
 
@@ -71,12 +71,12 @@ struct DishReviewView: View {
 
     init(
         analysis: DishAnalysisDTO,
-        isSummoning: Bool,
+        isConfirming: Bool,
         onConfirm: @escaping ([DishItemEdit]) -> Void,
         onRetake: @escaping () -> Void
     ) {
         self.analysis = analysis
-        self.isSummoning = isSummoning
+        self.isConfirming = isConfirming
         self.onConfirm = onConfirm
         self.onRetake = onRetake
         _items = State(initialValue: analysis.items.map(EditableDishItem.init))
@@ -131,7 +131,7 @@ struct DishReviewView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
-                        .disabled(isSummoning)
+                        .disabled(isConfirming)
                 }
             }
         }
@@ -147,7 +147,10 @@ struct DishReviewView: View {
                         Text(analysis.dishName)
                             .font(NQText.heading.font)
                             .foregroundStyle(NQTheme.ink)
-                        Text("\(active.count) item\(active.count == 1 ? "" : "s") · \(Int(active.reduce(0) { $0 + $1.portionG })) g")
+                        // Photo numbers are always labelled as estimates —
+                        // the user is the check on the vision model, not the
+                        // other way round.
+                        Text("Estimated from photo · \(active.count) item\(active.count == 1 ? "" : "s") · \(Int(active.reduce(0) { $0 + $1.portionG })) g")
                             .font(NQText.captionS.font)
                             .foregroundStyle(NQTheme.inkFaint)
                     }
@@ -263,15 +266,15 @@ struct DishReviewView: View {
 
     private var actions: some View {
         VStack(spacing: NQTheme.spaceS) {
-            NQButton(isSummoning ? "Summoning…" : "Looks right — summon", icon: .sparkle) {
+            NQButton(isConfirming ? "Logging…" : "Looks right — log this meal", icon: .checkCircle) {
                 onConfirm(items.compactMap(\.edit))
             }
-            .disabled(plateIsEmpty || isSummoning)
+            .disabled(plateIsEmpty || isConfirming)
 
             NQButton("Retake photo", icon: .scan, style: .secondary) {
                 onRetake()
             }
-            .disabled(isSummoning)
+            .disabled(isConfirming)
         }
     }
 

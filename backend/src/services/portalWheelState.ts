@@ -57,7 +57,7 @@ export interface PortalWheelSpin {
   multiplier: number;
   finalNetWorth: number;
   /** null on a wrong colour — the monster is spent, nothing returns. */
-  reward: (StoredDrop & { budget: number }) | null;
+  reward: (StoredDrop & { budget: number; overflowed?: boolean }) | null;
   createdAt: string;
   fairness: Fairness;
 }
@@ -90,7 +90,7 @@ function hydrate(row: SpinRow): PortalWheelSpin {
     won: row.won === 1,
     multiplier: row.multiplier,
     finalNetWorth: row.final_net_worth,
-    reward: row.reward ? (JSON.parse(row.reward) as StoredDrop & { budget: number }) : null,
+    reward: row.reward ? (JSON.parse(row.reward) as StoredDrop & { budget: number; overflowed?: boolean }) : null,
     createdAt: row.created_at,
     fairness: JSON.parse(row.fairness) as Fairness
   };
@@ -174,31 +174,29 @@ export function spin(
 
   // A wrong colour is a real outcome, not a failure: the monster is spent and
   // nothing is minted.
-  let reward: (StoredDrop & { budget: number }) | null = null;
+  let reward: (StoredDrop & { budget: number; overflowed?: boolean }) | null = null;
   if (finalNetWorth > 0) {
     const prize: MonsterReward = rewardFor(
       finalNetWorth,
       rollAt(PORTAL_WHEEL_CURSOR.rewardCharacter),
       rollAt(PORTAL_WHEEL_CURSOR.rewardPower)
     );
-    const stored = payoutDrop(playerId, {
+    const { drop: stored, overflowed } = payoutDrop(playerId, {
       crateId: "portal-wheel",
       character: prize.character,
       stars: prize.stars,
-      power: prize.power,
-      powerLabel: prize.powerLabel,
-      shiny: prize.shiny,
+      baseMintValue: prize.baseMintValue,
       value: prize.value,
       rolls: {
         rarity: 0,
         character: rollAt(PORTAL_WHEEL_CURSOR.rewardCharacter),
-        power: rollAt(PORTAL_WHEEL_CURSOR.rewardPower),
-        shiny: 0
+        mintSegment: -1,
+        mintPosition: rollAt(PORTAL_WHEEL_CURSOR.rewardPower)
       },
       fairness,
       openedAt: new Date(now).toISOString()
     }, "portal-wheel");
-    reward = { ...stored, budget: prize.budget };
+    reward = { ...stored, budget: prize.budget, overflowed };
   }
 
   const resolved: PortalWheelSpin = {

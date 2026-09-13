@@ -5,12 +5,16 @@ import { tmpdir } from "os";
 import path from "path";
 
 // ============================================================================
-// Shop cases: one per rarity, paid in coins, rolled exactly the way the
-// Loot-Boxes-Logic branch rolls -- odds renormalised over the tiers a case
-// stocks, no rank boost, no pity -- and priced with that branch's BASE_VALUES.
+// Cookbooks: four fixed-price books whose published odds pick a rarity Case,
+// which then mints a ★1 monster of that rarity. Plus granted Cases (ranked
+// wins, promos) and the mailbox that catches inventory overflow.
+//
+// The properties that matter: the open is atomic (coin debit + mint + both
+// ledgers commit or roll back together), a case can never open twice, and a
+// full inventory overflows to the mailbox instead of evicting anything.
 // ============================================================================
 
-const DB_FILE = path.join(tmpdir(), `nutriquest-shop-cases-${process.pid}-${Date.now()}.db`);
+const DB_FILE = path.join(tmpdir(), `nutriquest-cookbooks-${process.pid}-${Date.now()}.db`);
 
 beforeAll(() => {
   process.env.NUTRIQUEST_DB = DB_FILE;
@@ -33,7 +37,7 @@ async function withPlayer(
   const { lootboxRouter } = await import("./lootbox");
   const { recordCoins } = await import("../services/coins");
 
-  const playerId = `shop_case_${counter++}_${Date.now()}`;
+  const playerId = `cookbook_${counter++}_${Date.now()}`;
   if (coins > 0) recordCoins(playerId, coins, "grant");
 
   const app = express();
@@ -58,112 +62,254 @@ async function withPlayer(
   }
 }
 
-interface CaseSummary {
+interface CookbookSummary {
   id: string;
-  coinCost: number;
+  name: string;
+  price: number;
   odds: { rarity: string; tierChance: number }[];
 }
 
 interface OpenBody {
+  id: string;
   character: { id: string; rarity: string };
-  power: number;
-  shiny: boolean;
+  caseRarity: string;
+  baseMintValue: number;
   value: number;
   coinsSpent: number;
   coinBalance: number;
+  overflowed: boolean;
   reel: unknown[];
   reelWinnerIndex: number;
 }
 
-async function listCases(call: Call): Promise<CaseSummary[]> {
-  const body = (await (await call("GET", "/lootbox/shop-cases")).json()) as { cases: CaseSummary[] };
-  return body.cases;
-}
-
-describe("shop cases", () => {
-  it("offers one case per rarity, each rarer case costing more", async () => {
+describe("cookbooks", () => {
+  it("offers the four spec books at their spec prices", async () => {
     await withPlayer(0, async (call) => {
-      const { RARITY_ORDER } = await import("../data/lootTable");
-      const cases = await listCases(call);
+      const body = (await (await call("GET", "/lootbox/cookbooks")).json()) as {
+        cookbooks: CookbookSummary[];
+      };
+      const byId = Object.fromEntries(body.cookbooks.map((b) => [b.id, b]));
 
-      expect(cases.map((c) => c.id)).toEqual(RARITY_ORDER.map((r) => `${r}-case`));
-      for (let i = 1; i < cases.length; i++) {
-        expect(cases[i].coinCost).toBeGreaterThan(cases[i - 1].coinCost);
+      expect(Object.keys(byId).sort()).toEqual([
+        "chefs-cookbook",
+        "forbidden-cookbook",
+        "home-cookbook",
+        "master-cookbook"
+      ]);
+      expect(byId["home-cookbook"].price).toBe(1_600);
+      expect(byId["chefs-cookbook"].price).toBe(3_300);
+      expect(byId["master-cookbook"].price).toBe(9_200);
+      expect(byId["forbidden-cookbook"].price).toBe(33_500);
+    });
+  });
+
+  it("publishes the spec's 7-tier odds table for each book", async () => {
+    const { COOKBOOKS } = await import("../game/spec");
+    await withPlayer(0, async (call) => {
+      const body = (await (await call("GET", "/lootbox/cookbooks")).json()) as {
+        cookbooks: CookbookSummary[];
+      };
+      for (const book of body.cookbooks) {
+        const spec = COOKBOOKS.find((s) => s.id === book.id)!;
+        for (const row of book.odds) {
+          expect(row.tierChance).toBeCloseTo(
+            (spec.odds as Record<string, number>)[row.rarity], 9);
+        }
       }
     });
   });
 
-  it("uses the branch odds: a case is its floor tier 80% of the time, renormalised over what it stocks", async () => {
-    await withPlayer(0, async (call) => {
-      const cases = await listCases(call);
+  it("debits the price, mints inside the case rarity's band, writes both ledgers", async () => {
+    await withPlayer(10_000, async (call, playerId) => {
+      const { coinHistory } = await import("../services/coins");
+      const { db } = await import("../db");
 
-      const rare = cases.find((c) => c.id === "rare-case")!;
-      expect(rare.odds[0].rarity).toBe("rare");
-      expect(rare.odds[0].tierChance).toBeCloseTo(0.8, 10);
-      expect(rare.odds.some((o) => o.rarity === "common" || o.rarity === "uncommon")).toBe(false);
-
-      const secret = cases.find((c) => c.id === "secret-case")!;
-      expect(secret.odds).toHaveLength(1);
-      expect(secret.odds[0].tierChance).toBe(1);
-    });
-  });
-
-  it("charges the case's price and prices the drop off BASE_VALUES", async () => {
-    const { BASE_VALUES } = await import("../data/lootTable");
-    const { powerBandFor, SHINY_MULTIPLIER, REEL_LENGTH, REEL_WINNER_INDEX } = await import("../services/lootboxEngine");
-
-    await withPlayer(1_000_000, async (call) => {
-      const rare = (await listCases(call)).find((c) => c.id === "rare-case")!;
-      const response = await call("POST", "/lootbox/shop-cases/rare-case/open");
+      const response = await call("POST", "/lootbox/cookbooks/home-cookbook/open");
       expect(response.status).toBe(200);
       const body = (await response.json()) as OpenBody;
 
-      expect(body.coinsSpent).toBe(rare.coinCost);
-      expect(body.coinBalance).toBe(1_000_000 - rare.coinCost);
-      expect(["rare", "epic", "legendary", "mythic", "secret"]).toContain(body.character.rarity);
+      expect(body.coinsSpent).toBe(1_600);
+      expect(body.coinBalance).toBe(10_000 - 1_600);
 
-      const rarity = body.character.rarity as keyof typeof BASE_VALUES;
-      const expected = Math.round(
-        BASE_VALUES[rarity] * powerBandFor(body.power).valueMultiplier * (body.shiny ? SHINY_MULTIPLIER : 1)
-      );
-      expect(body.value).toBe(expected);
-      expect(body.reel).toHaveLength(REEL_LENGTH);
-      expect(body.reelWinnerIndex).toBe(REEL_WINNER_INDEX);
+      const { RARITY_BANDS } = await import("../game/rarityBands");
+      const band = RARITY_BANDS[body.caseRarity as keyof typeof RARITY_BANDS];
+      expect(body.character.rarity).toBe(body.caseRarity);
+      expect(body.baseMintValue).toBeGreaterThanOrEqual(band.min);
+      expect(body.baseMintValue).toBeLessThanOrEqual(band.max);
+      expect(body.value).toBe(body.baseMintValue);
+
+      const debit = coinHistory(playerId).find((e) => e.reason === "case_open");
+      expect(debit?.amount).toBe(-1_600);
+      expect(debit?.refId).toBe("home-cookbook");
+
+      const charLedger = db
+        .prepare(`SELECT kind, drop_ids FROM character_ledger WHERE player_id = ?`)
+        .all(playerId) as { kind: string; drop_ids: string }[];
+      expect(charLedger.some((r) => r.kind === "cookbook_open")).toBe(true);
     });
   });
 
-  it("never touches keys or pity", async () => {
-    await withPlayer(1_000_000, async (call, playerId) => {
-      const { stateFor } = await import("../services/lootboxState");
-      const session = stateFor(playerId);
-      const before = { keys: session.keys, sinceEpic: session.sinceEpic, sinceLegendary: session.sinceLegendary };
-
-      for (let i = 0; i < 3; i++) {
-        expect((await call("POST", "/lootbox/shop-cases/common-case/open")).status).toBe(200);
-      }
-
-      expect({ keys: session.keys, sinceEpic: session.sinceEpic, sinceLegendary: session.sinceLegendary }).toEqual(before);
-    });
-  });
-
-  it("refuses without minting a drop when coins are short", async () => {
+  it("refuses without minting or debiting when coins are short", async () => {
     await withPlayer(0, async (call, playerId) => {
       const { coinBalance } = await import("../services/coins");
       const { stateFor } = await import("../services/lootboxState");
 
       const before = stateFor(playerId).inventory.length;
-      const response = await call("POST", "/lootbox/shop-cases/common-case/open");
+      const response = await call("POST", "/lootbox/cookbooks/home-cookbook/open");
 
       expect(response.status).toBe(402);
       expect(coinBalance(playerId)).toBe(0);
+      // The mint rolled back with the debit — nothing half-applied.
       expect(stateFor(playerId).inventory.length).toBe(before);
     });
   });
 
-  it("404s on an unknown case", async () => {
+  it("two racing opens cannot share one balance", async () => {
+    // Enough for exactly one Home Cookbook: whichever request commits first
+    // wins, and the loser must 402 — the debit and the balance check are one
+    // atomic step inside BEGIN IMMEDIATE.
+    await withPlayer(1_600, async (call, playerId) => {
+      const { coinBalance } = await import("../services/coins");
+      const results = await Promise.all([
+        call("POST", "/lootbox/cookbooks/home-cookbook/open"),
+        call("POST", "/lootbox/cookbooks/home-cookbook/open")
+      ]);
+      const statuses = results.map((r) => r.status).sort();
+      expect(statuses).toEqual([200, 402]);
+      expect(coinBalance(playerId)).toBe(0);
+    });
+  });
+
+  it("404s on an unknown cookbook", async () => {
     await withPlayer(1_000, async (call) => {
-      const response = await call("POST", "/lootbox/shop-cases/not-a-real-case/open");
+      const response = await call("POST", "/lootbox/cookbooks/not-a-book/open");
       expect(response.status).toBe(404);
+    });
+  });
+});
+
+describe("granted cases", () => {
+  it("a ranked/promo case opens through the same mint path and can never open twice", async () => {
+    await withPlayer(0, async (call, playerId) => {
+      const { grantCase } = await import("../services/lootboxState");
+      const granted = grantCase(playerId, "epic", "ranked_win");
+
+      const list = (await (await call("GET", "/lootbox/cases")).json()) as {
+        cases: { caseId: string; rarity: string; source: string }[];
+      };
+      expect(list.cases).toHaveLength(1);
+      expect(list.cases[0].rarity).toBe("epic");
+
+      const first = await call("POST", `/lootbox/cases/${granted.caseId}/open`);
+      expect(first.status).toBe(200);
+      const body = (await first.json()) as OpenBody;
+      expect(body.caseRarity).toBe("epic");
+      expect(body.character.rarity).toBe("epic");
+      // A case costs no coins.
+      expect(body.coinsSpent ?? 0).toBe(0);
+
+      // The row is gone — a racing or replayed second open sees nothing.
+      const second = await call("POST", `/lootbox/cases/${granted.caseId}/open`);
+      expect(second.status).toBe(404);
+    });
+  });
+});
+
+describe("mailbox overflow", () => {
+  it("a mint over the 200-cap lands in the mailbox, never evicts", async () => {
+    await withPlayer(0, async (call, playerId) => {
+      const { stateFor } = await import("../services/lootboxState");
+      const { testDrop } = await import("../testkit");
+      const { INVENTORY_CAP } = await import("../game/spec");
+      const session = stateFor(playerId);
+
+      // Fill to the cap on top of the starter roster.
+      const starterCount = session.inventory.length;
+      for (let i = starterCount; i < INVENTORY_CAP; i++) {
+        session.record(testDrop());
+      }
+      expect(session.inventory.length).toBe(INVENTORY_CAP);
+      const oldestId = session.inventory[0].id;
+
+      const extra = session.record(testDrop());
+      expect(extra.overflowed).toBe(true);
+      expect(session.mailbox).toHaveLength(1);
+      // Nothing was evicted — the first monster is still there.
+      expect(session.dropById(oldestId)).toBeDefined();
+    });
+  });
+
+  it("claim moves mailbox drops into free inventory space", async () => {
+    await withPlayer(0, async (call, playerId) => {
+      const { stateFor } = await import("../services/lootboxState");
+      const { testDrop } = await import("../testkit");
+      const { INVENTORY_CAP } = await import("../game/spec");
+      const session = stateFor(playerId);
+
+      for (let i = session.inventory.length; i < INVENTORY_CAP; i++) {
+        session.record(testDrop());
+      }
+      const overflow = session.record(testDrop()).drop;
+
+      // Free one slot, then claim.
+      session.removeDrops([session.inventory[0].id]);
+      const response = await call("POST", "/lootbox/mailbox/claim", { dropIds: [overflow.id] });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { claimed: string[]; mailboxCount: number };
+      expect(body.claimed).toEqual([overflow.id]);
+      expect(body.mailboxCount).toBe(0);
+      expect(session.dropById(overflow.id)).toBeDefined();
+    });
+  });
+
+  it("claim refuses when there is no room — the drop stays in the mailbox", async () => {
+    await withPlayer(0, async (call, playerId) => {
+      const { stateFor } = await import("../services/lootboxState");
+      const { testDrop } = await import("../testkit");
+      const { INVENTORY_CAP } = await import("../game/spec");
+      const session = stateFor(playerId);
+
+      for (let i = session.inventory.length; i < INVENTORY_CAP; i++) {
+        session.record(testDrop());
+      }
+      const overflow = session.record(testDrop()).drop;
+
+      const response = await call("POST", "/lootbox/mailbox/claim", { dropIds: [overflow.id] });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as { claimed: string[]; remaining: number };
+      expect(body.claimed).toEqual([]);
+      expect(body.remaining).toBe(1);
+    });
+  });
+});
+
+describe("verification", () => {
+  it("replays a past open from the disclosed inputs", async () => {
+    await withPlayer(10_000, async (call, playerId) => {
+      const { stateFor } = await import("../services/lootboxState");
+      const { hashSeed } = await import("../services/lootboxEngine");
+
+      const session = stateFor(playerId);
+      const pair = session.current;
+      const opened = (await (
+        await call("POST", "/lootbox/cookbooks/chefs-cookbook/open")
+      ).json()) as OpenBody & { fairness: { nonce: number; clientSeed: string } };
+
+      const response = await call("POST", "/lootbox/verify", {
+        bookId: "chefs-cookbook",
+        serverSeed: pair.serverSeed,
+        clientSeed: opened.fairness.clientSeed,
+        nonce: opened.fairness.nonce
+      });
+      expect(response.status).toBe(200);
+      const body = (await response.json()) as {
+        serverSeedHash: string;
+        result: { caseRarity: string; baseMintValue: number; character: { id: string } };
+      };
+      expect(body.serverSeedHash).toBe(hashSeed(pair.serverSeed));
+      expect(body.result.caseRarity).toBe(opened.caseRarity);
+      expect(body.result.baseMintValue).toBe(opened.baseMintValue);
+      expect(body.result.character.id).toBe(opened.character.id);
     });
   });
 });

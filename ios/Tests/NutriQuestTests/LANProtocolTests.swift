@@ -22,7 +22,10 @@ final class LANProtocolTests: XCTestCase {
             .matchStart(matchID: id, opponentID: "b", side: 1, pickSeconds: 60, tournament: true),
             .revealNow(matchID: id),
             .replay(matchID: id, opponentSquad: Data([1, 2, 3]),
-                    replay: LANReplay(seed: "42", events: [.roundStart(round: 1)], winnerSide: 0, rounds: 1)),
+                    replay: LANReplay(seed: "42", events: [.turnStart(turn: 1, side: 0, unit: "u")],
+                                      winnerSide: 0, turns: 1, reason: "wipeout",
+                                      hpFractionsA: [1, 0.5, 0], hpFractionsB: [0, 0, 0],
+                                      faintedA: ["a2"], faintedB: ["b0", "b1", "b2"])),
             .matchCancelled(matchID: id, reason: "left"),
             .bracket(LANBracket(rounds: [[LANPairing(a: "a", b: "b", winner: "a")]], champion: "a"))
         ]
@@ -47,17 +50,19 @@ final class LANProtocolTests: XCTestCase {
     // MARK: - Replay mapping
 
     func testReplayRoundTripsThroughBattleKitIncludingAMaxSeed() throws {
-        let a = UUID()
-        let b = UUID()
+        let a = "unit-a"
+        let b = "unit-b"
         let wire = LANReplay(seed: String(UInt64.max), events: [
-            .battleStart(seed: String(UInt64.max)),
-            .roundStart(round: 1),
-            .attack(attacker: a, defender: b, move: "Strike", damage: 12, crit: true, typeMod: 1.25),
-            .miss(attacker: b, defender: a),
+            .battleStart(seed: String(UInt64.max), first: 0),
+            .turnStart(turn: 1, side: 0, unit: a),
+            .attack(attacker: a, defender: b, move: "Strike", moveID: "strike", damage: 12, crit: true),
+            .miss(attacker: b, defender: a, move: "Strike", moveID: "strike"),
             .faint(unit: b),
-            .roundEnd(round: 1),
-            .victory(winnerSide: 0, rounds: 1)
-        ], winnerSide: 0, rounds: 1)
+            .turnEnd(turn: 1),
+            .victory(winner: 0, turns: 1, reason: .wipeout)
+        ], winnerSide: 0, turns: 1, reason: "wipeout",
+            hpFractionsA: [1, 0, 0], hpFractionsB: [0, 0, 0],
+            faintedA: [], faintedB: [b])
 
         let battle = try XCTUnwrap(wire.battleReplay)
         XCTAssertEqual(battle.seed, UInt64.max)
@@ -65,8 +70,15 @@ final class LANProtocolTests: XCTestCase {
     }
 
     func testMalformedReplayIsRejected() {
-        XCTAssertNil(LANReplay(seed: "not a number", events: [], winnerSide: 0, rounds: 1).battleReplay)
-        XCTAssertNil(LANReplay(seed: "1", events: [], winnerSide: 5, rounds: 1).battleReplay)
+        let bad = LANReplay(seed: "not a number", events: [], winnerSide: 0, turns: 1, reason: "wipeout",
+                            hpFractionsA: [], hpFractionsB: [], faintedA: [], faintedB: [])
+        XCTAssertNil(bad.battleReplay)
+        let badSide = LANReplay(seed: "1", events: [], winnerSide: 5, turns: 1, reason: "wipeout",
+                                hpFractionsA: [], hpFractionsB: [], faintedA: [], faintedB: [])
+        XCTAssertNil(badSide.battleReplay)
+        let badReason = LANReplay(seed: "1", events: [], winnerSide: 0, turns: 1, reason: "cheated",
+                                  hpFractionsA: [], hpFractionsB: [], faintedA: [], faintedB: [])
+        XCTAssertNil(badReason.battleReplay)
     }
 
     // MARK: - Squad validation
@@ -76,34 +88,38 @@ final class LANProtocolTests: XCTestCase {
     }
 
     func testSquadMustBeExactlyThree() {
-        let two = LANSquad(units: Array(LANFixtures.squad().units.prefix(2)), partyMultiplier: 1)
+        let two = LANSquad(units: Array(LANFixtures.squad().units.prefix(2)))
         expect(.wrongSize, two)
     }
 
     func testDuplicateCharactersAreRejected() {
         let unit = LANFixtures.unit("same")
-        expect(.duplicateCharacters, LANSquad(units: [unit, unit, unit], partyMultiplier: 1))
+        expect(.duplicateCharacters, LANSquad(units: [unit, unit, unit]))
     }
 
     func testStatsOutsideTheGameRangeAreRejected() {
-        expect(.statOutOfRange, LANFixtures.squad(power: 500))
-        expect(.statOutOfRange, LANFixtures.squad(power: 2))
-        expect(.statOutOfRange, LANFixtures.squad(power: .nan))
+        expect(.statOutOfRange, LANFixtures.squad(health: 9_999))
+        expect(.statOutOfRange, LANFixtures.squad(attack: 999))
+        expect(.statOutOfRange, LANFixtures.squad(health: .nan))
     }
 
-    func testMultiplierOutsideTheDailyClampIsRejected() {
-        expect(.multiplierOutOfRange, LANFixtures.squad(multiplier: 2.0))
-        expect(.multiplierOutOfRange, LANFixtures.squad(multiplier: 0.5))
+    func testUnknownRarityIsRejected() {
+        var bad = LANFixtures.unit("x")
+        bad = LANUnit(character: bad.character, rarity: "plasma", star: bad.star,
+                      baseHealth: bad.baseHealth, baseAttack: bad.baseAttack,
+                      baseMana: bad.baseMana, moves: bad.moves)
+        expect(.unknownRarity, LANSquad(units: [bad, LANFixtures.unit("y"), LANFixtures.unit("z")]))
     }
 
-    func testUnknownElementIsRejected() {
-        let bad = LANFixtures.unit("x", element: "plasma")
-        expect(.unknownElement, LANSquad(units: [bad, LANFixtures.unit("y"), LANFixtures.unit("z")], partyMultiplier: 1))
+    func testEmptyMovesAreRejected() {
+        let bad = LANUnit(character: LANFixtures.unit("x").character, rarity: "common", star: 1,
+                          baseHealth: 100, baseAttack: 50, baseMana: nil, moves: [])
+        expect(.badMoves, LANSquad(units: [bad, LANFixtures.unit("y"), LANFixtures.unit("z")]))
     }
 
     func testOverlongNameIsRejected() {
         let bad = LANFixtures.unit("x", name: String(repeating: "A", count: 40))
-        expect(.badName, LANSquad(units: [bad, LANFixtures.unit("y"), LANFixtures.unit("z")], partyMultiplier: 1))
+        expect(.badName, LANSquad(units: [bad, LANFixtures.unit("y"), LANFixtures.unit("z")]))
     }
 
     // MARK: - Building your own squad
@@ -111,14 +127,12 @@ final class LANProtocolTests: XCTestCase {
     func testYourOwnUnitIsClampedSoItAlwaysValidates() throws {
         let gameState = GameState()
         let odd = AppCharacter(id: "odd", name: String(repeating: "Very long product name ", count: 5),
-                               colorHex: "not-a-colour", rarity: .rare, statType: .fiber)
-        let stats = try XCTUnwrap(gameState.battleStats(for: odd))
-        let unit = LANUnit(character: odd, stats: stats)
+                               colorHex: "not-a-colour", rarity: .rare)
+        let unit = LANUnit(character: odd, spec: gameState.battleStats(for: odd))
 
         XCTAssertLessThanOrEqual(unit.character.name.count, LANLimits.maxNameLength)
         XCTAssertEqual(unit.character.colorHex, "#9C978F")
         XCTAssertEqual(unit.rarity, "rare")
-        XCTAssertEqual(unit.element, "fiber")
     }
 
     func testSquadFromCollectionKeepsPickOrderAndValidates() throws {
@@ -132,9 +146,9 @@ final class LANProtocolTests: XCTestCase {
     func testCommittedOrderIsTheEngineOrder() {
         let squad = LANFixtures.squad("k")
         let matchID = UUID()
-        let battle = squad.battleSquad(matchID: matchID, side: 1)
-        XCTAssertEqual(battle.units.map(\.id), (0..<3).map { LANCrypto.unitID(matchID: matchID, side: 1, slot: $0) })
-        XCTAssertEqual(battle.units.map(\.character.barcode), ["k1", "k2", "k3"])
+        let specs = squad.battleSpecs(matchID: matchID, side: 1)
+        XCTAssertEqual(specs.map(\.id), (0..<3).map { LANCrypto.unitID(matchID: matchID, side: 1, slot: $0).uuidString })
+        XCTAssertEqual(specs.map(\.name), ["Unit", "Unit", "Unit"])
     }
 
     // MARK: - Opponent namespacing

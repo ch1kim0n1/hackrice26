@@ -160,14 +160,12 @@ final class LANSession: ObservableObject {
 }
 
 extension GameState {
-    /// Your picked characters as a committable squad, using the same stats
-    /// every other battle mode uses.
+    /// Your picked characters as a committable squad, carrying the same
+    /// battle snapshot every other mode uses. Nutrition adherence never
+    /// buffs combat (final-dev-doc §7) — there is no party multiplier.
     func lanSquad(from characters: [Character]) -> LANSquad? {
-        let units = characters.compactMap { character -> LANUnit? in
-            guard let stats = battleStats(for: character) else { return nil }
-            return LANUnit(character: character, stats: stats)
-        }
+        let units = characters.map { LANUnit(character: $0, spec: battleStats(for: $0)) }
         guard units.count == 3 else { return nil }
-        return LANSquad(units: units, partyMultiplier: min(1.5, max(0.8, lastMultiplier)))
+        return LANSquad(units: units)
     }
 }

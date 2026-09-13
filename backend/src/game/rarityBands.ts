@@ -1,60 +1,32 @@
-// Net worth: the exponential rarity bands and the additive star economy.
+// Net worth: the rarity bands and the additive star economy.
 //
-// Canonical implementation of docs/NET-WORTH.md (issues #121, #130, #77, #80).
+// Canonical implementation of the spec (final-dev-doc.pdf §2); every constant
+// comes from game/spec.ts — this file is the math over them, nothing else.
 // Everything about what a monster is *worth* lives here; nothing about what it
-// does in a fight. Combat scaling is deliberately a separate system (spec §19)
-// and is not modelled in this file.
+// does in a fight. Combat scaling is deliberately a separate system.
 //
 // Two ideas, in order:
 //
-//   1. Rarity is the primary driver of value, and it scales exponentially.
-//      The Common -> Uncommon gap is small; the Epic -> Legendary gap is
-//      enormous. That falls out of a geometric ladder of band floors.
+//   1. Rarity is the primary driver of value. A fresh ★1 mint lands inside its
+//      rarity's band and never crosses it; the weighted segment roll decides
+//      where inside the band the individual monster sits.
 //
 //   2. Stars add value, they do not multiply it. A star bonus is a property of
 //      the *rarity band*, not of the individual monster, so two Commons worth
 //      500 and 900 both gain the same amount at 3 stars and their individual
-//      difference survives mastery (spec §3, §6).
-//
-// The anchor that ties the two together: a 5-star monster is worth about the
-// same as a 2-star monster of the next rarity up (spec §8). Reaching 5 stars
-// costs 81 one-star copies, so mastery has to buy real economic ground -- but
-// it buys the *bottom* of the next band, never the whole of it (spec §9).
+//      difference survives mastery.
 
 import { Rarity } from "../types";
-import { POWER_BANDS, RARITY_ORDER } from "../data/lootTable";
+import { RARITY_ORDER } from "../data/lootTable";
+import {
+  MINT_SEGMENTS,
+  SECRET_MAX_STAR,
+  SPEC_BANDS,
+  SPEC_STAR_BONUS,
+  MAX_STAR
+} from "./spec";
 
-/**
- * Net worth of the cheapest possible Common. Everything else is derived from
- * it, so re-basing the whole economy is a one-number change.
- */
-export const BAND_BASE = 500;
-
-/**
- * Growth factor per rarity step, ascending.
- *
- * These escalate (2.2 -> 3.2) rather than staying constant, because the spec
- * asks for the gaps themselves to widen as rarity climbs: a constant factor
- * already grows gaps geometrically, an escalating one makes the top of the
- * ladder feel genuinely out of reach. Index i is the step from RARITY_ORDER[i]
- * to RARITY_ORDER[i + 1].
- */
-export const BAND_FACTORS = [2.2, 2.4, 2.6, 2.8, 3.0, 3.2] as const;
-
-/**
- * Fractions of a rarity's own step width that each star level adds.
- *
- * 5 stars is deliberately absent: it is not a free parameter. It is solved for
- * (see STAR_BONUS) so that a 5-star monster lands on a 2-star monster of the
- * next rarity, which is the balancing anchor the whole star economy hangs on.
- */
-export const STAR_STEP_FRACTIONS: Record<2 | 3 | 4, number> = {
-  2: 0.15, // "noticeable, still firmly within its rarity"
-  3: 0.4, //  "meaningful investment"
-  4: 0.75 // "approaching the next rarity"
-};
-
-export const MAX_STAR_LEVEL = 5;
+export const MAX_STAR_LEVEL = MAX_STAR;
 /** Copies of the previous star level needed to make one of the next. */
 export const FUSION_COPIES_PER_LEVEL = 3;
 
@@ -65,6 +37,15 @@ export function copiesForStar(star: StarLevel): number {
   return FUSION_COPIES_PER_LEVEL ** (star - 1);
 }
 
+/**
+ * The highest star level a rarity can reach (spec §2). Common through Mythic
+ * run to ★5; Secret is capped at ★2 so terminal rarity cannot also stack
+ * terminal mastery.
+ */
+export function maxStarsFor(rarity: Rarity): StarLevel {
+  return (rarity === "secret" ? SECRET_MAX_STAR : MAX_STAR_LEVEL) as StarLevel;
+}
+
 // ---------------------------------------------------------------------------
 // Bands
 // ---------------------------------------------------------------------------
@@ -73,52 +54,18 @@ export interface RarityBand {
   rarity: Rarity;
   /** Inclusive lower bound, and the net worth of the cheapest 1-star monster. */
   min: number;
-  /** Inclusive upper bound; Infinity for the top tier. */
+  /** Inclusive upper bound — the spec gives even Secret a ceiling. */
   max: number;
-  /** Width of this band: `min` of the next tier minus this one's. */
+  /** Width of this band: max - min + 1 (== next band's floor minus this one's). */
   step: number;
 }
 
-/**
- * The band floors: a geometric ladder from BAND_BASE.
- *
- * `floor(n+1) = floor(n) * BAND_FACTORS[n]`, rounded to something a human can
- * read in a balance spreadsheet.
- */
-function computeFloors(): number[] {
-  const floors: number[] = [BAND_BASE];
-  for (let i = 0; i < RARITY_ORDER.length - 1; i++) {
-    const factor = BAND_FACTORS[Math.min(i, BAND_FACTORS.length - 1)];
-    floors.push(roundToScale(floors[i] * factor));
-  }
-  return floors;
-}
-
-/** Round to a readable step for the magnitude: 10s low down, 1000s up top. */
-function roundToScale(value: number): number {
-  const scale = value < 1_000 ? 10 : value < 10_000 ? 50 : value < 100_000 ? 500 : 1_000;
-  return Math.round(value / scale) * scale;
-}
-
-const FLOORS = computeFloors();
-
-/**
- * The top tier has no next floor, so its step is extrapolated one rung further
- * up the same ladder. Without this, Secret would have no star bonuses at all.
- */
-const SECRET_STEP = roundToScale(FLOORS[FLOORS.length - 1] * (BAND_FACTORS[BAND_FACTORS.length - 1] - 1));
-
 export const RARITY_BANDS: Record<Rarity, RarityBand> = Object.fromEntries(
-  RARITY_ORDER.map((rarity, i) => {
-    const isTop = i === RARITY_ORDER.length - 1;
+  RARITY_ORDER.map((rarity) => {
+    const spec = SPEC_BANDS[rarity];
     return [
       rarity,
-      {
-        rarity,
-        min: FLOORS[i],
-        max: isTop ? Infinity : FLOORS[i + 1] - 1,
-        step: isTop ? SECRET_STEP : FLOORS[i + 1] - FLOORS[i]
-      }
+      { rarity, min: spec.min, max: spec.max, step: spec.max - spec.min + 1 }
     ];
   })
 ) as Record<Rarity, RarityBand>;
@@ -127,7 +74,9 @@ export const RARITY_BANDS: Record<Rarity, RarityBand> = Object.fromEntries(
  * The band a net worth falls into.
  *
  * Anything below the Common floor is still Common -- the floor is where the
- * *cheapest* Common sits, not a minimum that value must clear.
+ * *cheapest* Common sits, not a minimum that value must clear. Anything above
+ * the Secret ceiling is still Secret -- mastery legitimately pushes a monster
+ * past its own band's top (spec §2: Net Worth may exceed the ★1 band).
  */
 export function bandForValue(netWorth: number): RarityBand {
   const value = Math.max(0, netWorth);
@@ -148,34 +97,22 @@ export function rarityForValue(netWorth: number): Rarity {
 // ---------------------------------------------------------------------------
 
 /**
- * Additive net worth a star level grants, per rarity.
- *
- * Levels 2-4 are fractions of the band's own width. Level 5 is solved, not
- * chosen:
- *
- *     bonus5(N) = step(N) + bonus2(N + 1)
- *
- * which places a 5-star monster of rarity N exactly on the 2-star value of the
- * cheapest monster of rarity N+1 -- the anchor from spec §8. Everything else in
- * the star economy is a consequence of that one equation.
+ * Additive net worth a star level grants, per rarity — the spec's frozen table
+ * (§2). Levels 2-4 are 15%/40%/75% of the band's own width; level 5 anchors a
+ * ★5 monster on a ★2 of the next rarity up. Secret lists ★2 only: higher stars
+ * are unreachable (maxStarsFor) and read as 0.
  */
 export const STAR_BONUS: Record<Rarity, Record<StarLevel, number>> = Object.fromEntries(
-  RARITY_ORDER.map((rarity, i) => {
-    const band = RARITY_BANDS[rarity];
-    const next = i + 1 < RARITY_ORDER.length ? RARITY_BANDS[RARITY_ORDER[i + 1]] : null;
-    const nextStep = next ? next.step : SECRET_STEP;
-
-    return [
-      rarity,
-      {
-        1: 0,
-        2: Math.round(band.step * STAR_STEP_FRACTIONS[2]),
-        3: Math.round(band.step * STAR_STEP_FRACTIONS[3]),
-        4: Math.round(band.step * STAR_STEP_FRACTIONS[4]),
-        5: Math.round(band.step + nextStep * STAR_STEP_FRACTIONS[2])
-      }
-    ];
-  })
+  RARITY_ORDER.map((rarity) => [
+    rarity,
+    {
+      1: 0,
+      2: SPEC_STAR_BONUS[rarity][2] ?? 0,
+      3: SPEC_STAR_BONUS[rarity][3] ?? 0,
+      4: SPEC_STAR_BONUS[rarity][4] ?? 0,
+      5: SPEC_STAR_BONUS[rarity][5] ?? 0
+    }
+  ])
 ) as Record<Rarity, Record<StarLevel, number>>;
 
 export function starBonus(rarity: Rarity, star: StarLevel): number {
@@ -183,7 +120,9 @@ export function starBonus(rarity: Rarity, star: StarLevel): number {
 }
 
 /**
- * A monster instance's current authoritative net worth (spec §1, §15).
+ * A monster instance's current authoritative net worth (spec §2):
+ *
+ *     CurrentNetWorth = baseMintValue + starBonus[rarity][stars]
  *
  * This is the only place the two halves meet, and it is what `value` on an
  * inventory row must always equal.
@@ -193,40 +132,57 @@ export function netWorthFor(baseValue: number, rarity: Rarity, star: StarLevel):
 }
 
 // ---------------------------------------------------------------------------
-// Minting
+// Minting — the weighted segment roll (spec §2)
 // ---------------------------------------------------------------------------
 
 /**
- * How far up its own band a power roll can carry a freshly-pulled monster, and
- * what the holo variant adds on top.
- *
- * They sum to 0.8, deliberately short of 1.0: a brand-new monster, however
- * lucky the roll, never reaches the floor of the next rarity. Climbing bands is
- * what fusion and the cauldron are for.
+ * Which segment of its band a fresh mint lands in. Exposed for tests and for
+ * audit trails that want to record the roll's anatomy.
  */
-export const BAND_POSITION_SPAN = 0.6;
-export const SHINY_BAND_BONUS = 0.2;
+export interface MintSegment {
+  from: number;
+  to: number;
+  weight: number;
+}
 
-const POWER_MULTIPLIERS = POWER_BANDS.map((band) => band.valueMultiplier);
-const POWER_MIN = Math.min(...POWER_MULTIPLIERS);
-const POWER_MAX = Math.max(...POWER_MULTIPLIERS);
+export const MINT_SEGMENT_TABLE: readonly MintSegment[] = MINT_SEGMENTS;
+
+/** Pick the band segment for a roll unit in [0,1). */
+export function mintSegmentFor(segmentUnit: number): MintSegment {
+  const u = Math.min(Math.max(segmentUnit, 0), 1 - Number.EPSILON);
+  let cumulative = 0;
+  for (const segment of MINT_SEGMENTS) {
+    cumulative += segment.weight;
+    if (u < cumulative) return segment;
+  }
+  return MINT_SEGMENTS[MINT_SEGMENTS.length - 1];
+}
 
 /**
- * Base net worth of a freshly minted 1-star monster.
+ * Base mint value of a freshly minted ★1 monster (spec §2).
  *
- * The rarity picks the band; the power roll and the holo decide where inside it
- * the monster lands. This is what gives two Commons different base values
- * without either of them stopping being Common (spec §3).
+ * Two independent rolls: `segmentUnit` picks the band segment by the
+ * 55/27/13/4/1 weights, `positionUnit` rolls uniformly inside that segment.
+ * The result is `baseMintValue` — permanent for the monster's lineage — and it
+ * never lands outside its rarity's band.
  */
-export function dropNetWorth(rarity: Rarity, powerValueMultiplier: number, shiny: boolean): number {
+export function mintValue(rarity: Rarity, segmentUnit: number, positionUnit: number): number {
   const band = RARITY_BANDS[rarity];
-  const spread = POWER_MAX - POWER_MIN;
-  const normalized = spread === 0 ? 0 : (powerValueMultiplier - POWER_MIN) / spread;
-  const position = Math.min(
-    1,
-    Math.max(0, normalized) * BAND_POSITION_SPAN + (shiny ? SHINY_BAND_BONUS : 0)
-  );
-  return Math.round(band.min + band.step * position);
+  const segment = mintSegmentFor(segmentUnit);
+  const position = segment.from + (segment.to - segment.from) * Math.min(Math.max(positionUnit, 0), 1);
+  const value = Math.round(band.min + position * band.step);
+  return Math.min(band.max, Math.max(band.min, value));
+}
+
+/**
+ * Expected value of the mint roll for a rarity — mean segment position
+ * (Σ weight × midpoint) applied to the band width. Used by EV math and tests:
+ * Common ≈ 746, Secret ≈ 355,510 (spec §3 reference table).
+ */
+export function expectedMintValue(rarity: Rarity): number {
+  const band = RARITY_BANDS[rarity];
+  const meanPosition = MINT_SEGMENTS.reduce((sum, s) => sum + s.weight * (s.from + s.to) / 2, 0);
+  return band.min + meanPosition * band.step;
 }
 
 /** Clamp anything claiming to be a star level into the legal 1..5. */
@@ -257,7 +213,7 @@ for (let i = 1; i < RARITY_ORDER.length; i++) {
 
 for (const rarity of RARITY_ORDER) {
   const bonuses = STAR_BONUS[rarity];
-  for (let star = 2; star <= MAX_STAR_LEVEL; star++) {
+  for (let star = 2; star <= maxStarsFor(rarity); star++) {
     if (bonuses[star as StarLevel] <= bonuses[(star - 1) as StarLevel]) {
       throw new Error(`star bonuses must increase: ${rarity} ★${star} is not worth more than ★${star - 1}`);
     }
@@ -266,10 +222,16 @@ for (const rarity of RARITY_ORDER) {
 
 for (const rarity of RARITY_ORDER) {
   const band = RARITY_BANDS[rarity];
-  const luckiest = dropNetWorth(rarity, POWER_MAX, true);
+  // The luckiest legal mint: deepest segment, position at the top of it.
+  const luckiest = mintValue(rarity, 1 - Number.EPSILON, 1 - Number.EPSILON);
   if (luckiest > band.max) {
     throw new Error(
       `a fresh ${rarity} can mint at ${luckiest}, past its own band ceiling ${band.max}`
     );
   }
+}
+
+const segmentWeightSum = MINT_SEGMENTS.reduce((sum, s) => sum + s.weight, 0);
+if (Math.abs(segmentWeightSum - 1) > 1e-9) {
+  throw new Error(`mint segment weights sum to ${segmentWeightSum}, expected 1`);
 }

@@ -18,14 +18,15 @@ import { randomUUID } from "crypto";
 import { db } from "../db";
 import {
   FUSION_COPIES_PER_LEVEL,
-  MAX_STAR_LEVEL,
   StarLevel,
-  asStarLevel
+  asStarLevel,
+  maxStarsFor,
+  netWorthFor
 } from "../game/rarityBands";
-import { SELL_RATE, revalueFromTotal } from "../game/revaluation";
+import { SELL_RATE, baseValueOf, revalueFromTotal } from "../game/revaluation";
 import { CoinReason } from "./coins";
 import { Rarity } from "../types";
-import { StoredDrop, stateFor } from "./lootboxState";
+import { RecordResult, StoredDrop, stateFor } from "./lootboxState";
 import { hasDatabaseUrl } from "../db/pg";
 import { enqueueMirror } from "./mirrorQueue";
 
@@ -36,7 +37,9 @@ export type MutationKind =
   | "gamble_payout"
   | "battle_stake"
   | "battle_payout"
-  | "battle_refund";
+  | "battle_refund"
+  | "cookbook_open"
+  | "case_open";
 
 /** Arena settlement: the house burns this share of a coin-equivalent payout. */
 export const ARENA_BURN = 0.05;
@@ -58,7 +61,7 @@ export const MUTATION_ERRORS = {
  * pre-mutation state — that is the "lock rows" half of the contract on a
  * single-file store.
  */
-function transact<T>(fn: () => T): T {
+export function transact<T>(fn: () => T): T {
   db.exec("BEGIN IMMEDIATE");
   try {
     const result = fn();
@@ -71,7 +74,7 @@ function transact<T>(fn: () => T): T {
 }
 
 /** Append the audit row. Called inside the mutation's own transaction. */
-function ledger(playerId: string, kind: MutationKind, dropIds: string[], detail?: object): void {
+export function ledger(playerId: string, kind: MutationKind, dropIds: string[], detail?: object): void {
   db.prepare(
     `INSERT INTO character_ledger (player_id, kind, drop_ids, detail) VALUES (?, ?, ?, ?)`
   ).run(playerId, kind, JSON.stringify(dropIds), detail ? JSON.stringify(detail) : null);
@@ -138,22 +141,25 @@ export function wagerDrops(playerId: string, dropIds: string[], context: string)
   });
 }
 
-/** Pay a gamble win back into the inventory. */
-export function payoutDrop(playerId: string, drop: Omit<StoredDrop, "id">, context: string): StoredDrop {
+/** Pay a gamble win back into the inventory (or the mailbox, when full). */
+export function payoutDrop(
+  playerId: string,
+  drop: Omit<StoredDrop, "id">,
+  context: string
+): RecordResult {
   return transact(() => {
-    const stored = stateFor(playerId).record(drop);
-    ledger(playerId, "gamble_payout", [stored.id], { context, value: stored.value });
-    return stored;
+    const { drop: stored, overflowed } = stateFor(playerId).record(drop);
+    ledger(playerId, "gamble_payout", [stored.id], { context, value: stored.value, overflowed });
+    return { drop: stored, overflowed };
   });
 }
 
 /**
- * Merge: three same-character, same-rarity, same-star, unlocked instances
- * become one instance at the next star. Atomic — either all three are
- * consumed and the merged drop exists, or nothing happened.
- *
- * Merging never changes rarity (net worth spec §14): the revaluation lives
- * in game/revaluation.ts, and `valuation.rarity` is the monster's own tier.
+ * Fusion (spec §2): exactly 3 copies of the same character, same rarity, same
+ * star, all owned and unlocked, become one instance at the next star. Atomic
+ * — either all three are consumed and the merged drop exists, or nothing
+ * happened. The merged monster inherits the highest baseMintValue of its
+ * inputs; Secret stops at ★2.
  */
 export function mergeDrops(
   playerId: string,
@@ -161,38 +167,44 @@ export function mergeDrops(
 ): {
   merged: StoredDrop;
   consumedIds: string[];
+  overflowed: boolean;
   from: { star: number; count: number };
-  to: { star: number; rarity: Rarity; value: number; power: number };
+  to: { star: number; rarity: Rarity; value: number };
 } {
   return transact(() => {
     const session = stateFor(playerId);
+    if (dropIds.length !== FUSION_COPIES_PER_LEVEL) throw new Error(MUTATION_ERRORS.MISMATCH);
     const drops = ownUnlocked(playerId, dropIds);
 
     const characterId = drops[0].character.id;
     const rarity = drops[0].character.rarity;
     const star = asStarLevel(drops[0].stars);
-    if (star >= MAX_STAR_LEVEL) throw new Error(MUTATION_ERRORS.MAX_STAR);
+    if (star >= maxStarsFor(rarity)) throw new Error(MUTATION_ERRORS.MAX_STAR);
     if (!drops.every((d) => d.character.id === characterId)) throw new Error(MUTATION_ERRORS.MISMATCH);
     if (!drops.every((d) => d.character.rarity === rarity)) throw new Error(MUTATION_ERRORS.MISMATCH);
     if (!drops.every((d) => asStarLevel(d.stars) === star)) throw new Error(MUTATION_ERRORS.MISMATCH);
 
     const newStar = (star + 1) as StarLevel;
-    const valuation = revalueFromTotal(Math.max(...drops.map((d) => d.value)), drops[0].character.rarity, star, newStar);
+    // Inherit the strongest lineage: the fused monster keeps the best
+    // baseMintValue among its copies, then carries the new star's bonus on
+    // top (spec §2 — the individual mint luck survives fusion).
+    const baseMintValue = Math.max(
+      ...drops.map((d) => d.baseMintValue ?? baseValueOf(d.value, rarity, d.stars))
+    );
+    const value = netWorthFor(baseMintValue, rarity, newStar);
 
     const consumed = session.consumeDrops(dropIds);
     if (!consumed) throw new Error(MUTATION_ERRORS.RACE);
 
-    const merged = session.record({
+    const { drop: merged, overflowed } = session.record({
       // Keep the source's crateId so the client groups the fused monster
       // under the same card its copies lived on; the merge itself is
       // recorded in character_ledger.
       crateId: drops[0].crateId,
-      character: { ...drops[0].character, rarity: valuation.rarity },
+      character: drops[0].character,
       stars: newStar,
-      power: drops[0].power,
-      powerLabel: drops[0].powerLabel,
-      shiny: drops.some((d) => d.shiny),
-      value: valuation.value,
+      baseMintValue,
+      value,
       rolls: drops[0].rolls,
       fairness: drops[0].fairness,
       openedAt: new Date().toISOString()
@@ -202,15 +214,17 @@ export function mergeDrops(
       mergedId: merged.id,
       fromStar: star,
       toStar: newStar,
-      value: valuation.value,
-      valueBand: valuation.valueBand
+      baseMintValue,
+      value,
+      overflowed
     });
 
     return {
       merged,
       consumedIds: consumed.map((d) => d.id),
+      overflowed,
       from: { star, count: consumed.length },
-      to: { star: newStar, rarity: valuation.rarity, value: valuation.value, power: drops[0].power }
+      to: { star: newStar, rarity, value }
     };
   });
 }
@@ -323,7 +337,7 @@ export function settleArena(
       const lost = stateFor(loserId).removeDrops(loserIds);
       transferred = lost.map((drop) => {
         const { id: _oldId, lockedBy: _lockedBy, ...rest } = drop;
-        return winnerSession.record(rest);
+        return winnerSession.record(rest).drop;
       });
       ledger(loserId, "battle_payout", loserIds, { battleId, to: winnerId });
       ledger(winnerId, "battle_payout", loserIds, { battleId, from: loserId });

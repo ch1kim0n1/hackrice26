@@ -5,7 +5,9 @@ struct ScanView: View {
     @ObservedObject var gameState: GameState
 
     @State private var isScanning = false
-    @State private var lookupResult: FoodProduct?
+    /// What the server answered for the barcode — drives the product card.
+    /// `summonedCharacter` is non-nil only when the server minted.
+    @State private var scanResult: ScanResultDTO?
     @State private var summonedCharacter: Character?
     @State private var errorMessage: String?
     @State private var isLookingUp = false
@@ -13,9 +15,9 @@ struct ScanView: View {
     @State private var showPhotoCapture = false
     @State private var isAnalyzingMeal = false
     /// The draft breakdown awaiting the user's review. Non-nil drives the
-    /// review sheet; nothing is minted until it's confirmed.
+    /// review sheet; nothing is logged until it's confirmed.
     @State private var dishAnalysis: DishAnalysisDTO?
-    @State private var isSummoningDish = false
+    @State private var isConfirmingDish = false
     /// Totals of the last plate actually logged, for the summary card.
     @State private var lastPlate: DishTotalsDTO?
 
@@ -27,7 +29,6 @@ struct ScanView: View {
     @Environment(\.nqAccent) private var accent
 
     private let service = FoodDataService.shared
-    private let factory = CharacterFactory()
 
     var body: some View {
         ScrollView {
@@ -72,10 +73,13 @@ struct ScanView: View {
                 if let summonedCharacter, summonStage == .reveal {
                     NQBanner("Summoned: **\(summonedCharacter.name)**", dotColor: accent.accent)
                         .transition(NQTransition.pop)
+                } else if scanResult?.duplicate == true {
+                    NQBanner("Already scanned — logged as a meal, but this barcode's monster is already yours.", dotColor: NQTheme.info)
+                        .transition(NQTransition.pop)
                 }
 
-                if let lookupResult {
-                    productCard(lookupResult)
+                if let scanResult {
+                    productCard(scanResult)
                 }
 
                 if let errorMessage {
@@ -84,18 +88,22 @@ struct ScanView: View {
                 }
 
                 if !isScanning {
-                    NQButton(isLookingUp ? "Looking up…" : "Start Scanning", icon: .barcode) {
-                        errorMessage = nil
-                        guard ScannerView.isSupported, ScannerView.isAvailable else {
-                            errorMessage = ScannerView.isSupported
-                                ? "Camera permission is needed to scan. Enable it in Settings and try again."
-                                : "This device can't scan barcodes."
-                            return
+                    VStack(spacing: NQTheme.spaceS) {
+                        NQButton(isLookingUp ? "Looking up…" : "Start Scanning", icon: .barcode) {
+                            errorMessage = nil
+                            guard ScannerView.isSupported, ScannerView.isAvailable else {
+                                errorMessage = ScannerView.isSupported
+                                    ? "Camera permission is needed to scan. Enable it in Settings and try again."
+                                    : "This device can't scan barcodes."
+                                return
+                            }
+                            isScanning = true
                         }
-                        isScanning = true
+                        .disabled(isLookingUp)
+                        .accessibilityHint("Opens the camera to scan a food barcode.")
+
+                        mealPhotoEntry
                     }
-                    .disabled(isLookingUp)
-                    .accessibilityHint("Opens the camera to scan a food barcode.")
                 }
             }
             .padding(NQTheme.spaceL)
@@ -115,7 +123,7 @@ struct ScanView: View {
         .sheet(item: $dishAnalysis) { analysis in
             DishReviewView(
                 analysis: analysis,
-                isSummoning: isSummoningDish,
+                isConfirming: isConfirmingDish,
                 onConfirm: { edits in confirmDish(analysis: analysis, edits: edits) },
                 onRetake: {
                     dishAnalysis = nil
@@ -153,18 +161,18 @@ struct ScanView: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func productCard(_ product: FoodProduct) -> some View {
+    private func productCard(_ result: ScanResultDTO) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(product.displayName)
+            Text(result.foodName)
                 .font(NQText.heading.font)
                 .foregroundStyle(NQTheme.ink)
-            if let brands = product.brands {
-                Text(brands)
+            if let score = result.nutritionScore {
+                Text("Nutrition score \(Int(score.rounded()))")
                     .font(NQText.caption.font)
                     .foregroundStyle(NQTheme.inkSubtle)
             }
-            if let nutriments = product.nutriments {
-                Text("Protein \(nutriments.proteins100g ?? 0)g · Fiber \(nutriments.fiber100g ?? 0)g · Sugar \(nutriments.sugars100g ?? 0)g")
+            if let n = result.nutrition {
+                Text("Protein \(Int(n.proteinG ?? 0))g · Fiber \(Int(n.fiberG ?? 0))g · Sugar \(Int(n.sugarG ?? 0))g")
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.inkMuted)
             }
@@ -175,23 +183,33 @@ struct ScanView: View {
         .accessibilityElement(children: .combine)
     }
 
+    /// The barcode path — server-authoritative: `POST /scan` fetches the
+    /// nutrition from Open Food Facts itself, scores it, and mints a ★1
+    /// catalog monster the first time this player ever scans the barcode.
+    /// A best-effort local OFF lookup enriches the day log (food group,
+    /// micro score) but never decides anything.
     private func handleScan(_ payload: String, _ symbology: String?) {
         isScanning = false
         isLookingUp = true
         Task {
             do {
-                let product = try await service.lookup(barcode: payload)
+                let result = try await APIClient.shared.scanBarcode(payload)
+                let product = try? await service.lookup(barcode: payload)
                 isLookingUp = false
-                guard let product else {
-                    errorMessage = "Product not found in Open Food Facts. Try another barcode."
-                    return
+                scanResult = result
+                if let character = gameState.registerScanResult(result, product: product) {
+                    summonedCharacter = character
+                    playSummonSequence()
                 }
-                lookupResult = product
-                summonedCharacter = gameState.registerScan(product: product, barcode: payload)
-                playSummonSequence()
+            } catch APIError.badStatus(let code, _) where code == 404 {
+                isLookingUp = false
+                errorMessage = "Product not found in Open Food Facts. Try another barcode."
+            } catch APIError.badStatus(let code, _) where code == 422 {
+                isLookingUp = false
+                errorMessage = "That product's nutrition data failed sanity checks — nothing was logged or summoned."
             } catch {
                 isLookingUp = false
-                errorMessage = "Lookup failed: \(error.localizedDescription). Check your connection and try again."
+                errorMessage = "Scan failed: \(error.localizedDescription). Check your connection and try again."
             }
         }
     }
@@ -246,15 +264,15 @@ struct ScanView: View {
 
     // MARK: - Dish photo (no barcode)
 
-    /// Photo path: camera → analysis → **review** → character.
-    /// Nothing is minted until the user has checked the breakdown, which is
-    /// what makes a photo-only estimate trustworthy enough to keep forever.
+    /// Photo path: camera → analysis → **review** → meal log.
+    /// Nothing is logged until the user has checked the breakdown — and a
+    /// photo never mints a monster. Barcode is the only food path that can.
     private var mealPhotoEntry: some View {
         NQButton("No barcode? Snap your plate", icon: .sparkle, style: .secondary) {
             errorMessage = nil
             showPhotoCapture = true
         }
-        .accessibilityHint("Take a photo of your meal. You'll see what was found and can fix it before summoning.")
+        .accessibilityHint("Take a photo of your meal. You'll see what was found and can fix it before logging.")
     }
 
     /// Step 1: analyse the photo. This only produces a draft breakdown.
@@ -277,9 +295,9 @@ struct ScanView: View {
     }
 
     /// Step 2: the user confirmed (possibly after corrections). The server
-    /// recomputes the totals and mints the character.
+    /// recomputes the totals and logs the meal — a photo never mints.
     private func confirmDish(analysis: DishAnalysisDTO, edits: [DishItemEdit]) {
-        isSummoningDish = true
+        isConfirmingDish = true
         Task {
             do {
                 let result = try await APIClient.shared.confirmDishPhoto(
@@ -288,16 +306,16 @@ struct ScanView: View {
                 )
                 lastPlate = result.nutrition
                 dishAnalysis = nil
-                if let character = gameState.registerDish(result: result) {
-                    summonedCharacter = character
-                    playSummonSequence()
+                gameState.registerDishLog(result: result)
+                if result.flagged == true {
+                    errorMessage = "Logged — heads up, this one was a rough estimate. You can double-check it in your meal log."
                 }
             } catch {
                 errorMessage = "Couldn't log that plate: \(error.localizedDescription)"
                 // Keep dishAnalysis: a failed confirm leaves the review on
                 // screen so the user can retry instead of re-shooting.
             }
-            isSummoningDish = false
+            isConfirmingDish = false
         }
     }
 
@@ -452,10 +470,19 @@ struct SummonRevealOverlay: View {
             Text(character.name)
                 .font(NQText.displayL.font.weight(.heavy))
                 .foregroundStyle(.white)
+            // The spec's summon card: Health, Attack, rarity, ★1, net worth.
             HStack(spacing: NQTheme.spaceS) {
                 NQChip(rarityLabel, tint: rarityColor, filled: true)
-                NQChip(character.statType.label, icon: .leaf)
+                NQChip("★\(character.starLevel)", icon: .star, tint: NQTheme.gold, filled: true)
             }
+            HStack(spacing: NQTheme.spaceS) {
+                NQChip("HP \(Int(character.baseHealth.rounded()))", icon: .heart, tint: NQTheme.flame)
+                NQChip("ATK \(Int(character.baseAttack.rounded()))", icon: .battle, tint: NQTheme.warning)
+                if let mana = character.baseMana {
+                    NQChip("Mana \(Int(mana.rounded()))", icon: .droplet, tint: NQTheme.info)
+                }
+            }
+            NQChip("Net worth \(character.netWorth) coins", icon: .trophy, tint: NQTheme.gold)
         }
         .transition(.scale(scale: 0.7).combined(with: .opacity))
     }

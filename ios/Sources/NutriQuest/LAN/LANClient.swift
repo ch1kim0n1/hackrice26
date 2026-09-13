@@ -20,15 +20,41 @@ struct LANMatchResult: Equatable {
 
     /// Replay unit id → on-screen character id. Unit ids are derived from
     /// (match, side, slot), so this is rebuilt locally rather than sent.
-    var unitCharacterIDs: [UUID: String] {
-        var map: [UUID: String] = [:]
+    var unitCharacterIDs: [String: String] {
+        var map: [String: String] = [:]
         for (slot, character) in myCharacters.enumerated() {
-            map[LANCrypto.unitID(matchID: matchID, side: mySide, slot: slot)] = character.id
+            map[LANCrypto.unitID(matchID: matchID, side: mySide, slot: slot).uuidString] = character.id
         }
         for (slot, character) in opponentCharacters.enumerated() {
-            map[LANCrypto.unitID(matchID: matchID, side: 1 - mySide, slot: slot)] = character.id
+            map[LANCrypto.unitID(matchID: matchID, side: 1 - mySide, slot: slot).uuidString] = character.id
         }
         return map
+    }
+
+    /// Replay unit id → exact battle snapshot from the wire, for HP bars,
+    /// mana readouts and move lookup during playback.
+    var unitSpecs: [String: BattleUnitSpec] {
+        var map: [String: BattleUnitSpec] = [:]
+        for (slot, unit) in mySquad.units.enumerated() {
+            map[LANCrypto.unitID(matchID: matchID, side: mySide, slot: slot).uuidString] = spec(of: unit, matchID: matchID, side: mySide, slot: slot)
+        }
+        for (slot, unit) in opponentSquad.units.enumerated() {
+            map[LANCrypto.unitID(matchID: matchID, side: 1 - mySide, slot: slot).uuidString] = spec(of: unit, matchID: matchID, side: 1 - mySide, slot: slot)
+        }
+        return map
+    }
+
+    private func spec(of unit: LANUnit, matchID: UUID, side: Int, slot: Int) -> BattleUnitSpec {
+        BattleUnitSpec(
+            id: LANCrypto.unitID(matchID: matchID, side: side, slot: slot).uuidString,
+            name: unit.character.name,
+            baseHealth: unit.baseHealth,
+            baseAttack: unit.baseAttack,
+            rarity: (Rarity(rawValue: unit.rarity) ?? .common).battleRarity,
+            star: unit.star,
+            moves: unit.moves,
+            baseMana: unit.baseMana
+        )
     }
 }
 
