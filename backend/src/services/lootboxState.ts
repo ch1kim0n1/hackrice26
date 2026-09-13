@@ -17,6 +17,7 @@ import { sampleCharacters } from "../data/sampleCharacters";
 import { mintValue } from "../game/rarityBands";
 import { baseValueOf } from "../game/revaluation";
 import { INVENTORY_CAP } from "../game/spec";
+import { refundStaleArenaStakes } from "./characterMutations";
 
 const MAX_MAILBOX = 500;
 
@@ -535,6 +536,14 @@ export function stateFor(playerId: string): GameState {
     session = new GameState();
     session.attach(playerId);
     sessions.set(playerId, session);
+    // Self-heal escrows stranded by a dead request: arena stakes older than
+    // ten minutes release back to the inventory, otherwise those monsters
+    // stay un-wagerable forever (the refund was never called anywhere).
+    try {
+      refundStaleArenaStakes(playerId);
+    } catch (err) {
+      console.warn("stale arena refund failed", err);
+    }
   }
   return session;
 }
