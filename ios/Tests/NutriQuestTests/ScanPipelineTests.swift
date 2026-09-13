@@ -45,6 +45,7 @@ final class ScanPipelineTests: XCTestCase {
         ScanResultDTO(
             barcode: barcode,
             foodName: name,
+            brands: nil,
             nutritionScore: 62,
             summonedCharacter: duplicate ? nil : LootCharacterDTO(
                 id: "scan-\(barcode)",

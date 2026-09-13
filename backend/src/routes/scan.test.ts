@@ -21,6 +21,8 @@ const NUTELLA = "3017620422003";
 const COKE = "5449000000996";
 const MISSING = "0000000000000";
 const IMPOSSIBLE = "9999999999999";
+// A product whose OFF entry carries its per-100g numbers as strings.
+const STRINGY = "4000417025005";
 
 let playerCounter = 0;
 
@@ -39,11 +41,16 @@ function freshPlayers() {
   };
 }
 
-function offProduct(name: string, nutriments?: Record<string, number>): OFFProduct {
+function offProduct(
+  name: string,
+  nutriments?: Record<string, number | string>,
+  brands?: string
+): OFFProduct {
   return {
     status: 1,
     product: {
       product_name_en: name,
+      ...(brands ? { brands } : {}),
       nutriments: {
         proteins_100g: 8,
         carbohydrates_100g: 10,
@@ -60,11 +67,24 @@ function offProduct(name: string, nutriments?: Record<string, number>): OFFProdu
 }
 
 const catalog: Record<string, OFFProduct | null> = {
-  [NUTELLA]: offProduct("Nutella"),
+  [NUTELLA]: offProduct("Nutella", undefined, "Ferrero"),
   [COKE]: offProduct("Coca Cola"),
   [MISSING]: null,
   // Physically impossible: 200g of protein per 100g of food.
-  [IMPOSSIBLE]: offProduct("Lie Powder", { proteins_100g: 200 })
+  [IMPOSSIBLE]: offProduct("Lie Powder", { proteins_100g: 200 }),
+  // Community-entered OFF rows arrive with numeric strings often enough that
+  // the feed has to read them; an empty string is "unknown", not zero. The
+  // macros are chosen so the Atwater cross-check in checkPlausibility passes.
+  [STRINGY]: offProduct("Hazelnut Spread", {
+    "energy-kcal_100g": "539",
+    proteins_100g: "6.3",
+    carbohydrates_100g: "57.5",
+    fat_100g: "30.9",
+    sugars_100g: "56.3",
+    fiber_100g: "",
+    sodium_100g: "0.0428",
+    "saturated-fat_100g": "10.6"
+  })
 };
 
 type Call = (method: string, path: string, headers: Record<string, string>, body?: unknown) => Promise<Response>;
@@ -78,6 +98,7 @@ interface ScanResponseBody {
   result: {
     barcode: string;
     foodName: string;
+    brands?: string;
     nutritionScore?: number;
     summonedCharacter?: {
       id: string;
@@ -88,7 +109,13 @@ interface ScanResponseBody {
       baseMana?: number;
     };
     mint?: { dropId: string; netWorth: number; stars: number };
-    nutrition?: { proteinG?: number };
+    nutrition?: {
+      calories?: number;
+      proteinG?: number;
+      fiberG?: number;
+      sodiumMg?: number;
+      satFatG?: number;
+    };
     mealId: string;
     duplicate: boolean;
   };
@@ -140,6 +167,7 @@ describe("scan -> monster -> collection pipeline", () => {
       const { result } = await json<ScanResponseBody>(post);
 
       expect(result.foodName).toBe("Nutella");
+      expect(result.brands).toBe("Ferrero");
       expect(result.duplicate).toBe(false);
       expect(result.nutritionScore).toBeGreaterThanOrEqual(0);
       expect(result.nutritionScore).toBeLessThanOrEqual(100);
@@ -226,6 +254,34 @@ describe("scan -> monster -> collection pipeline", () => {
       expect(mints.n).toBe(0);
       const meals = await json<MealsBody>(await call("GET", "/scan/meals", { "x-player-id": a }));
       expect(meals.meals).toHaveLength(0);
+    });
+  });
+
+  it("reads numeric-string OFF nutriments so calories survive the feed", async () => {
+    await withScanApp(async (call, { a, headersA }) => {
+      const res = await call("POST", "/scan", headersA, { barcode: STRINGY });
+      expect(res.status).toBe(200);
+      const { result } = await json<ScanResponseBody>(res);
+
+      expect(result.nutrition?.calories).toBe(539);
+      expect(result.nutrition?.proteinG).toBe(6.3);
+      expect(result.nutrition?.satFatG).toBe(10.6);
+      expect(result.nutrition?.sodiumMg).toBeCloseTo(42.8, 6);
+      // "" is unknown, not 0.
+      expect(result.nutrition?.fiberG).toBeUndefined();
+      expect(result.brands).toBeUndefined();
+
+      // The anti-cheat snapshot stores the coerced numbers, not the strings.
+      const row = db
+        .prepare(`SELECT nutrition FROM scan_mint WHERE player_id = ? AND barcode = ?`)
+        .get(a, STRINGY) as { nutrition: string };
+      const snapshot = JSON.parse(row.nutrition) as { calories?: number; fiberG?: number };
+      expect(snapshot.calories).toBe(539);
+      expect(snapshot.fiberG).toBeUndefined();
+
+      // And the meal log got real calories, so the dashboard totals move.
+      const meals = await json<MealsBody>(await call("GET", "/scan/meals", { "x-player-id": a }));
+      expect(meals.totals.calories).toBe(539);
     });
   });
 

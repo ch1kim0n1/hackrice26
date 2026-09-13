@@ -11,6 +11,8 @@ struct ScanView: View {
     @State private var summonedCharacter: Character?
     @State private var errorMessage: String?
     @State private var isLookingUp = false
+    /// Camera access was refused — surfaces a shortcut into Settings.
+    @State private var cameraDenied = false
     @State private var summonStage: SummonStage = .hidden
     @State private var showPhotoCapture = false
     @State private var isAnalyzingMeal = false
@@ -87,17 +89,17 @@ struct ScanView: View {
                         .transition(NQTransition.pop)
                 }
 
+                if cameraDenied, let settings = URL(string: UIApplication.openSettingsURLString) {
+                    NQButton("Open Settings", sfSymbol: "gear", style: .ghost) {
+                        UIApplication.shared.open(settings)
+                    }
+                    .accessibilityHint("Opens the Settings app so you can allow camera access.")
+                }
+
                 if !isScanning {
                     VStack(spacing: NQTheme.spaceS) {
                         NQButton(isLookingUp ? "Looking up…" : "Start Scanning", icon: .barcode) {
-                            errorMessage = nil
-                            guard ScannerView.isSupported, ScannerView.isAvailable else {
-                                errorMessage = ScannerView.isSupported
-                                    ? "Camera permission is needed to scan. Enable it in Settings and try again."
-                                    : "This device can't scan barcodes."
-                                return
-                            }
-                            isScanning = true
+                            startScanning()
                         }
                         .disabled(isLookingUp)
                         .accessibilityHint("Opens the camera to scan a food barcode.")
@@ -156,26 +158,63 @@ struct ScanView: View {
         DetectingPill()
     }
 
+    /// The nutrition the server extracted for this barcode. Figures are per
+    /// 100 g — the same snapshot the NutritionScore and the mint were drawn
+    /// from — so the card says so rather than implying a serving.
     private func productCard(_ result: ScanResultDTO) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(result.foodName)
-                .font(NQText.heading.font)
-                .foregroundStyle(NQTheme.ink)
-            if let score = result.nutritionScore {
-                Text("Nutrition score \(Int(score.rounded()))")
-                    .font(NQText.caption.font)
-                    .foregroundStyle(NQTheme.inkSubtle)
-            }
-            if let n = result.nutrition {
-                Text("Protein \(Int(n.proteinG ?? 0))g · Fiber \(Int(n.fiberG ?? 0))g · Sugar \(Int(n.sugarG ?? 0))g")
-                    .font(NQText.captionS.font)
-                    .foregroundStyle(NQTheme.inkMuted)
+        NQCard {
+            VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+                HStack(alignment: .firstTextBaseline, spacing: NQTheme.spaceS) {
+                    VStack(alignment: .leading, spacing: NQTheme.spaceXS) {
+                        Text(result.foodName)
+                            .font(NQText.heading.font)
+                            .foregroundStyle(NQTheme.ink)
+                        if let brands = result.brands, !brands.isEmpty {
+                            Text(brands)
+                                .font(NQText.captionS.font)
+                                .foregroundStyle(NQTheme.inkMuted)
+                        }
+                    }
+                    Spacer(minLength: 0)
+                    if let score = result.nutritionScore {
+                        NQChip("Score \(Int(score.rounded()))", icon: .star, tint: accent.accent)
+                    }
+                }
+                if let n = result.nutrition {
+                    HStack(alignment: .firstTextBaseline, spacing: NQTheme.spaceS) {
+                        Text(n.calories.map { "\(Int($0.rounded())) kcal" } ?? "— kcal")
+                            .font(NQText.headingL.font)
+                            .foregroundStyle(accent.accentDark)
+                        Text("per 100 g")
+                            .font(NQText.captionS.font)
+                            .foregroundStyle(NQTheme.inkMuted)
+                    }
+                    HStack(spacing: NQTheme.spaceM) {
+                        nutrientPill("Protein", value: n.proteinG, unit: "g", tint: NQTheme.protein)
+                        nutrientPill("Carbs", value: n.carbsG, unit: "g", tint: NQTheme.carbs)
+                        nutrientPill("Fat", value: n.fatG, unit: "g", tint: NQTheme.fat)
+                    }
+                    HStack(spacing: NQTheme.spaceM) {
+                        nutrientPill("Fiber", value: n.fiberG, unit: "g", tint: NQTheme.fibre)
+                        nutrientPill("Sugar", value: n.sugarG, unit: "g", tint: NQTheme.warning)
+                        nutrientPill("Sodium", value: n.sodiumMg, unit: "mg", tint: NQTheme.info)
+                    }
+                } else {
+                    Text("No nutrition facts on file for this product.")
+                        .font(NQText.captionS.font)
+                        .foregroundStyle(NQTheme.inkMuted)
+                }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .nqPadding(.card)
-        .nqSurface(.sticker)
         .accessibilityElement(children: .combine)
+        .accessibilityLabel(productAccessibilityLabel(result))
+    }
+
+    private func productAccessibilityLabel(_ result: ScanResultDTO) -> String {
+        guard let calories = result.nutrition?.calories else {
+            return "\(result.foodName): no nutrition facts on file"
+        }
+        return "\(result.foodName): \(Int(calories.rounded())) kilocalories per 100 grams"
     }
 
     /// The barcode path — server-authoritative: `POST /scan` fetches the
@@ -185,23 +224,40 @@ struct ScanView: View {
     /// micro score) but never decides anything.
     private func handleScan(_ payload: String, _ symbology: String?) {
         isScanning = false
+        NQJuice.tap()
+        // UPC-E expands to UPC-A: that is the code product databases key on.
+        let code = BarcodeUtils.lookupCode(for: payload, symbology: symbology)
+        // Mirror the server's rule so a non-product code fails with a useful
+        // message instead of a round trip and a 400.
+        guard (6...20).contains(code.count), code.allSatisfy(\.isNumber) else {
+            errorMessage = "That doesn't look like a product barcode. Try the EAN/UPC code on the package."
+            return
+        }
+        scanResult = nil
+        summonedCharacter = nil
         isLookingUp = true
         Task {
             do {
-                let result = try await APIClient.shared.scanBarcode(payload)
-                let product = try? await service.lookup(barcode: payload)
+                let result = try await APIClient.shared.scanBarcode(code)
+                let product = try? await service.lookup(barcode: code)
                 isLookingUp = false
                 scanResult = result
                 if let character = gameState.registerScanResult(result, product: product) {
                     summonedCharacter = character
                     playSummonSequence()
                 }
+            } catch APIError.badStatus(let code, _) where code == 400 {
+                isLookingUp = false
+                errorMessage = "That barcode isn't a product code. Try the EAN/UPC on the package."
             } catch APIError.badStatus(let code, _) where code == 404 {
                 isLookingUp = false
                 errorMessage = "Product not found in Open Food Facts. Try another barcode."
-            } catch APIError.badStatus(let code, _) where code == 422 {
+            } catch APIError.badStatus(let code, let body) where code == 422 {
                 isLookingUp = false
-                errorMessage = "That product's nutrition data failed sanity checks: nothing was logged or summoned."
+                // The scan worked; the community database row didn't. Say so.
+                let reasons = Self.plausibilityReasons(body)
+                let detail = reasons.isEmpty ? "" : " (\(reasons.joined(separator: "; ")))"
+                errorMessage = "Open Food Facts has broken nutrition data for this product\(detail). Nothing was logged or summoned; try another barcode on the pack."
             } catch {
                 isLookingUp = false
                 errorMessage = "Scan failed: \(error.localizedDescription). Check your connection and try again."
@@ -209,9 +265,42 @@ struct ScanView: View {
         }
     }
 
+    /// The server's 422 carries the exact rule the Open Food Facts entry
+    /// broke; showing it makes "sanity checks" mean something to the user.
+    private static func plausibilityReasons(_ body: String?) -> [String] {
+        guard let data = body?.data(using: .utf8),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let error = json["error"] as? [String: Any],
+              let reasons = error["reasons"] as? [String] else { return [] }
+        return reasons
+    }
+
     private func handleUnavailable(_ message: String) {
         isScanning = false
-        errorMessage = message + " Try again on a real iPhone."
+        errorMessage = message
+    }
+
+    /// Ask for the camera up front. VisionKit's `isAvailable` folds a not-yet-
+    /// asked permission in with a refused one, so the system prompt has to be
+    /// driven explicitly or a first-time user is told to go to Settings.
+    private func startScanning() {
+        errorMessage = nil
+        cameraDenied = false
+        guard ScannerView.isSupported else {
+            errorMessage = "This device can't scan barcodes."
+            return
+        }
+        Task {
+            switch await CameraPermission.request() {
+            case .granted:
+                isScanning = true
+            case .denied:
+                cameraDenied = true
+                errorMessage = "Camera permission is needed to scan. Enable it in Settings and try again."
+            case .restricted:
+                errorMessage = "Camera access is restricted on this device."
+            }
+        }
     }
 
     /// Staged reveal: lock (haptic) → silhouette → rarity burst → full reveal.
@@ -342,10 +431,12 @@ struct ScanView: View {
         .accessibilityLabel("Logged plate: \(Int(n.calories)) kilocalories")
     }
 
-    private func nutrientPill(_ label: String, value: Double, unit: String, tint: Color) -> some View {
+    private func nutrientPill(_ label: String, value: Double?, unit: String, tint: Color) -> some View {
         VStack(spacing: 2) {
             Text(label).font(NQText.micro.font.weight(.bold)).foregroundStyle(tint)
-            Text("\(Int(value))\(unit)").font(NQText.captionS.font).foregroundStyle(NQTheme.ink)
+            Text(value.map { "\(Int($0.rounded()))\(unit)" } ?? "—")
+                .font(NQText.captionS.font)
+                .foregroundStyle(NQTheme.ink)
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)

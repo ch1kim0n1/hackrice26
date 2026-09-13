@@ -3,7 +3,9 @@ import Charts
 import NutriQuestUI
 
 /// Full-screen entertainment/engagement dashboard: numbers + charts for the
-/// player’s entire NutriQuest journey (scans, crate pulls, collection, vitals).
+/// player’s entire NutriQuest journey (scans, crate pulls, collection), plus a
+/// calendar of the watch's workout history (`JourneyActivityCalendar`), which
+/// is where per-day steps live now.
 struct JourneyView: View {
     @EnvironmentObject var gameState: GameState
     @Environment(\.dismiss) private var dismiss
@@ -18,6 +20,10 @@ struct JourneyView: View {
                         header(journey)
                             .nqSlideUp(delay: 0.05)
                         summaryGrid(journey.summary)
+                        if let activity = journey.activity {
+                            JourneyActivityCalendar(days: activity.byDay)
+                                .nqSlideUp(delay: 0.1)
+                        }
                         if !journey.timeline.scansByDay.isEmpty || !journey.timeline.dropsByDay.isEmpty {
                             timelineSection(journey.timeline)
                                 .nqSlideUp(delay: 0.15)
@@ -31,10 +37,6 @@ struct JourneyView: View {
                                 }
                             )
                             .nqSlideUp(delay: 0.2)
-                        }
-                        if !journey.vitals.isEmpty {
-                            vitalsSection(journey.vitals)
-                                .nqSlideUp(delay: 0.3)
                         }
                         if !journey.recentDrops.isEmpty {
                             recentDrops(journey.recentDrops)
@@ -252,44 +254,6 @@ struct JourneyView: View {
                             .font(NQText.microXS.font)
                             .foregroundStyle(NQTheme.inkMuted)
                     }
-                }
-            }
-        }
-    }
-
-    // MARK: - Vitals
-
-    private func vitalsSection(_ points: [JourneyVitalsPoint]) -> some View {
-        let steps = points.compactMap { p -> (date: String, value: Int)? in
-            guard let s = p.steps, s > 0 else { return nil }
-            return (p.date, s)
-        }
-        return NQCard {
-            VStack(alignment: .leading, spacing: NQTheme.spaceM) {
-                Text("Vitals")
-                    .font(NQText.headingL.font)
-                    .foregroundStyle(NQTheme.ink)
-                if !steps.isEmpty {
-                    Text("Steps")
-                        .font(NQText.caption.font.weight(.bold))
-                        .foregroundStyle(NQTheme.inkMuted)
-                    Chart(steps, id: \.date) { point in
-                        LineMark(
-                            x: .value("Date", point.date),
-                            y: .value("Steps", point.value)
-                        )
-                        .foregroundStyle(accent.accent)
-                        .interpolationMethod(.catmullRom)
-                        .symbol(Circle().strokeBorder(lineWidth: 1.5))
-                    }
-                    .frame(height: 180)
-                    .chartPlotStyle { plot in
-                        plot.background(NQTheme.track.opacity(0.45))
-                    }
-                } else {
-                    Text("No vitals data yet")
-                        .font(NQText.bodyL.font)
-                        .foregroundStyle(NQTheme.inkMuted)
                 }
             }
         }

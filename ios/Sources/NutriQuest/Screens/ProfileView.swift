@@ -386,21 +386,10 @@ struct ProfileView: View {
                 .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
                 .padding(.leading, 4)
             VStack(spacing: 0) {
-                soundToggle
-                Divider().foregroundStyle(NQTheme.hairline)
-                hapticsToggle
-                Divider().foregroundStyle(NQTheme.hairline)
                 Button {
                     showJourney = true
                 } label: {
                     rowContent(ProfileSettingsRow(label: "Your journey", systemImage: "chart.bar.fill"))
-                }
-                .buttonStyle(.nqPressable(scale: 0.98, haptic: false))
-                Divider().foregroundStyle(NQTheme.hairline)
-                NavigationLink {
-                    HealthDashboardView(gameState: gameState)
-                } label: {
-                    rowContent(ProfileSettingsRow(label: "Health dashboard", systemImage: "heart.fill"))
                 }
                 .buttonStyle(.nqPressable(scale: 0.98, haptic: false))
                 Divider().foregroundStyle(NQTheme.hairline)
@@ -449,57 +438,6 @@ struct ProfileView: View {
             }
             .nqSurface(.sticker)
         }
-    }
-
-    @AppStorage(NQFeedbackSettings.soundKey) private var soundEnabled = true
-    @AppStorage(NQFeedbackSettings.hapticsKey) private var hapticsEnabled = true
-
-    private var soundToggle: some View {
-        HStack(spacing: NQTheme.spaceM) {
-            ZStack {
-                RoundedRectangle(cornerRadius: NQTheme.radiusS, style: .continuous)
-                    .fill(accent.accentSoft)
-                    .frame(width: 32, height: 32)
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: NQLayout.iconM, weight: .bold))
-                    .foregroundStyle(accent.accentDark)
-            }
-            .accessibilityHidden(true)
-            Text("Sound effects")
-                .font(NQText.bodyL.font)
-                .foregroundStyle(NQTheme.ink)
-            Spacer()
-            Toggle("", isOn: $soundEnabled)
-                .labelsHidden()
-                .tint(accent.accent)
-        }
-        .nqPadding(.card)
-        .padding(.horizontal, 2)
-        .accessibilityElement(children: .combine)
-    }
-
-    private var hapticsToggle: some View {
-        HStack(spacing: NQTheme.spaceM) {
-            ZStack {
-                RoundedRectangle(cornerRadius: NQTheme.radiusS, style: .continuous)
-                    .fill(accent.accentSoft)
-                    .frame(width: 32, height: 32)
-                Image(systemName: "iphone.radiowaves.left.and.right")
-                    .font(.system(size: NQLayout.iconM, weight: .bold))
-                    .foregroundStyle(accent.accentDark)
-            }
-            .accessibilityHidden(true)
-            Text("Haptics")
-                .font(NQText.bodyL.font)
-                .foregroundStyle(NQTheme.ink)
-            Spacer()
-            Toggle("", isOn: $hapticsEnabled)
-                .labelsHidden()
-                .tint(accent.accent)
-        }
-        .nqPadding(.card)
-        .padding(.horizontal, 2)
-        .accessibilityElement(children: .combine)
     }
 
     /// A flat gray glyph floating in whitespace is what makes a settings list
