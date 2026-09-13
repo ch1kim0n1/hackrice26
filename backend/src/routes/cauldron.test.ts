@@ -35,7 +35,7 @@ async function withPlayer(
 ): Promise<void> {
   const { cauldronRouter } = await import("./cauldron");
   const { stateFor } = await import("../services/lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
 
   const playerId = `cauldron_${playerCounter++}_${Date.now()}`;
   const session = stateFor(playerId);
@@ -46,17 +46,14 @@ async function withPlayer(
   const seeded = ["salmon-striker", "quinoa-quill", "avocado-aegis", "broccoli-bud"]
     .slice(0, count)
     .map((characterId, i) =>
-      session.record({
+      session.record(testDrop({
         crateId: "starter-crate",
-        character: CHARACTERS[characterId],
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
+        character: testCharacter("common", characterId),
         value: values[i],
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+        rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
         fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
         openedAt: new Date().toISOString()
-      })
+      })).drop
     );
 
   const app = express();
@@ -160,22 +157,19 @@ describe("starting a round", () => {
     // at once, which is what this checks.
     const { startRound, activeRound, CAULDRON_ERRORS } = await import("../services/cauldronState");
     const { stateFor } = await import("../services/lootboxState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `cauldron_concurrent_${Date.now()}`;
     const session = stateFor(playerId);
     const drops = Array.from({ length: 12 }, () =>
-      session.record({
+      session.record(testDrop({
         crateId: "starter-crate",
-        character: CHARACTERS["broccoli-bud"],
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
+        character: testCharacter("common", "broccoli-bud"),
         value: 600,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+        rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
         fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
         openedAt: new Date().toISOString()
-      })
+      })).drop
     );
 
     // Find a round that did not crash instantly. Twelve tries makes an
@@ -301,21 +295,18 @@ describe("crashing", () => {
   it("destroys the wager and returns nothing", async () => {
     const { startRound, cashOut, settle, roundById } = await import("../services/cauldronState");
     const { stateFor } = await import("../services/lootboxState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `cauldron_crash_${Date.now()}`;
     const session = stateFor(playerId);
-    const drop = session.record({
+    const drop = session.record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS["salmon-striker"],
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
+      character: testCharacter("common", "salmon-striker"),
       value: 9_000,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
       openedAt: new Date().toISOString()
-    });
+    })).drop;
 
     const round = startRound(playerId, [drop.id]);
     // Jump past any possible crash point.
@@ -336,20 +327,17 @@ describe("crashing", () => {
   it("keeps the crash point fixed across a reconnect", async () => {
     const { startRound, roundById } = await import("../services/cauldronState");
     const { stateFor } = await import("../services/lootboxState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `cauldron_reconnect_${Date.now()}`;
-    const drop = stateFor(playerId).record({
+    const drop = stateFor(playerId).record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS["broccoli-bud"],
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
+      character: testCharacter("common", "broccoli-bud"),
       value: 40,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
       openedAt: new Date().toISOString()
-    });
+    })).drop;
 
     const round = startRound(playerId, [drop.id]);
     const reloaded = roundById(playerId, round.roundId)!;
@@ -396,22 +384,19 @@ describe("wager destruction semantics", () => {
   it("treats duplicate copies of one character as separate monsters", async () => {
     const { stateFor } = await import("../services/lootboxState");
     const { startRound } = await import("../services/cauldronState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `cauldron_dupes_${Date.now()}`;
     const session = stateFor(playerId);
     const copies = [0, 1, 2].map(() =>
-      session.record({
+      session.record(testDrop({
         crateId: "starter-crate",
-        character: CHARACTERS["salmon-striker"],
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
+        character: testCharacter("common", "salmon-striker"),
         value: 220,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+        rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
         fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
         openedAt: new Date().toISOString()
-      })
+      })).drop
     );
 
     // Same character, same rarity, same value — three distinct instances.
@@ -430,20 +415,17 @@ describe("wager destruction semantics", () => {
     // the same simulation persistence.test.ts uses.
     const { stateFor } = await import("../services/lootboxState");
     const { startRound } = await import("../services/cauldronState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `cauldron_restart_${Date.now()}`;
-    const drop = stateFor(playerId).record({
+    const drop = stateFor(playerId).record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS["salmon-striker"],
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
+      character: testCharacter("common", "salmon-striker"),
       value: 220,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
       openedAt: new Date().toISOString()
-    });
+    })).drop;
     const round = startRound(playerId, [drop.id]);
 
     vi.resetModules();
@@ -473,7 +455,7 @@ describe("published rules", () => {
       expect(config.minWagerMonsters).toBe(1);
       expect(config.maxWagerMonsters).toBe(3);
       expect(config.rarityRanges).toHaveLength(7);
-      expect(config.rarityRanges.at(-1)!.max).toBeNull();
+      expect(config.rarityRanges.at(-1)!.max).toBe(597_999); // spec gives Secret a ceiling too
       expect(config.survivalOdds.find((o) => o.multiplier === 2)!.chance).toBeCloseTo(0.475, 3);
     });
   });

@@ -437,14 +437,13 @@ struct LANMatchView: View {
             BattleView(
                 yourSquad: result.myCharacters,
                 opponentSquad: result.opponentCharacters,
-                fatigued: false,
-                moves: [],
                 gameState: gameState,
                 mode: .lan(LANBattleContext(
                     replay: result.replay,
                     opponentName: client.name(for: result.opponentID),
                     mySide: result.mySide,
-                    unitCharacterIDs: result.unitCharacterIDs
+                    unitCharacterIDs: result.unitCharacterIDs,
+                    unitSpecs: result.unitSpecs
                 ))
             )
 

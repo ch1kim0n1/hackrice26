@@ -35,23 +35,20 @@ async function withPlayer(
 ): Promise<void> {
   const { plinkoRouter } = await import("./plinko");
   const { stateFor } = await import("../services/lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
 
   const playerId = `plinko_${counter++}_${Date.now()}`;
   const session = stateFor(playerId);
 
   const seeded = Array.from({ length: count }, (_, i) =>
-    session.record({
+    session.record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS["salmon-striker"],
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
+      character: testCharacter("common", "salmon-striker"),
       value: 20_000,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
       openedAt: new Date().toISOString()
-    })
+    })).drop
   );
 
   const app = express();
@@ -140,24 +137,21 @@ describe("dropping", () => {
     // rather than waited for: a 0x landing is 22.5% per drop.
     const { drop } = await import("../services/plinkoState");
     const { stateFor } = await import("../services/lootboxState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `plinko_bust_${Date.now()}`;
     const session = stateFor(playerId);
     let busted = false;
 
     for (let i = 0; i < 60 && !busted; i++) {
-      const monster = session.record({
+      const monster = session.record(testDrop({
         crateId: "starter-crate",
-        character: CHARACTERS["broccoli-bud"],
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
+        character: testCharacter("common", "broccoli-bud"),
         value: 600,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+        rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
         fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
         openedAt: new Date().toISOString()
-      });
+      })).drop;
       const resolved = drop(playerId, monster.id);
       expect(session.inventory.map((d) => d.id)).not.toContain(monster.id);
 

@@ -67,10 +67,33 @@ final class APIClient {
         self.session = session
     }
 
+    // MARK: - Barcode scan (the only mint path)
+    //
+    // The client sends just the digits — the server fetches nutrition from
+    // Open Food Facts, scores it, and mints a ★1 catalog monster the first
+    // time this player ever scans that barcode. Re-scans still log the meal
+    // but come back with `duplicate: true` and no character.
+
+    private struct ScanBody: Encodable {
+        let barcode: String
+    }
+
+    /// POST /scan — barcode → nutrition → (once ever) a ★1 monster.
+    func scanBarcode(_ barcode: String) async throws -> ScanResultDTO {
+        let envelope = try await request(
+            ScanResponseEnvelope.self,
+            method: "POST",
+            path: "scan",
+            body: ScanBody(barcode: barcode)
+        )
+        return envelope.result
+    }
+
     // MARK: - Dish photo scan (no barcode needed)
     //
-    // Two steps: analyze produces a breakdown the user reviews, confirm turns
-    // the corrected plate into a character. Nothing is minted until confirm.
+    // Two steps: analyze produces a draft breakdown the user reviews, confirm
+    // logs the corrected plate as a meal. A photo NEVER mints a monster —
+    // barcode is the only food path that can.
 
     private struct DishAnalyzeEnvelope: Decodable {
         let analysis: DishAnalysisDTO
@@ -104,7 +127,7 @@ final class APIClient {
     }
 
     /// POST /scan/photo/confirm — applies the user's corrections server-side
-    /// and mints the character from the confirmed plate.
+    /// and logs the confirmed plate as a meal. Never mints anything.
     func confirmDishPhoto(analysisId: String, edits: [DishItemEdit]) async throws -> DishConfirmResult {
         let envelope = try await request(
             DishConfirmEnvelope.self,
@@ -238,36 +261,28 @@ final class APIClient {
         try await request(ServerBattleResult.self, method: "POST", path: "battle/simulate", body: body)
     }
 
-    /// POST /battle/async/challenge — fight a friend's stored squad snapshot.
-    func challengeFriend(opponentId: String, yourSquad: [BattleSquadMember]) async throws -> AsyncChallengeResponse {
-        struct ChallengeBody: Encodable { let opponentId: String; let yourSquad: [BattleSquadMember] }
+    /// POST /battle/friendly — fight a friend's stored squad snapshot.
+    /// Friendly results land in battle history with rrDelta 0 — no RR moves.
+    func challengeFriend(opponentId: String, squad: [BattleSquadMember]) async throws -> AsyncChallengeResponse {
+        struct ChallengeBody: Encodable { let opponentId: String; let squad: [BattleSquadMember] }
         return try await request(
             AsyncChallengeResponse.self,
             method: "POST",
-            path: "battle/async/challenge",
-            body: ChallengeBody(opponentId: opponentId, yourSquad: yourSquad)
+            path: "battle/friendly",
+            body: ChallengeBody(opponentId: opponentId, squad: squad)
         )
     }
 
-    /// GET /battle/async/notices — recent challenges against your squad.
-    func fetchBattleNotices() async throws -> AsyncNoticesResponse {
-        try await request(AsyncNoticesResponse.self, method: "GET", path: "battle/async/notices")
-    }
-
     /// POST /battle/dungeon/run — send the squad down until it wipes.
+    /// Floors pay coins on clear; earnings survive a wipe (spec §5).
     func runDungeon(squad: [BattleSquadMember]) async throws -> DungeonRunResponse {
         struct RunBody: Encodable { let squad: [BattleSquadMember] }
         return try await request(DungeonRunResponse.self, method: "POST", path: "battle/dungeon/run", body: RunBody(squad: squad))
     }
 
-    /// GET /battle/dungeon/state — best floor + idle keys waiting.
+    /// GET /battle/dungeon/state — personal best + last run timestamp.
     func fetchDungeonState() async throws -> DungeonStateResponse {
         try await request(DungeonStateResponse.self, method: "GET", path: "battle/dungeon/state")
-    }
-
-    /// POST /battle/dungeon/claim — collect idle keys.
-    func claimDungeonIncome() async throws -> DungeonClaimResponse {
-        try await request(DungeonClaimResponse.self, method: "POST", path: "battle/dungeon/claim")
     }
 
     // MARK: - User (backend/src/routes/user.ts)
@@ -334,15 +349,26 @@ final class APIClient {
         try await request(JourneyResponse.self, method: "GET", path: "user/\(id)/journey")
     }
 
-    /// GET /user/leaderboard?sort=wins|rank — "wins" (battles won, default)
-    /// or "rank" (consistency ladder: points + tier).
-    func fetchLeaderboard(sort: LeaderboardSort = .wins) async throws -> LeaderboardResponse {
-        try await request(LeaderboardResponse.self, method: "GET", path: "user/leaderboard", query: ["sort": sort.rawValue])
+    /// GET /user/leaderboard — spec §6 ordering: RR desc → ranked wins →
+    /// win rate. The server decides the order; no client sort.
+    func fetchLeaderboard() async throws -> LeaderboardResponse {
+        try await request(LeaderboardResponse.self, method: "GET", path: "user/leaderboard")
     }
 
-    /// POST /user/comeback/claim — the free welcome-back crate pull.
-    func claimComeback() async throws -> CrateOpenResponse {
-        try await request(CrateOpenResponse.self, method: "POST", path: "user/comeback/claim")
+    /// GET /user/tasks/today — today's three tasks with verified progress.
+    func fetchTasks() async throws -> TasksResponse {
+        try await request(TasksResponse.self, method: "GET", path: "user/tasks/today")
+    }
+
+    /// POST /user/tasks/:taskId/claim — verified completion pays 250 coins
+    /// (+500 when it completes the trio); eligible tasks also pay task RR.
+    func claimTask(_ taskId: String) async throws -> TaskClaimResult {
+        try await request(TaskClaimResult.self, method: "POST", path: "user/tasks/\(taskId)/claim")
+    }
+
+    /// GET /user/:id/history — completed battles, newest first (spec §6).
+    func fetchBattleHistory(id: String, limit: Int = 25) async throws -> BattleHistoryResponse {
+        try await request(BattleHistoryResponse.self, method: "GET", path: "user/\(id)/history", query: ["limit": String(limit)])
     }
 
     // MARK: - Vitals (backend/src/vitals — HealthKit snapshots from the watch)
@@ -352,6 +378,13 @@ final class APIClient {
     /// that as "no data yet", not an error.
     func fetchLatestVitals() async throws -> VitalsLatestResponse {
         try await request(VitalsLatestResponse.self, method: "GET", path: "vitals/latest")
+    }
+
+    /// POST /vitals — uploads one HealthKit snapshot read on this phone. The
+    /// backend validates ranges (heart rate 20–250, steps ≤ 200k, ≤ 50
+    /// workouts…) and answers 422 with field errors when a value is off.
+    func uploadVitals(_ snapshot: HealthKitSnapshot) async throws -> VitalsUploadResponse {
+        try await request(VitalsUploadResponse.self, method: "POST", path: "vitals", body: snapshot)
     }
 
     // MARK: - Trends (backend/src/routes/trends.ts)
@@ -528,40 +561,52 @@ final class APIClient {
         return response.spin
     }
 
-    // MARK: - Loot crates (backend/src/routes/lootbox.ts)
+    // MARK: - Lootboxes (backend/src/routes/lootbox.ts)
+    //
+    // Cookbooks are the only purchasable containers; rank wins and promos
+    // grant fixed-rarity Cases that open through the same mint path. No keys,
+    // no pity — spec §3.
 
-    /// GET /lootbox/crates — every crate with its published drop rates.
-    func fetchCrates() async throws -> [CrateSummaryDTO] {
-        let response: CratesResponse = try await request(CratesResponse.self, method: "GET", path: "lootbox/crates")
-        return response.crates
+    /// GET /lootbox/cookbooks — the four Cookbooks with coin prices and
+    /// published odds (spec §3 — the only purchasable loot containers).
+    func fetchCookbooks() async throws -> [CookbookDTO] {
+        let response: CookbooksResponse = try await request(CookbooksResponse.self, method: "GET", path: "lootbox/cookbooks")
+        return response.cookbooks
     }
 
-    /// POST /lootbox/crates/:id/open — spend keys, resolve one drop via the
-    /// server's commit-reveal scheme. `clientSeed` is optional player entropy.
-    func openCrate(crateID: String, clientSeed: String? = nil) async throws -> CrateOpenResponse {
+    /// GET /lootbox/cookbooks/:id — one book including its full contents.
+    func fetchCookbook(id: String) async throws -> CookbookDTO {
+        try await request(CookbookDTO.self, method: "GET", path: "lootbox/cookbooks/\(id)")
+    }
+
+    /// POST /lootbox/cookbooks/:id/open — coin-paid, atomic, one drop.
+    /// `clientSeed` is optional player entropy for the commit-reveal roll.
+    func openCookbook(id: String, clientSeed: String? = nil) async throws -> CrateOpenResponse {
         struct OpenBody: Encodable { let clientSeed: String? }
         return try await request(
             CrateOpenResponse.self,
             method: "POST",
-            path: "lootbox/crates/\(crateID)/open",
+            path: "lootbox/cookbooks/\(id)/open",
             body: OpenBody(clientSeed: clientSeed)
         )
     }
 
-    /// GET /lootbox/shop-cases — the coin shop: one case per rarity, with
-    /// its coin price and published odds.
-    func fetchShopCases() async throws -> [ShopCaseDTO] {
-        try await request(ShopCasesResponse.self, method: "GET", path: "lootbox/shop-cases").cases
+    /// GET /lootbox/cases — Cases this player has been granted (ranked wins,
+    /// promos), oldest first.
+    func fetchPendingCases() async throws -> [PendingCaseDTO] {
+        let response: PendingCasesResponse = try await request(PendingCasesResponse.self, method: "GET", path: "lootbox/cases")
+        return response.cases
     }
 
-    /// POST /lootbox/shop-cases/:id/open — pay the case's coin price and
-    /// resolve one drop server-side. No keys, no pity, no rank boost.
-    func openShopCase(caseID: String, clientSeed: String? = nil) async throws -> CrateOpenResponse {
+    /// POST /lootbox/cases/:id/open — open a granted Case; the server
+    /// consumes the row and mints a monster of the case's fixed rarity in the
+    /// same transaction, so a retried call 404s instead of minting twice.
+    func openPendingCase(caseId: String, clientSeed: String? = nil) async throws -> CrateOpenResponse {
         struct OpenBody: Encodable { let clientSeed: String? }
         return try await request(
             CrateOpenResponse.self,
             method: "POST",
-            path: "lootbox/shop-cases/\(caseID)/open",
+            path: "lootbox/cases/\(caseId)/open",
             body: OpenBody(clientSeed: clientSeed)
         )
     }
@@ -576,14 +621,14 @@ final class APIClient {
         )
     }
 
-    /// POST /lootbox/keys/grant — award keys (admin-only).
-    func grantKeys(amount: Int, reason: String) async throws -> GrantKeysResponse {
-        struct GrantBody: Encodable { let amount: Int; let reason: String }
+    /// POST /lootbox/mailbox/claim — pull overflow drops into the inventory.
+    func claimMailbox(dropIDs: [String]) async throws -> MailboxClaimResponse {
+        struct ClaimBody: Encodable { let dropIds: [String] }
         return try await request(
-            GrantKeysResponse.self,
+            MailboxClaimResponse.self,
             method: "POST",
-            path: "lootbox/keys/grant",
-            body: GrantBody(amount: amount, reason: reason)
+            path: "lootbox/mailbox/claim",
+            body: ClaimBody(dropIds: dropIDs)
         )
     }
 
@@ -600,18 +645,6 @@ final class APIClient {
     /// POST /lootbox/promos/:code/redeem — one-time key/crate reward.
     func redeemPromo(code: String) async throws -> PromoRedeemResponse {
         try await request(PromoRedeemResponse.self, method: "POST", path: "lootbox/promos/\(code)/redeem")
-    }
-
-    // MARK: - Daily quests (backend/src/game/quests.ts)
-
-    /// GET /user/quests/today — today's trio with server-verified progress.
-    func fetchDailyQuests() async throws -> DailyQuestsResponse {
-        try await request(DailyQuestsResponse.self, method: "GET", path: "user/quests/today")
-    }
-
-    /// POST /user/quests/:id/claim — verified completion pays keys, once.
-    func claimQuest(id: String) async throws -> ClaimQuestResponse {
-        try await request(ClaimQuestResponse.self, method: "POST", path: "user/quests/\(id)/claim")
     }
 
     /// GET /characters/coins — current coin wallet.

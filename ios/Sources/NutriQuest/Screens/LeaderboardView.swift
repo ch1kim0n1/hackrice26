@@ -1,9 +1,9 @@
 import SwiftUI
 import NutriQuestUI
 
-/// Global ranking — battles won, or the consistency (rank-tier) ladder.
+/// Global ranking — one ladder, ordered server-side: RR desc, then ranked
+/// wins, then win rate (spec §6).
 struct LeaderboardView: View {
-    @State private var sort: LeaderboardSort = .wins
     @State private var entries: [LeaderboardEntry] = []
     @State private var loading = true
     @State private var errorMessage: String?
@@ -14,13 +14,6 @@ struct LeaderboardView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: NQTheme.spaceS) {
-                Picker("Sort", selection: $sort) {
-                    Text("Wins").tag(LeaderboardSort.wins)
-                    Text("Rank").tag(LeaderboardSort.rank)
-                }
-                .pickerStyle(.segmented)
-                .padding(.bottom, NQTheme.spaceXS)
-
                 if loading {
                     NQContentState(.loading("Loading rankings…"))
                         .padding(.top, 80)
@@ -28,7 +21,7 @@ struct LeaderboardView: View {
                     NQContentState(.error(errorMessage, retry: { Task { await load() } }))
                         .padding(.top, 80)
                 } else if entries.isEmpty {
-                    NQEmptyState(message: "No ranked players yet. Win a battle to claim first place", icon: .trophy)
+                    NQEmptyState(message: "No ranked players yet. Win a ranked battle to claim first place", icon: .trophy)
                         .padding(.top, 80)
                 } else {
                     ForEach(entries) { entry in
@@ -49,13 +42,12 @@ struct LeaderboardView: View {
             }
         }
         .task { await load() }
-        .onChange(of: sort) { _ in Task { await load() } }
     }
 
     private func load() async {
         errorMessage = nil
         do {
-            entries = try await APIClient.shared.fetchLeaderboard(sort: sort).entries
+            entries = try await APIClient.shared.fetchLeaderboard().entries
         } catch {
             errorMessage = "Couldn't load rankings. Check your connection and retry."
         }
@@ -76,14 +68,12 @@ struct LeaderboardView: View {
                 Text(entry.displayName)
                     .font(NQText.bodyL.font.weight(.bold))
                     .foregroundStyle(NQTheme.battleInk)
-                Text(sort == .rank
-                     ? "\(entry.rankTier.capitalized) · Lvl \(entry.level)"
-                     : "Lvl \(entry.level) · \(entry.streakDays) day streak")
+                Text("\(entry.rankLabel) · \(entry.rankedWins)W \(entry.rankedLosses)L · \(Int(entry.winRate * 100))%")
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.battleInkMuted)
             }
             Spacer()
-            Text(sort == .rank ? "\(entry.rankPoints) RP" : "\(entry.battlesWon) W")
+            Text("\(entry.rr) RR")
                 .font(NQText.bodyL.font.weight(.heavy))
                 .foregroundStyle(entry.isYou ? accent.accent : NQTheme.battleInk)
         }
@@ -97,9 +87,7 @@ struct LeaderboardView: View {
             }
         }
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(sort == .rank
-            ? "Rank \(entry.rank): \(entry.displayName), \(entry.rankPoints) rank points, \(entry.rankTier) tier"
-            : "Rank \(entry.rank): \(entry.displayName), \(entry.battlesWon) wins")
+        .accessibilityLabel("Rank \(entry.rank): \(entry.displayName), \(entry.rr) rating points, \(entry.rankLabel), \(entry.rankedWins) wins")
     }
 
     private func rankLabel(_ rank: Int) -> String {

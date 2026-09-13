@@ -59,7 +59,7 @@ export interface CauldronRound {
   cashOutAt: string | null;
   cashOutMultiplier: number | null;
   finalNetWorth: number | null;
-  reward: (StoredDrop & { budget: number }) | null;
+  reward: (StoredDrop & { budget: number; overflowed?: boolean }) | null;
   completedAt: string | null;
   fairness: Fairness;
 }
@@ -265,24 +265,21 @@ export function cashOut(playerId: string, roundId: string, now = Date.now()): Ca
     roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, CAULDRON_CURSOR.rewardPower)
   );
 
-  const stored = payoutDrop(playerId, {
+  const { drop: stored, overflowed } = payoutDrop(playerId, {
     crateId: "cauldron-crash",
     character: prize.character,
     // Crash is rarity progression, not mastery: the reward always starts at
     // one star however large the pot was (spec §11).
     stars: prize.stars,
-    power: prize.power,
-    powerLabel: prize.powerLabel,
-    shiny: prize.shiny,
+    baseMintValue: prize.baseMintValue,
     value: prize.value,
-    // The round's own rolls, disclosed like a crate open's. `shiny` was not
-    // rolled — the budget decided it — so it is recorded as 0 rather than
-    // invented.
+    // The round's own rolls, disclosed like a cookbook open's. No segment was
+    // rolled — the budget priced the mint — so mintSegment records -1.
     rolls: {
       rarity: roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, CAULDRON_CURSOR.crash),
       character: roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, CAULDRON_CURSOR.rewardCharacter),
-      power: roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, CAULDRON_CURSOR.rewardPower),
-      shiny: 0
+      mintSegment: -1,
+      mintPosition: roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, CAULDRON_CURSOR.rewardPower)
     },
     fairness: round.fairness,
     openedAt: new Date(now).toISOString()
@@ -294,7 +291,7 @@ export function cashOut(playerId: string, roundId: string, now = Date.now()): Ca
     cashOutAt: new Date(now).toISOString(),
     cashOutMultiplier: multiplier,
     finalNetWorth,
-    reward: { ...stored, budget: prize.budget },
+    reward: { ...stored, budget: prize.budget, overflowed },
     completedAt: new Date(now).toISOString()
   };
   persist(cashed);

@@ -1,26 +1,31 @@
 import { describe, it, expect } from "vitest";
 import express from "express";
 import { createScanRouter, OFFProduct } from "./scan";
+import { db } from "../db";
+import { ROSTER } from "../data/roster";
+import { RARITY_BANDS } from "../game/rarityBands";
 
 // ============================================================================
-// Scan -> character -> collection pipeline (issue #24).
+// Scan -> monster -> collection pipeline (spec §1).
 //
-// Covers the round-trip the app depends on: POST /scan mints a character,
-// GET /scan/collection/:playerId returns it, the one-barcode-per-day rule
-// holds, and every store is scoped to the X-Player-Id header (the #22 fix).
-// Open Food Facts is stubbed so the suite is hermetic; each test boots its
-// own router with fresh player ids so neither in-memory nor persisted state
-// leaks between cases.
+// Covers the round-trip the app depends on: POST /scan mints a ★1 catalog
+// monster on the FIRST scan of a barcode, never again afterwards (once per
+// user, ever — not per day), every scan still logs a meal, and every mint
+// leaves its anti-cheat record (barcode + nutrition snapshot + source +
+// timestamp) in scan_mint. Open Food Facts is stubbed so the suite is
+// hermetic; each test boots its own router with fresh player ids so neither
+// in-memory nor persisted state leaks between cases.
 // ============================================================================
 
 const NUTELLA = "3017620422003";
 const COKE = "5449000000996";
 const MISSING = "0000000000000";
+const IMPOSSIBLE = "9999999999999";
 
 let playerCounter = 0;
 
 /** Fresh player pair per test — scan state persists in SQLite, so reusing ids
- *  across tests (or across test runs) would leak the one-barcode-per-day rule
+ *  across tests (or across test runs) would leak the once-per-user rule
  *  between cases. */
 function freshPlayers() {
   const run = Date.now().toString(36);
@@ -34,13 +39,22 @@ function freshPlayers() {
   };
 }
 
-function offProduct(name: string): OFFProduct {
+function offProduct(name: string, nutriments?: Record<string, number>): OFFProduct {
   return {
     status: 1,
     product: {
       product_name_en: name,
-      nutriments: { proteins_100g: 8, fiber_100g: 3, sugars_100g: 5, "energy-kcal_100g": 120 },
-      vitamins_tags: ["en:vitamin-c"]
+      nutriments: {
+        proteins_100g: 8,
+        carbohydrates_100g: 10,
+        fat_100g: 4,
+        fiber_100g: 3,
+        sugars_100g: 5,
+        "saturated-fat_100g": 1.5,
+        sodium_100g: 0.04,
+        "energy-kcal_100g": 120,
+        ...nutriments
+      }
     }
   };
 }
@@ -48,7 +62,9 @@ function offProduct(name: string): OFFProduct {
 const catalog: Record<string, OFFProduct | null> = {
   [NUTELLA]: offProduct("Nutella"),
   [COKE]: offProduct("Coca Cola"),
-  [MISSING]: null
+  [MISSING]: null,
+  // Physically impossible: 200g of protein per 100g of food.
+  [IMPOSSIBLE]: offProduct("Lie Powder", { proteins_100g: 200 })
 };
 
 type Call = (method: string, path: string, headers: Record<string, string>, body?: unknown) => Promise<Response>;
@@ -62,7 +78,18 @@ interface ScanResponseBody {
   result: {
     barcode: string;
     foodName: string;
-    summonedCharacter?: { id: string; name: string };
+    nutritionScore?: number;
+    summonedCharacter?: {
+      id: string;
+      name: string;
+      rarity: string;
+      baseHealth: number;
+      baseAttack: number;
+      baseMana?: number;
+    };
+    mint?: { dropId: string; netWorth: number; stars: number };
+    nutrition?: { proteinG?: number };
+    mealId: string;
     duplicate: boolean;
   };
 }
@@ -70,6 +97,14 @@ interface ScanResponseBody {
 interface CollectionResponseBody {
   characters: { id: string; name: string }[];
 }
+
+interface MealsBody {
+  date: string;
+  meals: { mealId: string; source: string; name: string; calories: number | null }[];
+  totals: { calories: number; proteinG: number; carbsG: number; fatG: number };
+}
+
+const ROSTER_IDS = new Set(ROSTER.map((c) => c.id));
 
 /** Boots a fresh scan router (isolated state) on an ephemeral port. */
 async function withScanApp(
@@ -97,38 +132,100 @@ async function withScanApp(
   }
 }
 
-describe("scan -> character -> collection pipeline", () => {
-  it("mints a character from a scan and returns it in the collection", async () => {
+describe("scan -> monster -> collection pipeline", () => {
+  it("mints a ★1 catalog monster on the first scan and logs the meal", async () => {
     await withScanApp(async (call, { a, headersA }) => {
       const post = await call("POST", "/scan", headersA, { barcode: NUTELLA });
       expect(post.status).toBe(200);
-      const postBody = await json<ScanResponseBody>(post);
-      expect(postBody.result.foodName).toBe("Nutella");
-      expect(postBody.result.summonedCharacter!.id).toBe(`scan-${NUTELLA}`);
-      expect(postBody.result.duplicate).toBe(false);
+      const { result } = await json<ScanResponseBody>(post);
 
-      const get = await call("GET", `/scan/collection/${a}`, { "x-player-id": a });
-      expect(get.status).toBe(200);
-      const getBody = await json<CollectionResponseBody>(get);
-      expect(getBody.characters).toHaveLength(1);
-      expect(getBody.characters[0]).toMatchObject({ id: `scan-${NUTELLA}`, name: "Nutella" });
-    });
-  });
+      expect(result.foodName).toBe("Nutella");
+      expect(result.duplicate).toBe(false);
+      expect(result.nutritionScore).toBeGreaterThanOrEqual(0);
+      expect(result.nutritionScore).toBeLessThanOrEqual(100);
 
-  it("applies the one-barcode-per-day rule: same barcode does not mint twice", async () => {
-    await withScanApp(async (call, { a, headersA }) => {
-      const first = await call("POST", "/scan", headersA, { barcode: COKE });
-      expect((await json<ScanResponseBody>(first)).result.duplicate).toBe(false);
+      // The mint is a catalog design at ★1 with a real combat base.
+      const summoned = result.summonedCharacter!;
+      expect(ROSTER_IDS.has(summoned.id)).toBe(true);
+      expect(summoned.baseHealth).toBeGreaterThan(0);
+      expect(summoned.baseAttack).toBeGreaterThan(0);
+      expect(result.mint!.stars).toBe(1);
+      const band = RARITY_BANDS[summoned.rarity as keyof typeof RARITY_BANDS];
+      expect(result.mint!.netWorth).toBeGreaterThanOrEqual(band.min);
+      expect(result.mint!.netWorth).toBeLessThanOrEqual(band.max);
 
-      const second = await call("POST", "/scan", headersA, { barcode: COKE });
-      expect(second.status).toBe(200);
-      const body = await json<ScanResponseBody>(second);
-      expect(body.result.duplicate).toBe(true);
-      expect(body.result.summonedCharacter).toBeUndefined();
+      // Anti-cheat: the mint record holds barcode + exact snapshot + source.
+      const mint = db
+        .prepare(`SELECT * FROM scan_mint WHERE player_id = ? AND barcode = ?`)
+        .get(a, NUTELLA) as { character_id: string; nutrition: string; source: string; created_at: string };
+      expect(mint.character_id).toBe(summoned.id);
+      expect(mint.source).toBe("openfoodfacts");
+      expect(JSON.parse(mint.nutrition).proteinG).toBe(8);
+      expect(mint.created_at).toBeTruthy();
+
+      // The scan logged a meal.
+      const meals = await json<MealsBody>(await call("GET", "/scan/meals", { "x-player-id": a }));
+      expect(meals.meals).toHaveLength(1);
+      expect(meals.meals[0].source).toBe("barcode");
+      expect(meals.meals[0].mealId).toBe(result.mealId);
 
       const get = await call("GET", `/scan/collection/${a}`, { "x-player-id": a });
       const characters = (await json<CollectionResponseBody>(get)).characters;
-      expect(characters.filter((c) => c.id === `scan-${COKE}`)).toHaveLength(1);
+      expect(characters).toHaveLength(1);
+      expect(characters[0].id).toBe(summoned.id);
+    });
+  });
+
+  it("mints once per user ever — re-scans log nutrition but never re-mint", async () => {
+    await withScanApp(async (call, { a, headersA }) => {
+      const first = await json<ScanResponseBody>(await call("POST", "/scan", headersA, { barcode: COKE }));
+      expect(first.result.duplicate).toBe(false);
+      expect(first.result.summonedCharacter).toBeDefined();
+
+      const second = await json<ScanResponseBody>(await call("POST", "/scan", headersA, { barcode: COKE }));
+      expect(second.result.duplicate).toBe(true);
+      expect(second.result.summonedCharacter).toBeUndefined();
+      expect(second.result.mint).toBeUndefined();
+
+      // Both scans logged; only one monster exists.
+      const meals = await json<MealsBody>(await call("GET", "/scan/meals", { "x-player-id": a }));
+      expect(meals.meals).toHaveLength(2);
+
+      const mints = db
+        .prepare(`SELECT COUNT(*) AS n FROM scan_mint WHERE player_id = ? AND barcode = ?`)
+        .get(a, COKE) as { n: number };
+      expect(mints.n).toBe(1);
+
+      const characters = (await json<CollectionResponseBody>(
+        await call("GET", `/scan/collection/${a}`, { "x-player-id": a })
+      )).characters;
+      expect(characters).toHaveLength(1);
+    });
+  });
+
+  it("lets different players mint from the same barcode independently", async () => {
+    await withScanApp(async (call, { headersA, headersB }) => {
+      const a = await json<ScanResponseBody>(await call("POST", "/scan", headersA, { barcode: NUTELLA }));
+      const b = await json<ScanResponseBody>(await call("POST", "/scan", headersB, { barcode: NUTELLA }));
+      expect(a.result.duplicate).toBe(false);
+      expect(b.result.duplicate).toBe(false);
+      expect(a.result.mint!.dropId).not.toBe(b.result.mint!.dropId);
+    });
+  });
+
+  it("rejects impossible nutrition before anything mints", async () => {
+    await withScanApp(async (call, { a, headersA }) => {
+      const res = await call("POST", "/scan", headersA, { barcode: IMPOSSIBLE });
+      expect(res.status).toBe(422);
+      expect((await json<{ error: { code: string } }>(res)).error.code).toBe("IMPLAUSIBLE_NUTRITION");
+
+      // Nothing minted, nothing logged.
+      const mints = db
+        .prepare(`SELECT COUNT(*) AS n FROM scan_mint WHERE player_id = ?`)
+        .get(a) as { n: number };
+      expect(mints.n).toBe(0);
+      const meals = await json<MealsBody>(await call("GET", "/scan/meals", { "x-player-id": a }));
+      expect(meals.meals).toHaveLength(0);
     });
   });
 
@@ -144,12 +241,14 @@ describe("scan -> character -> collection pipeline", () => {
         await call("GET", `/scan/collection/${b}`, { "x-player-id": b })
       );
 
-      const idsA = collectionA.characters.map((c) => c.id);
-      const idsB = collectionB.characters.map((c) => c.id);
-      expect(idsA).toContain(`scan-${NUTELLA}`);
-      expect(idsA).not.toContain(`scan-${COKE}`);
-      expect(idsB).toContain(`scan-${COKE}`);
-      expect(idsB).not.toContain(`scan-${NUTELLA}`);
+      // Each player's collection is exactly their own mint (the minted design
+      // is a random catalog pick, so ids may coincide — counts are the point).
+      expect(collectionA.characters).toHaveLength(1);
+      expect(collectionB.characters).toHaveLength(1);
+      const mintsA = db.prepare(`SELECT COUNT(*) AS n FROM scan_mint WHERE player_id = ?`).get(a) as { n: number };
+      const mintsB = db.prepare(`SELECT COUNT(*) AS n FROM scan_mint WHERE player_id = ?`).get(b) as { n: number };
+      expect(mintsA.n).toBe(1);
+      expect(mintsB.n).toBe(1);
     });
   });
 
@@ -176,6 +275,43 @@ describe("scan -> character -> collection pipeline", () => {
       const res = await call("POST", "/scan", { "content-type": "application/json" }, { barcode: NUTELLA });
       expect(res.status).toBe(400);
       expect((await json<{ error: { code: string } }>(res)).error.code).toBe("PLAYER_ID_REQUIRED");
+    });
+  });
+});
+
+describe("manual meal logging", () => {
+  it("logs, edits and removes manual entries; today feeds the four dashboard macros", async () => {
+    await withScanApp(async (call, { a, headersA }) => {
+      const created = await call("POST", "/scan/meals", headersA, {
+        name: "Greek yoghurt",
+        calories: 97,
+        proteinG: 9,
+        carbsG: 3.6,
+        fatG: 5
+      });
+      expect(created.status).toBe(201);
+      const { mealId } = await json<{ mealId: string }>(created);
+
+      const edited = await call("PATCH", `/scan/meals/${mealId}`, headersA, { proteinG: 10 });
+      expect(edited.status).toBe(200);
+
+      const today = await json<{ totals: { calories: number; protein: number; carbs: number; fat: number } }>(
+        await call("GET", "/scan/meals/today", { "x-player-id": a })
+      );
+      expect(today.totals).toEqual({ calories: 97, protein: 10, carbs: 3.6, fat: 5 });
+
+      const removed = await call("DELETE", `/scan/meals/${mealId}`, headersA);
+      expect(removed.status).toBe(200);
+      const after = await json<MealsBody>(await call("GET", "/scan/meals", { "x-player-id": a }));
+      expect(after.meals).toHaveLength(0);
+    });
+  });
+
+  it("never mints anything from a manual meal", async () => {
+    await withScanApp(async (call, { a, headersA }) => {
+      await call("POST", "/scan/meals", headersA, { name: "x", calories: 100, proteinG: 10, carbsG: 5, fatG: 3 });
+      const mints = db.prepare(`SELECT COUNT(*) AS n FROM scan_mint WHERE player_id = ?`).get(a) as { n: number };
+      expect(mints.n).toBe(0);
     });
   });
 });

@@ -1,38 +1,62 @@
 import { Router } from "express";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { sampleCharacters } from "../data/sampleCharacters";
-import { CHARACTERS, RARITY_ORDER, RARITY_TIERS } from "../data/lootTable";
-import { BattleState, Character, Rarity, StatType } from "../types";
+import { RARITY_ORDER, RARITY_TIERS } from "../data/lootTable";
+import { BattleState, Character, Rarity } from "../types";
 import { requirePlayerId, PlayerRequest } from "../middleware/player";
 import { rateLimitByPlayer } from "../middleware/security";
-import { awardXP, awardRankPoints, getOrCreate, saveProfile, fatigueBlock } from "./user";
-import { isFatigued, fatigueUntil } from "../game/fatigue";
+import {
+  applyRankedToProfile,
+  getOrCreate,
+  recordBattle,
+  saveProfile
+} from "./user";
+import { faintedIds, markFainted } from "../game/tasks";
 import { db } from "../db";
 import { roll } from "../services/lootboxEngine";
-import { stateFor } from "../services/lootboxState";
+import { grantCase, stateFor } from "../services/lootboxState";
+import { coinBalance, recordCoins } from "../services/coins";
 import { hasDatabaseUrl } from "../db/pg";
 import { BattleEventIn } from "../db/repositories/battleRepo";
-import { ATTACKS_BY_ID, attacksFor, AttackDef } from "../data/attacks";
-import { fusionTierAsStar, starMult, rarityMult } from "../game/power";
+import { attacksFor } from "../data/attacks";
+import { fusionTierAsStar } from "../game/power";
+import {
+  BattleUnitSpec,
+  MoveSpec,
+  effectiveStat,
+  simulateBattle
+} from "../services/battleEngine";
 import { asStarLevel } from "../game/rarityBands";
-import { tierForPoints, RankTier, RANK_ORDER } from "../game/rankTiers";
-import { RP_RANKED_WIN, RP_RANKED_LOSS } from "../game/rankPoints";
+import {
+  applyRankedResult,
+  matchScore,
+  rankForRR,
+  rollRankedCaseRarity,
+  RANK_LABELS,
+  RankId
+} from "../game/rr";
 import { ROSTER, rosterCharacter } from "../data/roster";
-import { MUTATION_ERRORS, refundArena, refundStaleArenaStakes, settleArena, stakeDrops } from "../services/characterMutations";
 import { enqueueMirror } from "../services/mirrorQueue";
+import {
+  DUNGEON_BOSS_EVERY,
+  DUNGEON_BOSS_MULT,
+  DUNGEON_BOSS_REWARD_MULT,
+  DUNGEON_FLOOR_GROWTH,
+  DUNGEON_FLOOR_REWARD_BASE,
+  DUNGEON_FLOOR_REWARD_STEP,
+  DUNGEON_TEAM_SIZE,
+  SBMM_ATTACK_WEIGHT
+} from "../game/spec";
 
 export const battleRouter = Router();
 battleRouter.use(requirePlayerId);
 
 // ===== Deterministic battle simulation =====
-// Port of BattleKit BattleEngine (ios/Sources/BattleKit). Same squads + seed
+// The engine lives in services/battleEngine.ts (spec §4: one active monster
+// per side, alternating turns, no types, no tempo order, no global miss).
+// This file owns the endpoints and the server-trusted squad resolution that
+// hands the engine its locked battle-start snapshot. Same squads + seed
 // produce the same outcome on device and server. Server is authoritative.
-
-const MAX_ROUNDS = 12;
-const CRIT_CHANCE = 0.06;
-const CRIT_MULTIPLIER = 1.6;
-const MISS_CHANCE = 0.04;
-const DEFENSE_CONSTANT = 90;
 
 /**
  * Derived from the loot table rather than written out here.
@@ -47,268 +71,76 @@ export const RARITY_MULT: Record<Rarity, number> = Object.fromEntries(
   RARITY_ORDER.map((id) => [id, RARITY_TIERS[id].statMultiplier])
 ) as Record<Rarity, number>;
 
-/** SplitMix64 — mirrors BattleKit SeededRNG. */
-function makeRng(seed: bigint) {
-  let state = seed;
-  return () => {
-    state = (state + 0x9e3779b97f4a7c15n) & 0xffffffffffffffffn;
-    let z = state;
-    z = ((z ^ (z >> 30n)) * 0xbf58476d1ce4e5b9n) & 0xffffffffffffffffn;
-    z = ((z ^ (z >> 27n)) * 0x94d049bb133111ebn) & 0xffffffffffffffffn;
-    const v = z ^ (z >> 31n);
-    return Number(v >> 11n) / Number(1n << 53n);
-  };
-}
-
-const ADVANTAGE: Record<StatType, StatType | null> = {
-  protein: "fiber",
-  fiber: "hydration",
-  hydration: "protein",
-  vitamin: null
-};
-
-function typeMod(attacker: StatType, defender: StatType): number {
-  if (ADVANTAGE[attacker] === defender) return 1.25;
-  if (ADVANTAGE[defender] === attacker) return 0.8;
-  return 1.0;
-}
-
+/**
+ * A unit as the route layer sees it. `baseHealth`/`baseAttack` are
+ * PRE-scaling bases — the engine applies rarity × star itself (spec §4).
+ * There is no statType/element and no four-stat blob: the spec's combat
+ * model is Health + Base Attack + Mana only.
+ */
 export interface SimUnit {
   id: string;
   name: string;
-  element: StatType;
-  power: number;
-  guard: number;
-  vitality: number;
-  tempo: number;
-  /** 1...5 mastery stars — boosts the signature move power at >= 3. */
+  baseHealth: number;
+  baseAttack: number;
+  /** 1...5 mastery stars (Secret clamps to ★2 inside the engine). */
   star?: number;
   /** @deprecated legacy alias: 0..5, mapped to star via fusionTierAsStar. */
   fusionTier?: number;
-  /** Resolved moveset for this instance (issue #107). */
-  moves?: AttackDef[];
   rarity?: Rarity;
   /** Roster slug — drives attacksFor() when moves are not passed. */
   characterKey?: string;
+  /** Resolved moveset for this instance (issue #107). */
+  moves?: MoveSpec[];
+  /** Authored Mana pool — meaningful only at Epic+ (spec §4). */
+  baseMana?: number;
 }
 
-// --- Moves (mirror BattleKit BattleMove) ---
-
-interface SimMove {
-  name: string;
-  power: number;
-  usesStat: "power" | "guard" | "vitality" | "tempo";
-}
-
-function basicMove(): SimMove {
-  return { name: "Strike", power: 1.0, usesStat: "power" };
-}
-
-/// Signature move uses the character's dominant stat; ★3 boosts it.
-/// Ties resolve to the first kind in power/guard/vitality/tempo order,
-/// matching BattleStats.highest's `max(by: <)`.
-function signatureMove(unit: SimUnit): SimMove {
-  let highest: SimMove["usesStat"] = "power";
-  let best = -Infinity;
-  for (const [kind, value] of [["power", unit.power], ["guard", unit.guard], ["vitality", unit.vitality], ["tempo", unit.tempo]] as [SimMove["usesStat"], number][]) {
-    if (value > best) {
-      best = value;
-      highest = kind;
-    }
-  }
-  const star = unit.star ?? fusionTierAsStar(unit.fusionTier);
+/** SimUnit -> the engine's locked snapshot spec. */
+function specFor(u: SimUnit): BattleUnitSpec {
+  const rarity = u.rarity ?? "common";
   return {
-    name: `${unit.name} Special`,
-    power: star >= 3 ? 1.45 * 1.25 : 1.45,
-    usesStat: highest
+    id: u.id,
+    name: u.name,
+    baseHealth: u.baseHealth,
+    baseAttack: u.baseAttack,
+    rarity,
+    star: u.star ?? fusionTierAsStar(u.fusionTier),
+    moves: u.moves ?? attacksFor(u.characterKey ?? u.id, rarity),
+    baseMana: u.baseMana
   };
 }
 
 /**
- * The unit's usable moves (issue #107): its authored moveset filtered by
- * rarity, or null when the unit carries no authored data — in which case the
- * sim keeps the legacy basic/signature behaviour bit-for-bit (Swift parity).
+ * Whole-match resolution, auto-policy on both sides. Returns the legacy
+ * response shape ({ winner, rounds, events, hpLeftA }) over the engine's
+ * result so endpoint contracts hold while the engine moved on.
  */
-function movesFor(unit: SimUnit): AttackDef[] | null {
-  if (unit.moves?.length) return unit.moves;
-  if (unit.characterKey && unit.rarity) return attacksFor(unit.characterKey, unit.rarity);
-  return null;
-}
-
-/** Seeded move pick: signature ~50%, special (when unlocked) ~15%, else strike. */
-function pickMove(unit: SimUnit, rng: () => number): SimMove {
-  const moves = movesFor(unit);
-  const rollFor = rng();
-  if (!moves) {
-    // Un-authored unit: legacy 50/50, single draw — Swift parity depends on it.
-    return rollFor < 0.5 ? signatureMove(unit) : basicMove();
-  }
-  const signature = moves.find((m) => m.kind === "signature");
-  const specials = moves.filter((m) => m.kind === "special");
-  let picked: AttackDef | undefined;
-  if (specials.length && rollFor < 0.15) {
-    picked = specials[Math.floor(rng() * specials.length)];
-  } else if (signature && rollFor < 0.5) {
-    picked = signature;
-  } else {
-    picked = moves.find((m) => m.kind === "basic") ?? signature;
-  }
-  if (!picked) return rollFor < 0.5 ? signatureMove(unit) : basicMove();
-  const power =
-    picked.kind === "signature" && (unit.star ?? 1) >= 3 ? picked.power * 1.25 : picked.power;
-  return { name: picked.name, power, usesStat: picked.usesStat };
-}
-
-function statOf(unit: SimUnit, kind: SimMove["usesStat"]): number {
-  return unit[kind];
-}
-
-/// Swift's `_insertionSort` — the stdlib uses insertion sort for small
-/// arrays, and the comparator draws from the shared RNG, so the exact
-/// comparison sequence (and therefore the draw sequence) must match.
-/// Comparator: less(a, b) returns true when a comes first.
-function swiftInsertionSort<T>(arr: T[], less: (a: T, b: T) => boolean): void {
-  for (let start = 1; start < arr.length; start++) {
-    if (less(arr[start], arr[start - 1])) {
-      const elem = arr[start];
-      arr[start] = arr[start - 1];
-      let current = start;
-      while (true) {
-        if (current === 1) {
-          arr[0] = elem;
-          break;
-        }
-        if (!less(elem, arr[current - 2])) {
-          arr[current - 1] = elem;
-          break;
-        }
-        arr[current - 1] = arr[current - 2];
-        current -= 1;
-      }
-    }
-  }
-}
-
 export function simulate(
   squadA: SimUnit[],
   squadB: SimUnit[],
   seed: bigint,
   opts?: { carryHP?: number[] }
-): { winner: string; rounds: number; events: object[]; hpLeftA: number[] } {
-  const rng = makeRng(seed);
-  const multA = 1.2;
-  const multB = 1.0; // party multipliers from daily state (server-computed)
-
-  // Squad bonus: +5% per distinct element beyond the first, cap +10%
-  // (mirror BattleSquad.squadBonus).
-  const squadBonus = (squad: SimUnit[]): number =>
-    1.0 + 0.05 * Math.max(0, new Set(squad.map((u) => u.element)).size - 1);
-  const bonusA = squadBonus(squadA);
-  const bonusB = squadBonus(squadB);
-
-  const maxHP = (u: SimUnit, mult: number): number => (55 + u.vitality * 1.1) * mult;
-  const slots = [
-    ...squadA.map((u, i) => ({
-      unit: u,
-      side: 0,
-      // carryHP: fraction of maxHP this unit starts with (dungeon floors).
-      hp: maxHP(u, multA) * bonusA * (opts?.carryHP?.[i] ?? 1),
-      maxHP: maxHP(u, multA)
-    })),
-    ...squadB.map((u) => ({ unit: u, side: 1, hp: maxHP(u, multB) * bonusB, maxHP: maxHP(u, multB) }))
-  ];
-
-  const events: object[] = [{ event: "battleStart", seed: seed.toString() }];
-  let round = 1;
-
-  while (round <= MAX_ROUNDS) {
-    events.push({ event: "roundStart", round });
-
-    // Turn order: tempo with seeded jitter, exactly as BattleEngine does —
-    // the comparator draws from the shared RNG twice per comparison, so the
-    // sort implementation itself is part of the determinism contract.
-    const order = slots
-      .map((s, i) => ({ slot: s, index: i }))
-      .filter((x) => x.slot.hp > 0);
-    swiftInsertionSort(order, (a, b) => {
-      const l = a.slot.unit.tempo + rng() * 0.5;
-      const r = b.slot.unit.tempo + rng() * 0.5;
-      return l === r ? a.index < b.index : l > r;
-    });
-
-    for (const { index: attackerIndex } of order) {
-      const attacker = slots[attackerIndex];
-      if (attacker.hp <= 0) continue;
-      const defender = slots.find((s) => s.side !== attacker.side && s.hp > 0);
-      if (!defender) continue;
-
-      if (rng() < MISS_CHANCE) {
-        events.push({ event: "miss", attacker: attacker.unit.id, defender: defender.unit.id });
-        continue;
-      }
-
-      // Move comes from the unit's authored moveset when it has one.
-      const move = pickMove(attacker.unit, rng);
-      const atkStat = statOf(attacker.unit, move.usesStat);
-
-      const mod = typeMod(attacker.unit.element, defender.unit.element);
-      const crit = rng() < CRIT_CHANCE;
-      const variance = 0.92 + rng() * 0.16;
-      const partyMult = attacker.side === 0 ? multA : multB;
-      const raw = move.power * atkStat * mod * (crit ? CRIT_MULTIPLIER : 1) * variance * partyMult;
-      const mitigation = 1 - defender.unit.guard / (defender.unit.guard + DEFENSE_CONSTANT);
-      const damage = Math.round(raw * mitigation);
-
-      defender.hp = Math.max(0, defender.hp - damage);
-      events.push({
-        event: "attack",
-        attacker: attacker.unit.id,
-        defender: defender.unit.id,
-        move: move.name,
-        damage,
-        crit,
-        typeMod: mod
-      });
-      if (defender.hp <= 0) events.push({ event: "faint", unit: defender.unit.id });
-    }
-
-    events.push({ event: "roundEnd", round });
-
-    const aAlive = slots.some((s) => s.side === 0 && s.hp > 0);
-    const bAlive = slots.some((s) => s.side === 1 && s.hp > 0);
-    if (!bAlive || !aAlive) {
-      const winnerSide = !bAlive ? 0 : 1;
-      const winner = winnerSide === 0 ? "A" : "B";
-      events.push({ event: "victory", winner, rounds: round });
-      return { winner, rounds: round, events, hpLeftA: sideAFractions(slots) };
-    }
-    round++;
-  }
-
-  // Timeout: higher remaining HP *share* wins (mirror BattleEngine.hpShare —
-  // shares, not raw sums, so squad-size asymmetries don't skew the result).
-  const hpShare = (side: number): number => {
-    const own = slots.filter((s) => s.side === side);
-    const current = own.reduce((sum, s) => sum + Math.max(0, s.hp), 0);
-    const total = own.reduce((sum, s) => sum + s.maxHP, 0);
-    return total > 0 ? current / total : 0;
+): { winner: string; rounds: number; events: object[]; hpLeftA: number[]; hpLeftB: number[]; faintedA: string[]; faintedB: string[] } {
+  const result = simulateBattle(squadA.map(specFor), squadB.map(specFor), seed, {
+    firstTurn: "coinFlip",
+    carryHPA: opts?.carryHP
+  });
+  return {
+    winner: result.winner,
+    rounds: result.turns,
+    events: result.events,
+    hpLeftA: result.hpFractionsA,
+    hpLeftB: result.hpFractionsB,
+    faintedA: result.faintedA,
+    faintedB: result.faintedB
   };
-  const winnerSide = hpShare(0) >= hpShare(1) ? 0 : 1;
-  const winner = winnerSide === 0 ? "A" : "B";
-  events.push({ event: "victory", winner, rounds: round });
-  return { winner, rounds: round, events, hpLeftA: sideAFractions(slots) };
 }
-
-/** Side-A end-of-battle HP as maxHP fractions, in squad order. */
-function sideAFractions(slots: { unit: SimUnit; side: number; hp: number; maxHP: number }[]): number[] {
-  return slots.filter((s) => s.side === 0).map((s) => Math.max(0, s.hp) / s.maxHP);
-}
-
-const VALID_TYPES: StatType[] = ["protein", "fiber", "vitamin", "hydration"];
 
 type SquadUnitIn = { id?: unknown; name?: unknown; statType?: unknown; rarity?: unknown; star?: unknown; starLevel?: unknown; fusionTier?: unknown; characterKey?: unknown; power?: unknown; guard?: unknown; vitality?: unknown; tempo?: unknown };
 
-/** Shared squad validation for /simulate and /async/challenge. */
+/** Shared squad validation for /simulate and /async/challenge. `statType` is
+ *  still accepted (older clients send it) but no longer required — the type
+ *  system is gone. */
 function squadError(name: string, squad: SquadUnitIn[]): string | null {
   for (const [i, unit] of squad.entries()) {
     if (typeof unit?.id !== "string" || unit.id.length === 0 || unit.id.length > 64) {
@@ -317,8 +149,8 @@ function squadError(name: string, squad: SquadUnitIn[]): string | null {
     if (typeof unit?.name !== "string" || unit.name.length === 0 || unit.name.length > 64) {
       return `${name}[${i}].name must be a string of 1-64 characters`;
     }
-    if (typeof unit?.statType !== "string" || !VALID_TYPES.includes(unit.statType as StatType)) {
-      return `${name}[${i}].statType must be one of: ${VALID_TYPES.join(", ")}`;
+    if (unit.statType !== undefined && typeof unit.statType !== "string") {
+      return `${name}[${i}].statType must be a string when present`;
     }
     if (unit.rarity !== undefined && !(typeof unit.rarity === "string" && unit.rarity in RARITY_MULT)) {
       return `${name}[${i}].rarity must be one of: ${Object.keys(RARITY_MULT).join(", ")}`;
@@ -343,11 +175,13 @@ function squadError(name: string, squad: SquadUnitIn[]): string | null {
   return null;
 }
 
-// Rarity/star scaling — mirror FoodCharacter.stats (QA B-001). Star uses the
-// #131 curve (STAR_STEP=10% per star over ★1); legacy fusionTier maps through
-// fusionTierAsStar so old clients keep working.
+// Base stats stay UNSCALED here — the engine applies rarity × star itself
+// (spec §4). Roster ids resolve to the authored catalog (baseHealth /
+// baseAttack / baseMana / moves); the legacy power/guard/vitality/tempo
+// payload maps onto the two-stat model for callers that still send it.
+// Legacy fusionTier maps through fusionTierAsStar so old clients keep working.
 function toSim(c: {
-  id: string; name: string; statType: StatType;
+  id: string; name: string;
   rarity?: string; star?: number; starLevel?: number; fusionTier?: number;
   characterKey?: string;
   power?: number; guard?: number; vitality?: number; tempo?: number;
@@ -363,21 +197,19 @@ function toSim(c: {
     5,
     Math.max(1, c.star ?? c.starLevel ?? fusionTierAsStar(c.fusionTier))
   );
-  const m = rarityMult(rarity) * starMult(star);
+  const catalog = rosterCharacter(c.characterKey ?? c.id);
   const unit: SimUnit = {
     id: c.id,
     name: c.name,
-    element: c.statType,
-    power: (c.power ?? 50) * m,
-    guard: (c.guard ?? 50) * m,
-    vitality: (c.vitality ?? 50) * m,
-    tempo: (c.tempo ?? 50) * m,
+    baseHealth: catalog?.baseHealth ?? 55 + (c.vitality ?? 50) * 1.1,
+    baseAttack: catalog?.baseAttack ?? c.power ?? 50,
     star,
-    rarity
+    rarity,
+    baseMana: catalog?.baseMana
   };
-  if (c.characterKey) {
-    unit.characterKey = c.characterKey;
-    unit.moves = attacksFor(c.characterKey, rarity);
+  if (catalog) {
+    unit.characterKey = catalog.id;
+    unit.moves = attacksFor(catalog.id, rarity);
   }
   return unit;
 }
@@ -403,10 +235,13 @@ export const BATTLE_ERRORS = { SQUAD_UNOWNED: "SQUAD_UNOWNED" } as const;
 interface TrustedUnit {
   id: string;
   name: string;
-  statType: StatType;
   rarity: Rarity;
   star: number;
   characterKey?: string;
+  /** Per-instance combat base — scan mints can carry their own stats. */
+  baseHealth?: number;
+  baseAttack?: number;
+  baseMana?: number;
 }
 
 /** A scanned/photographed character the player actually minted. */
@@ -431,13 +266,41 @@ function ownedStarLevel(playerId: string, characterId: string): number {
   return best;
 }
 
+/**
+ * Rarity of the player's best owned drop of `characterId` — the catalog
+ * carries no rarity (a mint rolls it), so combat rarity comes from the
+ * instance the player actually owns. Best = highest ★, then highest tier.
+ */
+function rarityForOwnedDrop(playerId: string, characterId: string): Rarity {
+  let best: Rarity = "common";
+  let bestStar = -1;
+  let bestOrder = -1;
+  for (const drop of stateFor(playerId).inventory) {
+    if (drop.character.id !== characterId) continue;
+    const star = asStarLevel(drop.stars);
+    const order = RARITY_ORDER.indexOf(drop.character.rarity);
+    if (star > bestStar || (star === bestStar && order > bestOrder)) {
+      best = drop.character.rarity;
+      bestStar = star;
+      bestOrder = order;
+    }
+  }
+  return best;
+}
+
 /** Authored-moveset slug when this id exists in the roster (issue #107). */
 function characterKeyFor(id: string): string | undefined {
   return rosterCharacter(id) ? id : undefined;
 }
 
-function trustedUnit(id: string, name: string, statType: StatType, rarity: Rarity, star: number): TrustedUnit {
-  return { id, name, statType, rarity, star, characterKey: characterKeyFor(id) };
+function trustedUnit(
+  id: string,
+  name: string,
+  rarity: Rarity,
+  star: number,
+  stats?: { baseHealth?: number; baseAttack?: number; baseMana?: number }
+): TrustedUnit {
+  return { id, name, rarity, star, characterKey: characterKeyFor(id), ...stats };
 }
 
 /**
@@ -449,13 +312,28 @@ function trustedUnit(id: string, name: string, statType: StatType, rarity: Rarit
 function resolveOwnUnit(playerId: string, unit: SquadUnitIn): TrustedUnit {
   const id = unit.id as string;
   const starter = STARTER_BY_ID.get(id);
-  if (starter) return trustedUnit(id, starter.name, starter.statType, starter.rarity, 1);
+  if (starter) {
+    return trustedUnit(id, starter.name, starter.rarity, 1, {
+      baseHealth: starter.baseHealth,
+      baseAttack: starter.baseAttack
+    });
+  }
   const scanned = scannedCharacter(playerId, id);
-  if (scanned) return trustedUnit(id, scanned.name, scanned.statType, scanned.rarity, 1);
-  const catalogue = CHARACTERS[id];
+  if (scanned) {
+    return trustedUnit(id, scanned.name, scanned.rarity, 1, {
+      baseHealth: scanned.baseHealth,
+      baseAttack: scanned.baseAttack,
+      baseMana: scanned.baseMana
+    });
+  }
+  const catalogue = rosterCharacter(id);
   const star = catalogue ? ownedStarLevel(playerId, id) : 0;
   if (catalogue && star > 0) {
-    return trustedUnit(id, catalogue.name, catalogue.statType, catalogue.rarity, star);
+    return trustedUnit(id, catalogue.name, rarityForOwnedDrop(playerId, id), star, {
+      baseHealth: catalogue.baseHealth,
+      baseAttack: catalogue.baseAttack,
+      baseMana: catalogue.baseMana
+    });
   }
   throw new Error(`${BATTLE_ERRORS.SQUAD_UNOWNED}:${id}`);
 }
@@ -469,34 +347,47 @@ function resolveOwnUnit(playerId: string, unit: SquadUnitIn): TrustedUnit {
  */
 function resolveEnemyUnit(ownerId: string, unit: SquadUnitIn): TrustedUnit {
   const id = unit.id as string;
-  const catalogue = CHARACTERS[id];
+  const catalogue = rosterCharacter(id);
   if (catalogue) {
-    return trustedUnit(id, catalogue.name, catalogue.statType, catalogue.rarity, Math.max(1, ownedStarLevel(ownerId, id)));
+    return trustedUnit(id, catalogue.name, rarityForOwnedDrop(ownerId, id), Math.max(1, ownedStarLevel(ownerId, id)), {
+      baseHealth: catalogue.baseHealth,
+      baseAttack: catalogue.baseAttack,
+      baseMana: catalogue.baseMana
+    });
   }
   const starter = STARTER_BY_ID.get(id);
-  if (starter) return trustedUnit(id, starter.name, starter.statType, starter.rarity, 1);
+  if (starter) {
+    return trustedUnit(id, starter.name, starter.rarity, 1, {
+      baseHealth: starter.baseHealth,
+      baseAttack: starter.baseAttack
+    });
+  }
   const scanned = scannedCharacter(ownerId, id);
-  if (scanned) return trustedUnit(id, scanned.name, scanned.statType, scanned.rarity, 1);
-  return { id, name: unit.name as string, statType: unit.statType as StatType, rarity: "common", star: 1 };
+  if (scanned) {
+    return trustedUnit(id, scanned.name, scanned.rarity, 1, {
+      baseHealth: scanned.baseHealth,
+      baseAttack: scanned.baseAttack,
+      baseMana: scanned.baseMana
+    });
+  }
+  return { id, name: unit.name as string, rarity: "common", star: 1 };
 }
 
-/** Resolved unit -> SimUnit: flat base-50 stats scaled by server rarity and ★. */
+/** Resolved unit -> SimUnit: flat base stats; the engine applies rarity × ★. */
 function trustedToSim(u: TrustedUnit): SimUnit {
-  const m = rarityMult(u.rarity) * starMult(u.star);
+  const catalog = rosterCharacter(u.characterKey ?? u.id);
   const sim: SimUnit = {
     id: u.id,
     name: u.name,
-    element: u.statType,
-    power: 50 * m,
-    guard: 50 * m,
-    vitality: 50 * m,
-    tempo: 50 * m,
+    baseHealth: u.baseHealth ?? catalog?.baseHealth ?? 110,
+    baseAttack: u.baseAttack ?? catalog?.baseAttack ?? 50,
     star: u.star,
-    rarity: u.rarity
+    rarity: u.rarity,
+    baseMana: u.baseMana ?? catalog?.baseMana
   };
-  if (u.characterKey) {
-    sim.characterKey = u.characterKey;
-    sim.moves = attacksFor(u.characterKey, u.rarity);
+  if (u.characterKey ?? catalog?.id) {
+    sim.characterKey = u.characterKey ?? catalog?.id;
+    sim.moves = attacksFor(sim.characterKey!, u.rarity);
   }
   return sim;
 }
@@ -544,7 +435,7 @@ function loadSquadSnapshot(ownerId: string): SimUnit[] | null {
   }
 
   const refreshStar = (u: TrustedUnit): TrustedUnit =>
-    CHARACTERS[u.id] ? { ...u, star: Math.max(1, ownedStarLevel(ownerId, u.id)) } : u;
+    rosterCharacter(u.id) ? { ...u, star: Math.max(1, ownedStarLevel(ownerId, u.id)) } : u;
 
   if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
     const units = (parsed as { units?: unknown }).units;
@@ -553,8 +444,6 @@ function loadSquadSnapshot(ownerId: string): SimUnit[] | null {
       (u): u is TrustedUnit =>
         typeof (u as TrustedUnit)?.id === "string" &&
         typeof (u as TrustedUnit)?.name === "string" &&
-        typeof (u as TrustedUnit)?.statType === "string" &&
-        VALID_TYPES.includes((u as TrustedUnit).statType) &&
         typeof (u as TrustedUnit)?.rarity === "string" &&
         (u as TrustedUnit).rarity in RARITY_MULT &&
         Number.isInteger((u as TrustedUnit).star)
@@ -570,10 +459,19 @@ function loadSquadSnapshot(ownerId: string): SimUnit[] | null {
   return null;
 }
 
-/** Mean of a resolved squad's four stats — the matchmaking power score. */
+/** Matchmaking power estimate — spec §5: MonsterPower = EffectiveHealth +
+ *  EffectiveAttack (AttackWeight 1 until real ranges land). */
 function simPower(units: SimUnit[]): number {
   if (!units.length) return 0;
-  return units.reduce((s, u) => s + (u.power + u.guard + u.vitality + u.tempo) / 4, 0) / units.length;
+  return (
+    units.reduce(
+      (s, u) =>
+        s +
+        effectiveStat(u.baseHealth, u.rarity ?? "common", u.star ?? 1) +
+        effectiveStat(u.baseAttack, u.rarity ?? "common", u.star ?? 1),
+      0
+    ) / units.length
+  );
 }
 
 // POST /battle/simulate { yourSquad, opponentSquad, seed? } -- deterministic,
@@ -630,44 +528,51 @@ battleRouter.post("/simulate", rateLimitByPlayer({ windowMs: 60_000, max: 60, ke
 
   const result = simulate(yourUnits, oppUnits, seedBigInt);
 
-  // No progression here: the caller names BOTH squads, so a win proves
-  // nothing and must not mint XP or leaderboard wins — a deliberately weak
-  // opponent is free to construct. /battle/ranked, /async and /arena are the
-  // modes that pay, because the opponent there is server-controlled.
+  // Friendly mode (spec §5): the caller names BOTH squads, so the result
+  // moves no RR and no leaderboard position — it is recorded in battle
+  // history with rrDelta 0, nothing more. /battle/ranked pays because the
+  // opponent there is server-controlled.
+
+  const youWon = result.winner === "A";
+  markFainted(req.playerId!, result.faintedA);
+  recordBattle(req.playerId!, "friendly", youWon ? "win" : "loss", {
+    opponent: "custom",
+    squad: yourUnits.map((u) => ({ id: u.id, name: u.name })),
+    detail: { rounds: result.rounds }
+  });
 
   res.json({
     ...result,
-    // Snapshot now carries each unit's resolved moveset (issue #103).
+    // Snapshot now carries each unit's resolved moveset (issue #103) with
+    // full move defs so clients can render power/accuracy/mana costs.
     movesets: [...yourUnits, ...oppUnits].map((u) => ({
       id: u.id,
-      moves: (movesFor(u) ?? []).map((m) => m.id)
+      moves: u.moves ?? attacksFor(u.characterKey ?? u.id, u.rarity ?? "common")
     }))
   });
 });
 
-// ===== Async friend battles ================================================
+// ===== Friendly PvP =========================================================
 //
-// Challenge a friend's stored squad snapshot — they don't need to be online.
-// The result is recorded and surfaces as a "you were challenged" notice the
-// next time the defender polls. Challenger is side A, defender snapshot B.
+// Fight another player's stored squad snapshot. Friendly battles land in
+// battle history for BOTH players but never move RR (spec §5/§6).
 
-// POST /battle/async/challenge { opponentId, yourSquad } -- resolve vs the
-// defender's stored snapshot, record the outcome for their notices feed.
-battleRouter.post("/async/challenge", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "async", message: "Too many challenges. Try again later." }), (req: PlayerRequest, res) => {
-  const { opponentId, yourSquad } = req.body as {
+// POST /battle/friendly { opponentId, squad }
+battleRouter.post("/friendly", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "friendly", message: "Too many friendly battles. Try again later." }), (req: PlayerRequest, res) => {
+  const { opponentId, squad } = req.body as {
     opponentId?: string;
-    yourSquad?: SquadUnitIn[];
+    squad?: SquadUnitIn[];
   };
   if (typeof opponentId !== "string" || opponentId.length < 1 || opponentId.length > 64) {
     return res.status(400).json({ error: "opponentId must be a string of 1-64 characters" });
   }
   if (opponentId === req.playerId) {
-    return res.status(400).json({ error: "You cannot challenge yourself." });
+    return res.status(400).json({ error: "You cannot battle yourself." });
   }
-  if (!Array.isArray(yourSquad) || yourSquad.length < 1 || yourSquad.length > 3) {
-    return res.status(400).json({ error: "yourSquad must contain 1-3 units" });
+  if (!Array.isArray(squad) || squad.length !== DUNGEON_TEAM_SIZE) {
+    return res.status(400).json({ error: "squad must contain exactly 3 units" });
   }
-  const yourError = squadError("yourSquad", yourSquad);
+  const yourError = squadError("yourSquad", squad);
   if (yourError) return res.status(400).json({ error: yourError });
 
   const oppUnits = loadSquadSnapshot(opponentId);
@@ -675,24 +580,27 @@ battleRouter.post("/async/challenge", rateLimitByPlayer({ windowMs: 60_000, max:
     return res.status(404).json({ error: { code: "NO_SNAPSHOT", message: "That player has no battle squad yet." } });
   }
 
-  const yourTrusted = resolveOwnSquad(req.playerId!, yourSquad);
+  const yourTrusted = resolveOwnSquad(req.playerId!, squad);
   if ("error" in yourTrusted) return res.status(400).json({ error: yourTrusted.error });
   saveSquadSnapshot(req.playerId!, yourTrusted);
   const yourUnits = yourTrusted.map(trustedToSim);
 
   const seed = BigInt(`0x${randomBytes(8).toString("hex")}`);
   const result = simulate(yourUnits, oppUnits, seed);
-
   const youWon = result.winner === "A";
-  db.prepare(
-    `INSERT INTO async_battle (challenger_id, defender_id, winner_side, rounds) VALUES (?, ?, ?, ?)`
-  ).run(req.playerId!, opponentId, youWon ? 0 : 1, result.rounds);
 
-  awardXP(req.playerId!, youWon ? 100 : 20, youWon ? "battle-win" : "battle-loss");
-  const profile = getOrCreate(req.playerId!);
-  profile.battlesWon = (profile.battlesWon ?? 0) + (youWon ? 1 : 0);
-  profile.updatedAt = new Date().toISOString();
-  saveProfile(req.playerId!, profile);
+  markFainted(req.playerId!, result.faintedA);
+  recordBattle(req.playerId!, "friendly", youWon ? "win" : "loss", {
+    opponent: opponentId,
+    squad: yourUnits.map((u) => ({ id: u.id, name: u.name })),
+    detail: { rounds: result.rounds }
+  });
+  // The defender's history is complete too — a friendly defense is a result.
+  recordBattle(opponentId, "friendly", youWon ? "loss" : "win", {
+    opponent: req.playerId!,
+    squad: oppUnits.map((u) => ({ id: u.id, name: u.name })),
+    detail: { rounds: result.rounds, defended: true }
+  });
 
   // Best-effort mirror into TigerData: relational battle + event/metric hypertables.
   if (hasDatabaseUrl()) {
@@ -710,125 +618,86 @@ battleRouter.post("/async/challenge", rateLimitByPlayer({ windowMs: 60_000, max:
   res.json({
     ...result,
     opponentId,
-    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, statType: u.element, star: u.star, rarity: u.rarity }))
+    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity }))
   });
 });
 
-// GET /battle/async/notices -- battles where your stored squad was attacked.
-// Marks them seen on read; the defeat banner is a one-time moment.
-battleRouter.get("/async/notices", (req: PlayerRequest, res) => {
-  const rows = db
-    .prepare(
-      `SELECT seq, challenger_id, winner_side, rounds, created_at
-       FROM async_battle WHERE defender_id = ? AND seen_by_defender = 0
-       ORDER BY seq DESC LIMIT 20`
-    )
-    .all(req.playerId!) as { seq: number; challenger_id: string; winner_side: number; rounds: number; created_at: string }[];
-
-  const nameFor = (id: string) => (getOrCreate(id).displayName ?? id.slice(0, 12));
-  db.prepare(`UPDATE async_battle SET seen_by_defender = 1 WHERE defender_id = ? AND seen_by_defender = 0`)
-    .run(req.playerId!);
-
-  res.json({
-    notices: rows.map((r) => ({
-      challengerId: r.challenger_id,
-      challengerName: nameFor(r.challenger_id),
-      defendedWin: r.winner_side === 1,
-      rounds: r.rounds,
-      at: r.created_at
-    }))
-  });
-});
-
-// ===== Infinite dungeon =====================================================
+// ===== Endless dungeon ======================================================
 //
-// Pick your top 5; they fight floor after floor of escalating squads until
-// wiped. HP carries between floors (real per-unit fractions from simulate),
-// every 5th floor is a boss. Depth becomes the idle-income rate: keys tick
-// up while you're away, claimed when you come back.
+// Field exactly 3 monsters; they fight floor after floor of escalating
+// squads until wiped. HP persists between floors (real per-unit fractions
+// from simulate), every 5th floor is a boss. Floors pay coins on clear —
+// earned coins are kept even on wipe. Run-scoped faints clear when the run
+// ends; there is no idle income.
 
-export const DUNGEON_MAX_FLOOR = 50;
-/** Keys per minute per best-floor cleared. Floor 10 ≈ 1 key / 24min. */
-const DUNGEON_INCOME_RATE = 1 / 240;
-const DUNGEON_INCOME_CAP_KEYS = 24;
-const DUNGEON_INCOME_CAP_MS = 24 * 60 * 60 * 1000;
+/** Compute bound for a run — the spec mode is endless, a request is not.
+ *  A party still alive at this floor ends the run as "complete". */
+export const DUNGEON_SAFETY_CAP = 500;
 
 interface DungeonRow {
   best_floor: number;
-  last_claim_at: string;
   last_run_at: string | null;
 }
 
 function dungeonStateFor(playerId: string): DungeonRow {
   let row = db
-    .prepare(`SELECT best_floor, last_claim_at, last_run_at FROM dungeon_state WHERE player_id = ?`)
+    .prepare(`SELECT best_floor, last_run_at FROM dungeon_state WHERE player_id = ?`)
     .get(playerId) as DungeonRow | undefined;
   if (!row) {
-    // ISO with Z — `datetime('now')` writes "YYYY-MM-DD HH:MM:SS" which
-    // new Date() parses as LOCAL time, skewing the income clock by the
-    // timezone offset.
-    const now = new Date().toISOString();
-    db.prepare(`INSERT INTO dungeon_state (player_id, best_floor, last_claim_at) VALUES (?, 0, ?)`).run(playerId, now);
-    row = { best_floor: 0, last_claim_at: now, last_run_at: null };
+    db.prepare(`INSERT INTO dungeon_state (player_id, best_floor, last_claim_at) VALUES (?, 0, datetime('now'))`).run(playerId);
+    row = { best_floor: 0, last_run_at: null };
   }
   return row;
 }
 
-/** Keys accrued since last claim, before the claim commits. */
-function pendingDungeonKeys(row: DungeonRow): number {
-  // last_claim_at may hold a timezone-naive UTC stamp written by an older
-  // build — append Z so it parses as UTC, and never let elapsed go negative.
-  const stamp = row.last_claim_at.includes("T") ? row.last_claim_at : row.last_claim_at.replace(" ", "T") + "Z";
-  const elapsed = Math.max(0, Math.min(Date.now() - new Date(stamp).getTime(), DUNGEON_INCOME_CAP_MS));
-  return Math.min(Math.floor(row.best_floor * (elapsed / 60_000) * DUNGEON_INCOME_RATE), DUNGEON_INCOME_CAP_KEYS);
+/** Coins one cleared floor pays (spec §5): 100 + 25×(floor−1), ×3 on bosses. */
+export function dungeonFloorReward(floor: number): number {
+  const boss = floor % DUNGEON_BOSS_EVERY === 0;
+  return (DUNGEON_FLOOR_REWARD_BASE + DUNGEON_FLOOR_REWARD_STEP * (floor - 1)) * (boss ? DUNGEON_BOSS_REWARD_MULT : 1);
+}
+
+/** Enemy stat scaling (spec §5): base × (1 + 0.05×(floor−1)) × boss 1.25. */
+export function dungeonFloorMultiplier(floor: number): number {
+  const boss = floor % DUNGEON_BOSS_EVERY === 0;
+  return (1 + DUNGEON_FLOOR_GROWTH * (floor - 1)) * (boss ? DUNGEON_BOSS_MULT : 1);
 }
 
 /**
- * One floor's defending squad, deterministic from runSeed+floor.
- * Boss floors (every 5th) field epic-or-better units with a fat stat mult;
- * regular floors scale gradually and stay mostly low-tier early on.
+ * One floor's defending squad, deterministic from runSeed+floor. Enemies are
+ * emitted as common/★1 so the engine's rarity×star scaling leaves the spec's
+ * floor formula untouched — the multiplier lives in baseHealth/baseAttack.
  */
 function dungeonFloor(floor: number, runSeed: string): { units: SimUnit[]; boss: boolean } {
-  const boss = floor % 5 === 0;
-  const count = boss ? 3 : floor < 4 ? 2 : 3;
-  const statMult = 0.8 + floor * 0.08 + (boss ? 0.35 : 0);
-
-  const band: Rarity[] = boss
-    ? ["epic", "legendary", "mythic", "secret"]
-    : floor < 10
-      ? ["common", "common", "uncommon", "rare"]
-      : floor < 20
-        ? ["uncommon", "rare", "rare", "epic"]
-        : ["rare", "epic", "epic", "legendary"];
+  const boss = floor % DUNGEON_BOSS_EVERY === 0;
+  const statMult = dungeonFloorMultiplier(floor);
 
   const units: SimUnit[] = [];
-  for (let i = 0; i < count; i++) {
-    const rarity = band[Math.floor(roll(runSeed, "floor", floor, i) * band.length)];
-    const pool = Object.values(CHARACTERS).filter((c) => c.rarity === rarity);
-    const fallback = Object.values(CHARACTERS);
-    const c = (pool.length ? pool : fallback)[Math.floor(roll(runSeed, "unit", floor, i) * (pool.length ? pool.length : fallback.length))];
+  for (let i = 0; i < DUNGEON_TEAM_SIZE; i++) {
+    const c = ROSTER[Math.floor(roll(runSeed, "unit", floor, i) * ROSTER.length)];
     units.push({
       id: `${c.id}-f${floor}`,
       name: c.name,
-      element: c.statType,
-      power: 45 * statMult,
-      guard: 45 * statMult,
-      vitality: 45 * statMult,
-      tempo: 45 * statMult,
-      star: boss ? 3 : 1
+      baseHealth: c.baseHealth * statMult,
+      baseAttack: c.baseAttack * statMult,
+      star: 1,
+      rarity: "common",
+      characterKey: c.id,
+      moves: attacksFor(c.id, "common")
     });
   }
   return { units, boss };
 }
 
-/** One full run: floors until the party wipes. Deterministic given runSeed. */
+/** One full run: floors until the party wipes (or the safety cap stands).
+ *  Deterministic given runSeed. HP persists between floors via carryHP; a
+ *  unit at 0 HP stays out for the rest of the run (run-scoped faints). */
 export function runDungeonFloors(party: SimUnit[], runSeed: string) {
   const hp = party.map(() => 1);
-  const feed: { floor: number; boss: boolean; won: boolean; rounds: number; enemies: string[] }[] = [];
+  const feed: { floor: number; boss: boolean; won: boolean; rounds: number; enemies: string[]; reward: number }[] = [];
   let floorsCleared = 0;
 
-  for (let floor = 1; floor <= DUNGEON_MAX_FLOOR; floor++) {
-    const aliveIdx = party.map((_, i) => i).filter((i) => hp[i] > 0.02);
+  for (let floor = 1; floor <= DUNGEON_SAFETY_CAP; floor++) {
+    const aliveIdx = party.map((_, i) => i).filter((i) => hp[i] > 0);
     if (aliveIdx.length === 0) break;
     const { units: enemies, boss } = dungeonFloor(floor, runSeed);
     const sim = simulate(
@@ -839,47 +708,64 @@ export function runDungeonFloors(party: SimUnit[], runSeed: string) {
     );
     sim.hpLeftA.forEach((f, j) => { hp[aliveIdx[j]] = f; });
     const won = sim.winner === "A";
-    feed.push({ floor, boss, won, rounds: sim.rounds, enemies: enemies.map((e) => e.name) });
+    feed.push({ floor, boss, won, rounds: sim.rounds, enemies: enemies.map((e) => e.name), reward: won ? dungeonFloorReward(floor) : 0 });
     if (won) floorsCleared = floor; else break;
   }
-  return { floorsCleared, feed };
+  return { floorsCleared, feed, completed: floorsCleared >= DUNGEON_SAFETY_CAP };
 }
 
 // POST /battle/dungeon/run { squad } -- auto-resolve floors until the party
 // wipes. Server-side: the whole run is one deterministic chain off runSeed.
 battleRouter.post("/dungeon/run", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "dungeon", message: "Too many dungeon runs. Try again later." }), (req: PlayerRequest, res) => {
   const { squad } = req.body as { squad?: SquadUnitIn[] };
-  if (!Array.isArray(squad) || squad.length < 1 || squad.length > 5) {
-    return res.status(400).json({ error: "squad must contain 1-5 units" });
+  if (!Array.isArray(squad) || squad.length !== DUNGEON_TEAM_SIZE) {
+    return res.status(400).json({ error: "squad must contain exactly 3 units" });
   }
   const err = squadError("squad", squad);
   if (err) return res.status(400).json({ error: err });
 
   const trusted = resolveOwnSquad(req.playerId!, squad);
   if ("error" in trusted) return res.status(400).json({ error: trusted.error });
+  const party = trusted.map(trustedToSim);
+
+  // A fainted monster stays fainted (spec §4): it cannot be fielded in a run.
+  const fainted = new Set(faintedIds(req.playerId!));
+  const downed = party.filter((u) => fainted.has(u.id));
+  if (downed.length) {
+    return res.status(409).json({
+      error: {
+        code: "MONSTER_FAINTED",
+        message: `Fainted monsters cannot fight until daily reset or a nutrition task revives them: ${downed.map((u) => u.name).join(", ")}`
+      }
+    });
+  }
 
   const runSeed = randomBytes(8).toString("hex");
-  const { floorsCleared, feed } = runDungeonFloors(trusted.map(trustedToSim), runSeed);
+  const { floorsCleared, feed } = runDungeonFloors(party, runSeed);
 
-  // Depth pays: 1 key per 3 floors cleared, plus a run XP award.
-  const keysEarned = Math.floor(floorsCleared / 3);
-  if (keysEarned > 0) stateFor(req.playerId!).grantKeys(keysEarned);
-  awardXP(req.playerId!, 10 * floorsCleared, "dungeon-run");
+  // Floors pay on clear; coins earned before the wipe are kept (spec §5).
+  const coinsEarned = feed.reduce((sum, f) => sum + f.reward, 0);
+  if (coinsEarned > 0) recordCoins(req.playerId!, coinsEarned, "dungeon", runSeed);
 
   const row = dungeonStateFor(req.playerId!);
   const bestFloor = Math.max(row.best_floor, floorsCleared);
   db.prepare(`UPDATE dungeon_state SET best_floor = ?, last_run_at = ? WHERE player_id = ?`)
     .run(bestFloor, new Date().toISOString(), req.playerId!);
 
+  recordBattle(req.playerId!, "dungeon", floorsCleared > 0 ? "win" : "loss", {
+    opponent: "dungeon",
+    squad: party.map((u) => ({ id: u.id, name: u.name })),
+    detail: { floorsCleared, bestFloor, coinsEarned }
+  });
+
   if (hasDatabaseUrl()) {
     enqueueMirror("gameplay_event", `dungeon:${req.playerId!}:${runSeed}`, {
       playerId: req.playerId!,
       type: "dungeon",
-      detail: { floorsCleared, bestFloor, keysEarned },
+      detail: { floorsCleared, bestFloor, coinsEarned },
     });
-    // Depth over time, for analytics.dungeon_daily. "How deep did this run
-    // get" is a different question from "a run happened", and only this one
-    // can be charted. The run seed identifies the run, so a retry collapses.
+    // Depth over time, for analytics.dungeon_daily. The run seed identifies
+    // the run, so a retry collapses.
     enqueueMirror("dungeon_progress", `${runSeed}:${floorsCleared}`, {
       playerId: req.playerId!,
       runRef: String(runSeed),
@@ -892,78 +778,64 @@ battleRouter.post("/dungeon/run", rateLimitByPlayer({ windowMs: 60_000, max: 10,
     runSeed,
     floorsCleared,
     bestFloor,
-    keysEarned,
-    keys: stateFor(req.playerId!).keys,
-    pendingIdleKeys: pendingDungeonKeys({ ...row, best_floor: bestFloor }),
+    coinsEarned,
+    coins: coinBalance(req.playerId!),
     feed
   });
 });
 
-// GET /battle/dungeon/state -- best floor + idle keys waiting.
+// GET /battle/dungeon/state -- personal best + last run. No idle income.
 battleRouter.get("/dungeon/state", (req: PlayerRequest, res) => {
   const row = dungeonStateFor(req.playerId!);
-  res.json({
-    bestFloor: row.best_floor,
-    lastRunAt: row.last_run_at,
-    pendingIdleKeys: pendingDungeonKeys(row),
-    incomeNote: "Keys accrue at your best-floor rate while you're away, capped at 24."
-  });
-});
-
-// POST /battle/dungeon/claim -- collect accrued idle keys.
-battleRouter.post("/dungeon/claim", (req: PlayerRequest, res) => {
-  const playerId = req.playerId!;
-  // One transaction: the claim timestamp and the key grant commit together,
-  // so a failed write can never double-pay or silently lose the accrued keys.
-  const result = (() => {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const row = dungeonStateFor(playerId);
-      const keys = pendingDungeonKeys(row);
-      db.prepare(`UPDATE dungeon_state SET last_claim_at = ? WHERE player_id = ?`)
-        .run(new Date().toISOString(), playerId);
-      const balance = keys > 0 ? stateFor(playerId).grantKeys(keys) : stateFor(playerId).keys;
-      db.exec("COMMIT");
-      return { claimed: keys, keys: balance };
-    } catch (err) {
-      db.exec("ROLLBACK");
-      throw err;
-    }
-  })();
-  res.json(result);
+  res.json({ bestFloor: row.best_floor, lastRunAt: row.last_run_at });
 });
 
 // ===== Ranked matchmaking ===================================================
 //
-// Exact-tier queue (issue #85): look for another player's stored squad whose
-// consistency rank_tier equals yours; if none, field a tier-appropriate bot.
-// Result moves rank_points via awardRankPoints — never the Elo ladder, which
-// stays reserved for competitive rating.
+// SBMM (spec §5): candidates are other players' stored squad snapshots.
+//   MatchScore = |ΔRR|/100 + TeamGap%   — lower is better; bot fallback when
+// the queue is empty. The result moves RR via applyRankedResult; a win also
+// rolls a rank-odds Case onto the player's pending-case pile.
 
-/** Bot squad for a tier: roster units at the tier's floor rarity, ★ = rank index. */
-function botSquadForTier(tier: RankTier): SimUnit[] {
-  const idx = RANK_ORDER.indexOf(tier);
-  const rarity = (["common", "uncommon", "rare", "epic"] as Rarity[])[idx] ?? "epic";
-  const pool = ROSTER.filter((r) => r.rarity === rarity);
-  const picks = (pool.length >= 3 ? pool : ROSTER).slice(0, 3);
-  return picks.map((r, i) =>
+/** Bot squad for a rank: roster units at a rank-appropriate rarity/star. */
+const BOT_TIER: Record<RankId, { rarity: Rarity; star: number }> = {
+  iron: { rarity: "common", star: 1 },
+  bronze: { rarity: "uncommon", star: 2 },
+  silver: { rarity: "rare", star: 2 },
+  gold: { rarity: "rare", star: 3 },
+  platinum: { rarity: "epic", star: 3 },
+  diamond: { rarity: "legendary", star: 4 }
+};
+
+function botSquadForRank(rank: RankId): SimUnit[] {
+  const { rarity, star } = BOT_TIER[rank];
+  return ROSTER.slice(0, DUNGEON_TEAM_SIZE).map((r, i) =>
     toSim({
-      id: `bot-${tier}-${i}`,
+      id: `bot-${rank}-${i}`,
       name: r.name,
-      statType: r.element,
-      rarity: r.rarity,
-      star: Math.min(5, idx + 1),
-      characterKey: r.id,
-      ...r.baseStats
+      rarity,
+      star,
+      characterKey: r.id
     })
   );
 }
 
-// POST /battle/ranked { squad } -- matchmake at your exact rank tier and fight.
+/** SBMM team power: Σ (EffectiveHealth + EffectiveAttack × AttackWeight). */
+function teamPower(units: SimUnit[]): number {
+  return units.reduce(
+    (s, u) =>
+      s +
+      effectiveStat(u.baseHealth, u.rarity ?? "common", u.star ?? 1) +
+      effectiveStat(u.baseAttack, u.rarity ?? "common", u.star ?? 1) * SBMM_ATTACK_WEIGHT,
+    0
+  );
+}
+
+// POST /battle/ranked { squad } -- matchmake via SBMM and fight. Exactly 3.
 battleRouter.post("/ranked", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "ranked", message: "Too many ranked battles. Try again later." }), (req: PlayerRequest, res) => {
   const { squad } = req.body as { squad?: SquadUnitIn[] };
-  if (!Array.isArray(squad) || squad.length < 1 || squad.length > 3) {
-    return res.status(400).json({ error: "squad must contain 1-3 units" });
+  if (!Array.isArray(squad) || squad.length !== DUNGEON_TEAM_SIZE) {
+    return res.status(400).json({ error: "squad must contain exactly 3 units" });
   }
   const err = squadError("squad", squad);
   if (err) return res.status(400).json({ error: err });
@@ -972,165 +844,103 @@ battleRouter.post("/ranked", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyP
   if ("error" in yourTrusted) return res.status(400).json({ error: yourTrusted.error });
   const yourUnits = yourTrusted.map(trustedToSim);
 
-  const profile = getOrCreate(req.playerId!);
-  const tier = tierForPoints(profile.rankPoints ?? 0);
-
-  if (isFatigued(profile.squadFatigueUntil, Date.now())) {
+  // Fainted monsters cannot be fielded (spec §4).
+  const fainted = new Set(faintedIds(req.playerId!));
+  const downed = yourUnits.filter((u) => fainted.has(u.id));
+  if (downed.length) {
     return res.status(409).json({
       error: {
-        code: "SQUAD_FATIGUED",
-        message: "Your squad is fatigued from a ranked loss. Claim a daily quest to recover early, or wait it out."
-      },
-      fatigue: fatigueBlock(profile)
+        code: "MONSTER_FAINTED",
+        message: `Fainted monsters cannot fight until daily reset or a nutrition task revives them: ${downed.map((u) => u.name).join(", ")}`
+      }
     });
   }
 
-  // Exact-tier matchmaking: squads are stored without tier, so pull candidate
-  // snapshots and filter by the owner's current rank tier. Among the legal
-  // candidates, pick the closest power score (#131) — the fairest fight the
-  // queue can offer rather than the most recent snapshot. Snapshots resolve
-  // against the DEFENDER's collection, never the stored client claims.
+  const profile = getOrCreate(req.playerId!);
+  const myRR = profile.rr ?? 0;
+  const myRank = rankForRR(myRR);
+
+  // SBMM: score every candidate snapshot on |ΔRR|/100 + TeamGap%; lowest
+  // score wins. Snapshots resolve against the DEFENDER's collection, never
+  // the stored client claims.
   const candidates = db
     .prepare(`SELECT player_id FROM friend_squad WHERE player_id != ? ORDER BY updated_at DESC LIMIT 50`)
     .all(req.playerId!) as { player_id: string }[];
-  const myPower = simPower(yourUnits);
+  const myPower = teamPower(yourUnits);
   let opponentId: string | null = null;
   let opponentUnits: SimUnit[] | null = null;
-  let bestGap = Infinity;
+  let opponentRR = myRR;
+  let bestScore = Infinity;
   for (const row of candidates) {
-    if (tierForPoints(getOrCreate(row.player_id).rankPoints ?? 0) !== tier) continue;
     const resolved = loadSquadSnapshot(row.player_id);
     if (!resolved) continue;
-    const gap = Math.abs(simPower(resolved) - myPower);
-    if (gap < bestGap) {
-      bestGap = gap;
+    const rr = getOrCreate(row.player_id).rr ?? 0;
+    const score = matchScore(myRR, rr, myPower, teamPower(resolved));
+    if (score < bestScore) {
+      bestScore = score;
       opponentId = row.player_id;
       opponentUnits = resolved;
+      opponentRR = rr;
     }
   }
 
+  // Bot fallback: the queue stands even when empty. Bots are rated at the
+  // player's RR so the adjustment is 0 — the floor fight of the rank.
   const isBot = opponentUnits === null;
-  const oppUnits: SimUnit[] = opponentUnits ?? botSquadForTier(tier);
+  const oppUnits: SimUnit[] = opponentUnits ?? botSquadForRank(myRank);
+  if (isBot) opponentRR = myRR;
   saveSquadSnapshot(req.playerId!, yourTrusted);
 
   const seed = BigInt(`0x${randomBytes(8).toString("hex")}`);
   const result = simulate(yourUnits, oppUnits, seed);
   const youWon = result.winner === "A";
 
-  const rank = awardRankPoints(req.playerId!, youWon ? RP_RANKED_WIN : RP_RANKED_LOSS, "ranked");
-  awardXP(req.playerId!, youWon ? 100 : 20, youWon ? "battle-win" : "battle-loss");
+  // RR: win +20 / loss −15, adjusted by clamp(round(ΔRR/25), ±5).
+  const ranked = applyRankedResult(myRR, opponentRR, youWon);
+  const updated = applyRankedToProfile(req.playerId!, ranked, youWon);
+  markFainted(req.playerId!, result.faintedA);
 
-  // Re-fetch rather than reuse `profile`: awardRankPoints/awardXP already
-  // persisted their own updates against the current row, and `profile` was
-  // read before the battle, so saving it here would silently overwrite
-  // those awards with the pre-battle values (as it previously did — this
-  // object is only used for battlesWon + fatigue from here on).
-  const updated = getOrCreate(req.playerId!);
-  updated.battlesWon = (updated.battlesWon ?? 0) + (youWon ? 1 : 0);
-  if (!youWon) {
-    updated.squadFatigueUntil = fatigueUntil(Date.now());
+  // A ranked win rolls a Case off the player's rank table (spec §5); it
+  // waits on pending_case until opened — losses pay RR only.
+  let caseReward: { rarity: string } | null = null;
+  if (youWon) {
+    const v = roll(`ranked:${req.playerId!}`, "case", 0, Number(seed & 0xffffffffn));
+    const rarity = rollRankedCaseRarity(ranked.rankBefore, v);
+    const pending = grantCase(req.playerId!, rarity, `ranked:${ranked.rankBefore}`);
+    caseReward = { rarity: pending.rarity };
   }
-  updated.updatedAt = new Date().toISOString();
-  saveProfile(req.playerId!, updated);
 
-  res.json({
-    ...result,
-    tier,
-    opponent: isBot ? { bot: true } : { bot: false, playerId: opponentId },
-    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, element: u.element, star: u.star, rarity: u.rarity })),
-    movesets: yourUnits.map((u) => ({ id: u.id, moves: (movesFor(u) ?? []).map((m) => m.id) })),
-    rank,
-    fatigue: fatigueBlock(updated)
+  recordBattle(req.playerId!, "ranked", youWon ? "win" : "loss", {
+    opponent: isBot ? "bot" : opponentId ?? "bot",
+    rrDelta: ranked.delta,
+    squad: yourUnits.map((u) => ({ id: u.id, name: u.name })),
+    detail: { rounds: result.rounds, matchScore: isBot ? null : bestScore, case: caseReward?.rarity ?? null }
   });
-});
-
-// ===== Arena stakes (issue #116) ============================================
-//
-// Challenge a friend's snapshot with monsters on the line. The challenger's
-// stake locks in escrow before the sim runs; settlement is one transaction —
-// win and the stake comes back plus the coin equivalent (keys, minus the 5%
-// arena burn), lose and the defender takes the monsters.
-
-// POST /battle/arena/challenge { opponentId, yourSquad, stakeDropIds }
-battleRouter.post("/arena/challenge", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "arena", message: "Too many arena challenges. Try again later." }), (req: PlayerRequest, res) => {
-  const { opponentId, yourSquad, stakeDropIds } = req.body as {
-    opponentId?: string;
-    yourSquad?: SquadUnitIn[];
-    stakeDropIds?: string[];
-  };
-  if (typeof opponentId !== "string" || opponentId.length < 1 || opponentId.length > 64) {
-    return res.status(400).json({ error: "opponentId must be a string of 1-64 characters" });
-  }
-  if (opponentId === req.playerId) {
-    return res.status(400).json({ error: "You cannot stake a battle against yourself." });
-  }
-  if (!Array.isArray(yourSquad) || yourSquad.length < 1 || yourSquad.length > 3) {
-    return res.status(400).json({ error: "yourSquad must contain 1-3 units" });
-  }
-  const yourError = squadError("yourSquad", yourSquad);
-  if (yourError) return res.status(400).json({ error: yourError });
-  if (!Array.isArray(stakeDropIds) || stakeDropIds.length < 1 || stakeDropIds.length > 3 || !stakeDropIds.every((id) => typeof id === "string")) {
-    return res.status(400).json({ error: "stakeDropIds must be 1-3 owned monster ids" });
-  }
-
-  const oppUnits = loadSquadSnapshot(opponentId);
-  if (!oppUnits) {
-    return res.status(404).json({ error: { code: "NO_SNAPSHOT", message: "That player has no battle squad yet." } });
-  }
-
-  const yourTrusted = resolveOwnSquad(req.playerId!, yourSquad);
-  if ("error" in yourTrusted) return res.status(400).json({ error: yourTrusted.error });
-
-  // Self-heal escrows stranded by a crashed settlement: a stake can only
-  // outlive its request if the process died mid-battle, so anything old is
-  // refunded before a new challenge is priced.
-  refundStaleArenaStakes(req.playerId!);
-
-  const battleId = randomUUID();
-  let staked;
-  try {
-    staked = stakeDrops(req.playerId!, stakeDropIds, battleId);
-  } catch (err) {
-    const code = err instanceof Error ? err.message : "INTERNAL";
-    const status = code === MUTATION_ERRORS.NOT_OWNED || code === MUTATION_ERRORS.LOCKED ? 409 : 400;
-    return res.status(status).json({
-      error: { code, message: "Stake refused: every id must be a monster you own that is not already staked." }
+  if (!isBot && opponentId) {
+    recordBattle(opponentId, "ranked", youWon ? "loss" : "win", {
+      opponent: req.playerId!,
+      squad: oppUnits.map((u) => ({ id: u.id, name: u.name })),
+      detail: { rounds: result.rounds, defended: true }
     });
   }
 
-  const seed = BigInt(`0x${randomBytes(8).toString("hex")}`);
-  let result;
-  try {
-    result = simulate(yourTrusted.map(trustedToSim), oppUnits, seed);
-  } catch (err) {
-    // The sim failed after escrow locked: release the stake so a broken
-    // fight can never strand monsters.
-    refundArena(battleId);
-    throw err;
-  }
-  const youWon = result.winner === "A";
-
-  const settlement = youWon
-    ? settleArena(battleId, req.playerId!, opponentId)
-    : settleArena(battleId, opponentId, req.playerId!);
-
-  db.prepare(
-    `INSERT INTO async_battle (challenger_id, defender_id, winner_side, rounds) VALUES (?, ?, ?, ?)`
-  ).run(req.playerId!, opponentId, youWon ? 0 : 1, result.rounds);
-
-  awardXP(req.playerId!, youWon ? 150 : 20, youWon ? "arena-win" : "arena-loss");
-  const profile = getOrCreate(req.playerId!);
-  profile.battlesWon = (profile.battlesWon ?? 0) + (youWon ? 1 : 0);
-  profile.updatedAt = new Date().toISOString();
-  saveProfile(req.playerId!, profile);
-
   res.json({
     ...result,
-    battleId,
-    staked: staked.map((d) => ({ id: d.id, name: d.character.name, value: d.value })),
-    settlement: youWon
-      ? { outcome: "won", stakeReturned: true, coinsPaid: settlement.coinsPaid, monstersWon: settlement.transferred.map((d) => d.id) }
-      : { outcome: "lost", transferredTo: opponentId, monsters: settlement.transferred.map((d) => d.id) }
+    rank: {
+      rr: ranked.rr,
+      delta: ranked.delta,
+      rank: ranked.rankAfter,
+      rankLabel: RANK_LABELS[ranked.rankAfter],
+      promoted: ranked.promoted,
+      record: {
+        rankedWins: updated.rankedWins ?? 0,
+        rankedLosses: updated.rankedLosses ?? 0
+      }
+    },
+    caseReward,
+    opponent: isBot ? { bot: true } : { bot: false, playerId: opponentId },
+    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity })),
+    movesets: yourUnits.map((u) => ({ id: u.id, moves: u.moves ?? attacksFor(u.characterKey ?? u.id, u.rarity ?? "common") }))
   });
 });
 
@@ -1142,10 +952,10 @@ battleRouter.get("/:userId", (_req, res) => {
     fatigued: false,
     turn: "you",
     moves: [
-      { name: "Protein Punch", statType: "protein", description: "+12 ATK" },
-      { name: "Fiber Whirl", statType: "fiber", description: "+8 DEF" },
-      { name: "Vitamin Beam", statType: "vitamin", description: "Heal 10%" },
-      { name: "Hydro Splash", statType: "hydration", description: "Cleanse debuffs" }
+      { name: "Protein Punch", description: "+12 ATK" },
+      { name: "Fiber Whirl", description: "+8 DEF" },
+      { name: "Vitamin Beam", description: "Heal 10%" },
+      { name: "Hydro Splash", description: "Cleanse debuffs" }
     ]
   };
   res.json({ state });

@@ -34,23 +34,20 @@ async function withPlayer(
 ): Promise<void> {
   const { minesRouter } = await import("./mines");
   const { stateFor } = await import("../services/lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
 
   const playerId = `mines_${counter++}_${Date.now()}`;
   const session = stateFor(playerId);
 
   const seeded = ["salmon-striker", "broccoli-bud"].map((characterId, i) =>
-    session.record({
+    session.record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS[characterId],
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
+      character: testCharacter("common", characterId),
       value: [12_000, 600][i],
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
       openedAt: new Date().toISOString()
-    })
+    })).drop
   );
 
   const app = express();

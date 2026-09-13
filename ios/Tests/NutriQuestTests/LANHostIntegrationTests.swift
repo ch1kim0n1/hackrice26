@@ -104,8 +104,8 @@ final class LANHostIntegrationTests: XCTestCase {
 
         alice.challenge("bob")
         bob.respond(accept: true)
-        alice.lockIn(LANFixtures.squad("a", power: 80))
-        bob.lockIn(LANFixtures.squad("b", power: 30))
+        alice.lockIn(LANFixtures.squad("a", attack: 80))
+        bob.lockIn(LANFixtures.squad("b", attack: 30))
         await group.host.waitForResolutions()
 
         let a = try XCTUnwrap(alice.result)
@@ -114,8 +114,8 @@ final class LANHostIntegrationTests: XCTestCase {
         XCTAssertEqual(a.mySide, 0)
         XCTAssertEqual(b.mySide, 1)
         XCTAssertNotEqual(a.didWin, b.didWin, "exactly one of them won")
-        XCTAssertEqual(a.opponentSquad, LANFixtures.squad("b", power: 30))
-        XCTAssertEqual(b.opponentSquad, LANFixtures.squad("a", power: 80))
+        XCTAssertEqual(a.opponentSquad, LANFixtures.squad("b", attack: 30))
+        XCTAssertEqual(b.opponentSquad, LANFixtures.squad("a", attack: 80))
 
         // Every attack in the replay maps to a character on one side or the other.
         XCTAssertEqual(a.unitCharacterIDs.count, 6)
@@ -223,8 +223,8 @@ final class LANHostIntegrationTests: XCTestCase {
         group.add("bob")
         // Round 1: host has a bye; alice vs bob. The winner meets host at once.
         group.host.startTournament(seeding: ["host", "alice", "bob"])
-        alice.lockIn(LANFixtures.squad("a", power: 100))
-        group["bob"].lockIn(LANFixtures.squad("b", power: 10))
+        alice.lockIn(LANFixtures.squad("a", attack: 100))
+        group["bob"].lockIn(LANFixtures.squad("b", attack: 10))
         await group.host.waitForResolutions()
 
         let winner = try XCTUnwrap(["alice", "bob"].first { group[$0].result?.didWin == true })

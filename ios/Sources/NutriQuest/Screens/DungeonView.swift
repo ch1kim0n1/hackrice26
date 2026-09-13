@@ -1,18 +1,19 @@
 import SwiftUI
 import NutriQuestUI
 
-/// Infinite dungeon — send your top 5 down floor after floor until they wipe.
-/// Depth becomes idle income: keys tick up while you're away and claim when
-/// you come back. The run feed is the highlight reel.
+/// Endless dungeon — send your top 3 down floor after floor until they wipe.
+/// Every cleared floor pays coins (bosses pay triple) and earnings survive
+/// the wipe. The run feed is the highlight reel.
 struct DungeonView: View {
     @ObservedObject var gameState: GameState
 
     @Environment(\.nqAccent) private var accent
     @State private var running = false
-    @State private var claiming = false
 
+    /// Spec §5: a dungeon run fields exactly three monsters — the player's
+    /// top three unlocked, same rule as ranked.
     private var partyPreview: [Character] {
-        Array(gameState.collection.filter { !$0.isLocked }.prefix(5))
+        Array(gameState.collection.filter { !$0.isLocked }.prefix(3))
     }
 
     var body: some View {
@@ -29,7 +30,7 @@ struct DungeonView: View {
         }
         .nqSceneBackground(GameArt.scene("dungeon"))
         .preferredColorScheme(.dark)
-        .navigationTitle("Infinite Dungeon")
+        .navigationTitle("Endless Dungeon")
         .navigationBarTitleDisplayMode(.inline)
         .task { await gameState.refreshDungeon() }
     }
@@ -47,41 +48,17 @@ struct DungeonView: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 2) {
-                    Text("Idle keys")
+                    Text("Last run")
                         .font(NQText.microXS.font)
                         .foregroundStyle(NQTheme.battleInkMuted)
-                    HStack(spacing: 4) {
-                        NQIcon.sparkle.view.frame(width: 14, height: 14)
-                        NQCountUpText(value: gameState.dungeonState?.pendingIdleKeys ?? 0, font: NQText.headingL.font, color: NQTheme.gold)
-                    }
-                    .foregroundStyle(NQTheme.gold)
+                    Text(gameState.dungeonState?.lastRunAt?.prefix(10).description ?? "—")
+                        .font(NQText.headingL.font)
+                        .foregroundStyle(NQTheme.gold)
                 }
             }
-            if let pending = gameState.dungeonState?.pendingIdleKeys, pending > 0 {
-                Button {
-                    NQJuice.tap()
-                    claiming = true
-                    Task {
-                        _ = await gameState.claimDungeonIncome()
-                        claiming = false
-                        NQJuice.success()
-                    }
-                } label: {
-                    Text(claiming ? "Claiming…" : "Claim \(pending) idle keys")
-                        .font(NQText.body.font.weight(.bold))
-                        .frame(maxWidth: .infinity)
-                        .nqPadding(.button)
-                        .background(NQTheme.gold)
-                        .foregroundStyle(NQTheme.ink)
-                        .clipShape(Capsule())
-                }
-                .buttonStyle(NQPressableStyle())
-                .disabled(claiming)
-            } else {
-                Text("Deeper runs pay more idle keys per hour away")
-                    .font(NQText.captionS.font)
-                    .foregroundStyle(NQTheme.battleInkMuted)
-            }
+            Text("Every cleared floor pays coins — bosses pay triple. You keep what you earn, even on a wipe.")
+                .font(NQText.captionS.font)
+                .foregroundStyle(NQTheme.battleInkMuted)
         }
         .nqPadding(.card)
         .background(NQTheme.battleSurface)
@@ -92,17 +69,19 @@ struct DungeonView: View {
 
     private var partyCard: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
-            Text("Your party (top 5)")
+            Text("Your party (top 3)")
                 .font(NQText.microXS.font)
                 .tracking(0.6)
                 .foregroundStyle(NQTheme.battleInkMuted)
             HStack(spacing: NQTheme.spaceS) {
                 ForEach(partyPreview) { c in
                     CharacterArtwork(character: c, expression: .proud)
-                        .frame(width: 52, height: 68)
+                        .frame(width: 64, height: 84)
                 }
-                if partyPreview.isEmpty {
-                    Text("No characters yet — scan a food first")
+                if partyPreview.count < 3 {
+                    Text(partyPreview.isEmpty
+                         ? "No monsters yet — scan a food first"
+                         : "You need 3 monsters to descend — scan more food")
                         .font(NQText.caption.font)
                         .foregroundStyle(NQTheme.battleInkMuted)
                 }
@@ -138,8 +117,8 @@ struct DungeonView: View {
             .foregroundStyle(accent.accent.readableTextColor())
         }
         .buttonStyle(NQPressableStyle(scale: 0.97, ledge: 5))
-        .disabled(running || partyPreview.isEmpty)
-        .accessibilityLabel("Start a dungeon run with your top five characters")
+        .disabled(running || partyPreview.count < 3)
+        .accessibilityLabel("Start a dungeon run with your top three monsters")
     }
 
     // MARK: - Run feed
@@ -147,12 +126,12 @@ struct DungeonView: View {
     private func runFeed(_ run: DungeonRunResponse) -> some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
             HStack {
-                Text("Floor \(run.floorsCleared) cleared")
+                Text(run.floorsCleared > 0 ? "Floor \(run.floorsCleared) cleared" : "Wiped on floor 1")
                     .font(NQText.heading.font.weight(.heavy))
                     .foregroundStyle(NQTheme.battleInk)
-                if run.keysEarned > 0 {
+                if run.coinsEarned > 0 {
                     Spacer()
-                    NQChip("+\(run.keysEarned) keys", icon: .sparkle, tint: NQTheme.gold, filled: true)
+                    NQChip("+\(run.coinsEarned) coins", icon: .sparkle, tint: NQTheme.gold, filled: true)
                 }
             }
             ForEach(Array(run.feed.enumerated()), id: \.offset) { _, floor in
@@ -168,6 +147,11 @@ struct DungeonView: View {
                         .foregroundStyle(NQTheme.battleInkMuted)
                         .lineLimit(1)
                     Spacer()
+                    if floor.won, floor.reward > 0 {
+                        Text("+\(floor.reward)")
+                            .font(NQText.captionS.font.weight(.bold))
+                            .foregroundStyle(NQTheme.gold)
+                    }
                     Image(systemName: floor.won ? "checkmark.circle.fill" : "xmark.circle.fill")
                         .foregroundStyle(floor.won ? NQTheme.success : NQTheme.warning)
                 }

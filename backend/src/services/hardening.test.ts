@@ -30,29 +30,28 @@ const pid = (tag: string) => `hrd_${tag}_${counter++}_${Date.now()}`;
 
 async function seedDrop(playerId: string, characterId = "salmon-striker", value = 500, stars = 1) {
   const { stateFor } = await import("./lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
-  return stateFor(playerId).record({
-    crateId: "starter-crate",
-    character: CHARACTERS[characterId],
-    stars,
-    power: 55,
-    powerLabel: "Steady",
-    shiny: false,
-    value,
-    rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
-    fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
-    openedAt: new Date().toISOString()
-  });
+  const { testDrop, testCharacter } = await import("../testkit");
+  const { rarityForValue } = await import("../game/rarityBands");
+  return stateFor(playerId).record(
+    testDrop({
+      crateId: "test",
+      character: testCharacter(rarityForValue(value), characterId),
+      stars,
+      baseMintValue: value,
+      value,
+      fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 }
+    })
+  ).drop;
 }
 
 describe("fairness nonce durability", () => {
-  it("a crate open advances the persisted nonce, not just the in-memory one", async () => {
+  it("a cookbook open advances the persisted nonce, not just the in-memory one", async () => {
     const { lootboxRouter } = await import("../routes/lootbox");
-    const { stateFor } = await import("./lootboxState");
+    const { recordCoins } = await import("./coins");
     const { db } = await import("../db");
 
     const playerId = pid("open");
-    stateFor(playerId).grantKeys(10);
+    recordCoins(playerId, 10_000, "grant");
 
     const app = express();
     app.use(express.json());
@@ -62,7 +61,7 @@ describe("fairness nonce durability", () => {
     const port = (server.address() as { port: number }).port;
 
     const open = () =>
-      fetch(`http://127.0.0.1:${port}/lootbox/crates/starter-crate/open`, {
+      fetch(`http://127.0.0.1:${port}/lootbox/cookbooks/home-cookbook/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Player-Id": playerId },
         body: "{}"
@@ -78,26 +77,44 @@ describe("fairness nonce durability", () => {
 
       // The row must reflect it — a restart cannot rewind into used nonces.
       const row = db
-        .prepare(`SELECT nonce, since_epic FROM lootbox_session WHERE player_id = ?`)
-        .get(playerId) as { nonce: number; since_epic: number };
+        .prepare(`SELECT nonce FROM lootbox_session WHERE player_id = ?`)
+        .get(playerId) as { nonce: number };
       expect(row.nonce).toBe(2);
     } finally {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
-  it("a promo crate open consumes a durable nonce", async () => {
+  it("a promo case open consumes a durable nonce", async () => {
     const { createPromo, redeemPromo } = await import("./promoCodes");
+    const { lootboxRouter } = await import("../routes/lootbox");
     const { db } = await import("../db");
     const code = `HRD${counter++}`.slice(0, 16);
-    createPromo(code, "crate:starter-crate");
+    createPromo(code, "case:rare");
     const playerId = pid("promo");
     const result = redeemPromo(playerId, code);
-    expect(result.drop).toBeDefined();
-    const row = db
-      .prepare(`SELECT nonce FROM lootbox_session WHERE player_id = ?`)
-      .get(playerId) as { nonce: number };
-    expect(row.nonce).toBe(1);
+    expect(result.case).toBeDefined();
+
+    const app = express();
+    app.use(express.json());
+    app.use("/lootbox", lootboxRouter);
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const port = (server.address() as { port: number }).port;
+    try {
+      const open = await fetch(`http://127.0.0.1:${port}/lootbox/cases/${result.case!.caseId}/open`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Player-Id": playerId },
+        body: "{}"
+      });
+      expect(open.status).toBe(200);
+      const row = db
+        .prepare(`SELECT nonce FROM lootbox_session WHERE player_id = ?`)
+        .get(playerId) as { nonce: number };
+      expect(row.nonce).toBe(1);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
   });
 });
 
@@ -145,28 +162,21 @@ describe("cauldron reward stays on the committed seed pair", () => {
 });
 
 describe("promo redemption ordering", () => {
-  it("a promo pointing at a missing crate fails without burning the redemption", async () => {
-    const { createPromo, redeemPromo, getPromo } = await import("./promoCodes");
-    const { db } = await import("../db");
-    const code = `BAD${counter++}CRATE`.slice(0, 16);
-    createPromo(code, "crate:no-such-crate");
+  it("a promo pointing at a bad reward fails at creation, never at redemption", async () => {
+    const { createPromo, getPromo } = await import("./promoCodes");
+    const code = `BAD${counter++}CASE`.slice(0, 16);
 
-    const playerId = pid("badcrate");
-    expect(() => redeemPromo(playerId, code)).toThrow("PROMO_CRATE_NOT_FOUND");
-
-    // No use consumed, no redemption recorded — the player can redeem again
-    // once the reward is fixed.
-    expect(getPromo(code)!.uses).toBe(0);
-    const row = db
-      .prepare(`SELECT 1 FROM promo_redeem WHERE player_id = ? AND code = ?`)
-      .get(playerId, code);
-    expect(row).toBeUndefined();
+    // A Case of a non-existent rarity cannot even be created — the player's
+    // one redemption can never be burned by a fulfilment that cannot exist.
+    expect(() => createPromo(code, "case:no-such-rarity")).toThrow("INVALID_PROMO_REWARD");
+    expect(getPromo(code)).toBeNull();
   });
 });
 
 describe("inventory cap", () => {
-  it("never evicts a locked (escrowed) monster", async () => {
+  it("overflows to the mailbox and never evicts — locked or not", async () => {
     const { stateFor } = await import("./lootboxState");
+    const { INVENTORY_CAP } = await import("../game/spec");
     const playerId = pid("cap");
     const session = stateFor(playerId);
 
@@ -174,12 +184,16 @@ describe("inventory cap", () => {
     expect(session.lockDrop(locked.id, "test-escrow")).toBe(true);
 
     // Push the unlocked inventory well past the 200-row cap.
-    for (let i = 0; i < 210; i++) await seedDrop(playerId, "broccoli-bud", 100);
+    for (let i = session.inventory.length; i < INVENTORY_CAP + 10; i++) {
+      await seedDrop(playerId, "broccoli-bud", 500);
+    }
 
-    // The escrowed monster survived; only unlocked rows were trimmed.
+    // The escrowed monster survived, nothing was evicted, and the over-cap
+    // rows are claimable in the mailbox instead of silently deleted.
     expect(session.dropById(locked.id)).toBeDefined();
     expect(session.dropById(locked.id)!.lockedBy).toBe("test-escrow");
-    expect(session.inventory.filter((d) => !d.lockedBy).length).toBeLessThanOrEqual(200);
+    expect(session.availableDrops().length).toBeLessThanOrEqual(INVENTORY_CAP);
+    expect(session.mailbox.length).toBeGreaterThan(0);
   });
 });
 

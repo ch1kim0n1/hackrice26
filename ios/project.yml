@@ -34,6 +34,13 @@ targets:
         products:
           - BattleKit
           - NutriQuestUI
+    entitlements:
+      path: Support/NutriQuest.entitlements
+      properties:
+        # Read-only HealthKit (steps, energy, heart rate, rings, workouts) —
+        # the main app is the producer for POST /vitals. Never writes.
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     info:
       path: Support/Info.plist
       properties:
@@ -47,6 +54,7 @@ targets:
           - Fonts/Quicksand.ttf
         NSCameraUsageDescription: NutriQuest scans food barcodes and meal photos to summon characters.
         NSPhotoLibraryUsageDescription: NutriQuest can use a meal photo from your library when the camera isn't available.
+        NSHealthShareUsageDescription: NutriQuest reads your steps, heart rate, activity rings and workouts from Apple Watch to boost your daily stats.
         NSAppTransportSecurity:
           # Railway deployment is HTTPS, no exception needed. Kept for anyone
           # switching BackendBaseURL back to a local http://localhost dev server.
@@ -68,6 +76,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSCameraUsageDescription: NutriQuest scans food barcodes and meal photos to summon characters.
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: NutriQuest can use a meal photo from your library when the camera isn't available.
+        INFOPLIST_KEY_NSHealthShareUsageDescription: NutriQuest reads your steps, heart rate, activity rings and workouts from Apple Watch to boost your daily stats.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: NutriQuest finds friends on the same Wi-Fi so you can battle nearby.
         TARGETED_DEVICE_FAMILY: 1
         SWIFT_VERSION: "5.9"

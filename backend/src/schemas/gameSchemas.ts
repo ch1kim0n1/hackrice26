@@ -19,8 +19,41 @@ export const scanSchema = z.object({
   barcode: z.string().min(4).max(64).regex(/^[0-9A-Za-z_-]+$/)
 });
 
+// --- Meal log (spec §1: barcode / photo / manual intake) ---------------------
+//
+// The dashboard contract is kcal/protein/carbs/fat; the wider nutrient fields
+// are optional provenance. A manual entry is a log, never a mint — nothing
+// here can create a monster.
+
+const mealNutrient = z.number().min(0).max(10_000);
+
+export const manualMealSchema = z.object({
+  name: z.string().min(1).max(120),
+  calories: mealNutrient,
+  proteinG: mealNutrient,
+  carbsG: mealNutrient,
+  fatG: mealNutrient,
+  fiberG: mealNutrient.optional(),
+  sugarG: mealNutrient.optional(),
+  sodiumMg: mealNutrient.optional(),
+  satFatG: mealNutrient.optional()
+});
+
+export const mealEditSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    calories: mealNutrient.optional(),
+    proteinG: mealNutrient.optional(),
+    carbsG: mealNutrient.optional(),
+    fatG: mealNutrient.optional()
+  })
+  .refine((e) => Object.values(e).some((v) => v !== undefined), {
+    message: "at least one field to edit is required"
+  });
+
 export const fusionSchema = z.object({
-  consumedIds: z.array(uuid).length(5)
+  // Spec §2: fusion consumes exactly 3 copies.
+  consumedIds: z.array(uuid).length(3)
 });
 
 export const rankedBattleSchema = z.object({
@@ -38,6 +71,24 @@ export const arenaCreateSchema = z.object({
 export const capsuleOpenSchema = z.object({
   // optional idempotency key; the backend generates one if absent
   openId: z.string().min(8).max(64).optional()
+});
+
+/** Shared by cookbook opens and case opens: the player's commit-reveal entropy. */
+export const clientSeedBodySchema = z.object({
+  clientSeed: z.string().min(6).max(64).optional()
+});
+
+/** POST /lootbox/mailbox/claim — which overflow drops to move into inventory. */
+export const mailboxClaimSchema = z.object({
+  dropIds: z.array(z.string().min(1).max(64)).min(1).max(500)
+});
+
+/** POST /lootbox/verify — recompute a past cookbook open. */
+export const verifyOpenSchema = z.object({
+  bookId: z.string().min(1).max(64),
+  serverSeed: z.string().min(1),
+  clientSeed: z.string().min(1),
+  nonce: z.number().int().min(0)
 });
 
 /**

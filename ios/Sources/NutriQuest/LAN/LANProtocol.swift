@@ -41,34 +41,35 @@ struct LANPlayer: Codable, Equatable, Hashable {
 
 // MARK: - Squads
 
-/// One committed battle unit: what to draw (the app `Character`) plus the exact
-/// base stats the engine fights with.
+/// One committed battle unit: what to draw (the app `Character`) plus the
+/// full battle snapshot — pre-scaling bases, rarity, stars, mana and the
+/// authored moves. Peers can't ask the server for a catalog entry mid-match,
+/// so the wire carries everything the engine needs.
 struct LANUnit: Codable, Equatable {
     let character: Character
-    let element: String
     let rarity: String
-    let fusionTier: Int
-    let power: Double
-    let guardStat: Double
-    let vitality: Double
-    let tempo: Double
+    /// 1...5 mastery stars (Secret clamps to ★2 inside the engine).
+    let star: Int
+    let baseHealth: Double
+    let baseAttack: Double
+    /// Authored Mana pool — present only on Epic+ instances.
+    let baseMana: Double?
+    let moves: [BattleMoveSpec]
 }
 
 struct LANSquad: Codable, Equatable {
-    /// Exactly three, in battle order. Order matters: the engine always
-    /// attacks the first living enemy.
+    /// Exactly three, in battle order. Order matters: the first living unit
+    /// is the active one, and forced replacements come from the top.
     let units: [LANUnit]
-    let partyMultiplier: Double
 }
 
 enum LANSquadError: Error, Equatable {
     case wrongSize
     case duplicateCharacters
     case statOutOfRange
-    case fusionOutOfRange
+    case starOutOfRange
     case unknownRarity
-    case unknownElement
-    case multiplierOutOfRange
+    case badMoves
     case badName
     case badColor
 }
@@ -82,16 +83,27 @@ extension LANSquad {
         guard Set(units.map(\.character.id)).count == units.count else {
             throw LANSquadError.duplicateCharacters
         }
-        guard partyMultiplier.isFinite, (0.8...1.5).contains(partyMultiplier) else {
-            throw LANSquadError.multiplierOutOfRange
-        }
         for unit in units {
-            for stat in [unit.power, unit.guardStat, unit.vitality, unit.tempo] {
-                guard stat.isFinite, (10...100).contains(stat) else { throw LANSquadError.statOutOfRange }
+            guard unit.baseHealth.isFinite, (1...2_000).contains(unit.baseHealth),
+                  unit.baseAttack.isFinite, (1...500).contains(unit.baseAttack) else {
+                throw LANSquadError.statOutOfRange
             }
-            guard (0...5).contains(unit.fusionTier) else { throw LANSquadError.fusionOutOfRange }
+            if let mana = unit.baseMana, !(mana.isFinite && (0...500).contains(mana)) {
+                throw LANSquadError.statOutOfRange
+            }
+            guard (1...5).contains(unit.star) else { throw LANSquadError.starOutOfRange }
             guard Rarity(rawValue: unit.rarity) != nil else { throw LANSquadError.unknownRarity }
-            guard BattleElement(rawValue: unit.element) != nil else { throw LANSquadError.unknownElement }
+            guard (1...4).contains(unit.moves.count) else { throw LANSquadError.badMoves }
+            for move in unit.moves {
+                let ok = move.power.isFinite && (0...15).contains(move.power)
+                    && move.accuracy.isFinite && (1...100).contains(move.accuracy)
+                    && move.manaCost.isFinite && (0...500).contains(move.manaCost)
+                    && !move.id.isEmpty && move.id.count <= 64
+                    && !move.name.isEmpty && move.name.count <= 64
+                    && (move.statusChance.map { $0.isFinite && (0...100).contains($0) } ?? true)
+                    && (move.duration.map { (1...10).contains($0) } ?? true)
+                guard ok else { throw LANSquadError.badMoves }
+            }
             let name = unit.character.name.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !name.isEmpty, name.count <= LANLimits.maxNameLength else { throw LANSquadError.badName }
             guard unit.character.colorHex.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) != nil else {
@@ -100,114 +112,88 @@ extension LANSquad {
         }
     }
 
-    /// The engine-side squad. Unit UUIDs are derived from the match, side and
-    /// slot, so the host and both clients agree on them without sending a map.
-    func battleSquad(matchID: UUID, side: Int) -> BattleSquad {
-        let battleUnits = units.enumerated().map { slot, unit -> BattleUnit in
-            let character = FoodCharacter(
-                id: LANCrypto.unitID(matchID: matchID, side: side, slot: slot),
+    /// The engine-side squad snapshot. Unit ids are derived from the match,
+    /// side and slot, so the host and both clients agree on them without
+    /// sending a map.
+    func battleSpecs(matchID: UUID, side: Int) -> [BattleUnitSpec] {
+        units.enumerated().map { slot, unit in
+            BattleUnitSpec(
+                id: LANCrypto.unitID(matchID: matchID, side: side, slot: slot).uuidString,
                 name: unit.character.name,
-                barcode: unit.character.id,
-                element: BattleElement(rawValue: unit.element) ?? .fiber,
+                baseHealth: unit.baseHealth,
+                baseAttack: unit.baseAttack,
                 rarity: (Rarity(rawValue: unit.rarity) ?? .common).battleRarity,
-                fusionTier: unit.fusionTier,
-                baseStats: BattleStats(
-                    power: unit.power,
-                    guard: unit.guardStat,
-                    vitality: unit.vitality,
-                    tempo: unit.tempo
-                )
+                star: unit.star,
+                moves: unit.moves,
+                baseMana: unit.baseMana
             )
-            return BattleUnit(character: character, partyMultiplier: partyMultiplier)
         }
-        return BattleSquad(units: battleUnits)
     }
 }
 
 extension LANUnit {
     /// Build a unit from one of your own characters, clamped so it always
     /// passes `validate()` (long product names, odd colours, etc.).
-    init(character: Character, stats: FoodCharacter) {
+    init(character: Character, spec: BattleUnitSpec) {
         var display = character
         let trimmed = character.name.trimmingCharacters(in: .whitespacesAndNewlines)
         display.name = trimmed.isEmpty ? "Mystery" : String(trimmed.prefix(LANLimits.maxNameLength))
         if character.colorHex.range(of: "^#[0-9A-Fa-f]{6}$", options: .regularExpression) == nil {
             display.colorHex = "#9C978F"
         }
-        let clamp: (Double) -> Double = { min(100, max(10, $0.isFinite ? $0 : 50)) }
+        let clamp: (Double, ClosedRange<Double>) -> Double = { v, r in
+            min(r.upperBound, max(r.lowerBound, v.isFinite ? v : r.lowerBound))
+        }
 
         self.character = display
-        self.element = stats.element.rawValue
-        self.rarity = stats.rarity.appRarity.rawValue
-        self.fusionTier = min(5, max(0, stats.fusionTier))
-        self.power = clamp(stats.baseStats.power)
-        self.guardStat = clamp(stats.baseStats.`guard`)
-        self.vitality = clamp(stats.baseStats.vitality)
-        self.tempo = clamp(stats.baseStats.tempo)
+        self.rarity = spec.rarity.appRarity.rawValue
+        self.star = min(5, max(1, spec.star))
+        self.baseHealth = clamp(spec.baseHealth, 1...2_000)
+        self.baseAttack = clamp(spec.baseAttack, 1...500)
+        self.baseMana = spec.baseMana.map { clamp($0, 0...500) }
+        self.moves = spec.moves.isEmpty ? [strikeMove] : spec.moves
     }
 }
 
 // MARK: - Replay
 
-/// `UInt64` seeds are sent as strings: JSON numbers above 2^53 don't survive
-/// every decoder intact.
-enum LANEvent: Codable, Equatable {
-    case battleStart(seed: String)
-    case roundStart(round: Int)
-    case attack(attacker: UUID, defender: UUID, move: String, damage: Double, crit: Bool, typeMod: Double)
-    case miss(attacker: UUID, defender: UUID)
-    case faint(unit: UUID)
-    case roundEnd(round: Int)
-    case victory(winnerSide: Int, rounds: Int)
-}
-
+/// The wire replay: the engine's own event schema (BattleEvent is Codable in
+/// the exact battle-event.json shape) plus the result envelope. `UInt64`
+/// seeds travel as strings — JSON numbers above 2^53 don't survive.
 struct LANReplay: Codable, Equatable {
     let seed: String
-    let events: [LANEvent]
+    let events: [BattleEvent]
     let winnerSide: Int
-    let rounds: Int
-}
-
-extension LANEvent {
-    init(_ event: BattleEvent) {
-        switch event {
-        case .battleStart(let seed): self = .battleStart(seed: String(seed))
-        case .roundStart(let round): self = .roundStart(round: round)
-        case .attack(let a, let d, let move, let damage, let crit, let typeMod):
-            self = .attack(attacker: a, defender: d, move: move, damage: damage, crit: crit, typeMod: typeMod)
-        case .miss(let a, let d): self = .miss(attacker: a, defender: d)
-        case .faint(let unit): self = .faint(unit: unit)
-        case .roundEnd(let round): self = .roundEnd(round: round)
-        case .victory(let side, let rounds): self = .victory(winnerSide: side, rounds: rounds)
-        }
-    }
-
-    var battleEvent: BattleEvent {
-        switch self {
-        case .battleStart(let seed): return .battleStart(seed: UInt64(seed) ?? 0)
-        case .roundStart(let round): return .roundStart(round)
-        case .attack(let a, let d, let move, let damage, let crit, let typeMod):
-            return .attack(attackerID: a, defenderID: d, move: move, damage: damage, crit: crit, typeMod: typeMod)
-        case .miss(let a, let d): return .miss(attackerID: a, defenderID: d)
-        case .faint(let unit): return .faint(unitID: unit)
-        case .roundEnd(let round): return .roundEnd(round)
-        case .victory(let side, let rounds): return .victory(winnerSide: side, rounds: rounds)
-        }
-    }
+    let turns: Int
+    let reason: String
+    let hpFractionsA: [Double]
+    let hpFractionsB: [Double]
+    let faintedA: [String]
+    let faintedB: [String]
 }
 
 extension LANReplay {
     init(_ replay: BattleReplay) {
         self.seed = String(replay.seed)
-        self.events = replay.events.map { LANEvent($0) }
+        self.events = replay.events
         self.winnerSide = replay.winnerSide
-        self.rounds = replay.rounds
+        self.turns = replay.turns
+        self.reason = replay.reason.rawValue
+        self.hpFractionsA = replay.hpFractionsA
+        self.hpFractionsB = replay.hpFractionsB
+        self.faintedA = replay.faintedA
+        self.faintedB = replay.faintedB
     }
 
-    /// nil for a malformed seed — a bad replay must not animate half a battle.
+    /// nil for a malformed replay — a bad one must not animate half a battle.
     var battleReplay: BattleReplay? {
-        guard let seed = UInt64(seed), (0...1).contains(winnerSide) else { return nil }
-        return BattleReplay(seed: seed, events: events.map(\.battleEvent), winnerSide: winnerSide, rounds: rounds)
+        guard let seed = UInt64(seed), (0...1).contains(winnerSide),
+              let reason = VictoryReason(rawValue: reason) else { return nil }
+        return BattleReplay(
+            seed: seed, events: events, winnerSide: winnerSide, turns: turns,
+            reason: reason, hpFractionsA: hpFractionsA, hpFractionsB: hpFractionsB,
+            faintedA: faintedA, faintedB: faintedB
+        )
     }
 }
 

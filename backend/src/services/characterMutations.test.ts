@@ -16,25 +16,24 @@ beforeAll(() => {
 let counter = 0;
 async function playerWithDrops(count: number, value = 600, stars = 1) {
   const { stateFor } = await import("./lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
+  const { rarityForValue } = await import("../game/rarityBands");
   const playerId = `mut_${counter++}_${Date.now()}`;
   const session = stateFor(playerId);
-  const character = Object.values(CHARACTERS)[0];
+  const character = testCharacter(rarityForValue(value));
   const drops = [];
   for (let i = 0; i < count; i++) {
     drops.push(
-      session.record({
-        crateId: "test",
-        character,
-        stars,
-        power: 50,
-        powerLabel: "Test",
-        shiny: false,
-        value,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
-        fairness: { serverSeedHash: "h", clientSeed: "c", nonce: i },
-        openedAt: new Date().toISOString()
-      })
+      session.record(
+        testDrop({
+          crateId: "test",
+          character,
+          stars,
+          baseMintValue: value,
+          value,
+          fairness: { serverSeedHash: "h", clientSeed: "c", nonce: i }
+        })
+      ).drop
     );
   }
   return { playerId, session, character, drops };

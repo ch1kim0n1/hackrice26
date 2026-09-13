@@ -1,25 +1,28 @@
-// Per-player lootbox state: fairness seeds, key balance, inventory.
+// Per-player lootbox state: fairness seeds, inventory, mailbox, granted cases.
 //
 // State is kept in memory for cheap synchronous access and written through
 // to SQLite (see db.ts) on every mutation, so a restart or redeploy keeps
-// every player's keys, seeds, and history (issue #23). The in-memory copy
+// every player's seeds, monsters, and mailbox (issue #23). The in-memory copy
 // is a cache; the database is the source of truth.
+//
+// The spec removed keys and pity — a session is now just a seed pair plus an
+// inventory. When the 200-slot inventory is full, mints route to the mailbox
+// instead of evicting anything: no reward is ever silently discarded.
 
 import { randomBytes, randomUUID } from "crypto";
-import { Character, Fairness, LootDrop } from "../types";
+import { Character, Fairness, LootDrop, Rarity } from "../types";
 import { hashSeed, newServerSeed } from "./lootboxEngine";
 import { db } from "../db";
 import { sampleCharacters } from "../data/sampleCharacters";
-import { dropNetWorth } from "../game/rarityBands";
+import { mintValue } from "../game/rarityBands";
+import { baseValueOf } from "../game/revaluation";
+import { INVENTORY_CAP } from "../game/spec";
 
-export const STARTING_KEYS = 25;
-const MAX_HISTORY = 200;
+const MAX_MAILBOX = 500;
 
-/** The starting six are minted at the "Steady" band — the baseline power
- *  roll (data/lootTable.ts POWER_BANDS), never the floor or the ceiling. */
-const STARTER_POWER = 55;
-const STARTER_POWER_LABEL = "Steady";
-const STARTER_POWER_MULTIPLIER = 1.0;
+/** Where a starter/scan mint sits inside its band — deterministic, mid-segment. */
+const STARTER_SEGMENT_UNIT = 0.5;
+const STARTER_POSITION_UNIT = 0.55;
 
 /**
  * One commit-reveal round.
@@ -78,14 +81,19 @@ export interface StoredDrop extends Omit<LootDrop, "rolls"> {
   lockedBy?: string | null;
 }
 
+/** What record() hands back: the stored drop plus whether it bypassed a full
+ *  inventory into the mailbox (spec checklist: overflow, never evict). */
+export interface RecordResult {
+  drop: StoredDrop;
+  overflowed: boolean;
+}
+
 class GameState {
-  keys = STARTING_KEYS;
   current: SeedPair = createSeedPair();
   retired: SeedPair[] = [];
   inventory: StoredDrop[] = [];
-  /** Opens since the last Epic-or-better / Legendary-or-better pull. */
-  sinceEpic = 0;
-  sinceLegendary = 0;
+  /** Rewards that arrived while the inventory was full. Claimable on demand. */
+  mailbox: StoredDrop[] = [];
 
   /** Set once by attach(); identifies the rows this session owns. */
   private playerId = "legacy";
@@ -95,17 +103,14 @@ class GameState {
     this.playerId = id;
     const row = db
       .prepare(
-        `SELECT keys, server_seed, server_seed_hash, client_seed, nonce, created_at, since_epic, since_legendary, collection_seeded
+        `SELECT server_seed, server_seed_hash, client_seed, nonce, created_at, collection_seeded
          FROM lootbox_session WHERE player_id = ?`
       )
       .get(id) as
-      | { keys: number; server_seed: string; server_seed_hash: string; client_seed: string; nonce: number; created_at: string; since_epic: number; since_legendary: number; collection_seeded: number }
+      | { server_seed: string; server_seed_hash: string; client_seed: string; nonce: number; created_at: string; collection_seeded: number }
       | undefined;
 
     if (row) {
-      this.keys = row.keys;
-      this.sinceEpic = row.since_epic ?? 0;
-      this.sinceLegendary = row.since_legendary ?? 0;
       this.current = {
         serverSeed: row.server_seed,
         serverSeedHash: row.server_seed_hash,
@@ -128,19 +133,32 @@ class GameState {
           createdAt: r.created_at,
           retiredAt: r.retired_at
         }));
-      this.inventory = (db
-        .prepare(
-          `SELECT drop_id, payload, locked_by FROM lootbox_drop WHERE player_id = ? ORDER BY seq DESC LIMIT ?`
-        )
-        .all(id, MAX_HISTORY) as any[])
-        // The columns, not the payload, are the authority on a drop's id and
-        // lock state: rows written before ids existed were backfilled there.
-        .map((r) => ({
-          ...(JSON.parse(r.payload) as StoredDrop),
-          id: r.drop_id as string,
-          lockedBy: (r.locked_by as string | null) ?? null
-        }))
-        .reverse();
+
+      const loadDrops = (overflow: number) =>
+        (db
+          .prepare(
+            `SELECT drop_id, payload, locked_by FROM lootbox_drop
+             WHERE player_id = ? AND overflow = ? ORDER BY seq DESC LIMIT ?`
+          )
+          .all(id, overflow, overflow ? MAX_MAILBOX : INVENTORY_CAP * 2) as any[])
+          // The columns, not the payload, are the authority on a drop's id and
+          // lock state: rows written before ids existed were backfilled there.
+          // Rows written before baseMintValue existed get it recovered from
+          // their total minus the star bonus they already carry.
+          .map((r) => {
+            const stored = {
+              ...(JSON.parse(r.payload) as StoredDrop),
+              id: r.drop_id as string,
+              lockedBy: (r.locked_by as string | null) ?? null
+            };
+            if (stored.baseMintValue === undefined) {
+              stored.baseMintValue = baseValueOf(stored.value, stored.character.rarity, stored.stars);
+            }
+            return stored;
+          })
+          .reverse();
+      this.inventory = loadDrops(0);
+      this.mailbox = loadDrops(1);
       // Players whose session predates real starter drops (or who scanned
       // before scans minted drops) get their collection backfilled exactly
       // once — the flag is what stops a sold monster being re-minted for
@@ -176,26 +194,35 @@ class GameState {
 
   /**
    * Mint one owned, sellable drop for a character that never came out of a
-   * crate — the starter six, a barcode scan, a dish photo. Same value ladder
-   * as crate drops (dropNetWorth), placeholder rolls since nothing was
-   * gambled on the outcome.
+   * cookbook — the starter six, a barcode scan. Same band ladder as cookbook
+   * drops, deterministic mid-band placement since nothing was gambled on the
+   * outcome.
    */
-  mintOwnedDrop(character: Character, crateId: string): StoredDrop {
+  mintOwnedDrop(
+    character: Character,
+    crateId: string,
+    mint?: { value: number; rolls: LootDrop["rolls"] }
+  ): StoredDrop {
+    // Callers that rolled their own mint (barcode scans roll segment+position
+    // off the NutritionScore path) pass it through; the default is the
+    // deterministic mid-band placement used for grants nobody gambled on.
+    const baseMintValue =
+      mint?.value ?? mintValue(character.rarity, STARTER_SEGMENT_UNIT, STARTER_POSITION_UNIT);
     return this.record({
       crateId,
       character,
       stars: 1,
-      power: STARTER_POWER,
-      powerLabel: STARTER_POWER_LABEL,
-      shiny: false,
-      value: dropNetWorth(character.rarity, STARTER_POWER_MULTIPLIER, false),
-      // Not a gambling roll — there's nothing here to verify fairness
-      // against, so these are placeholders, not a real commit-reveal.
-      rolls: { rarity: 0, character: 0, power: 0.5, shiny: 0 },
-      pityForced: null,
+      baseMintValue,
+      value: baseMintValue,
+      rolls: mint?.rolls ?? {
+        rarity: 0,
+        character: 0,
+        mintSegment: STARTER_SEGMENT_UNIT,
+        mintPosition: STARTER_POSITION_UNIT
+      },
       fairness: { serverSeedHash: this.current.serverSeedHash, clientSeed: this.current.clientSeed, nonce: -1 },
       openedAt: new Date().toISOString()
-    });
+    }).drop;
   }
 
   /**
@@ -205,7 +232,9 @@ class GameState {
    * `collection_seeded` flag, so it can never resurrect a sold monster.
    */
   private backfillCollectionDrops(): void {
-    const ownedIds = new Set(this.inventory.map((d) => d.character.id));
+    const ownedIds = new Set(
+      [...this.inventory, ...this.mailbox].map((d) => d.character.id)
+    );
     for (const character of sampleCharacters) {
       if (!ownedIds.has(character.id)) this.mintOwnedDrop(character, "starter-roster");
     }
@@ -222,26 +251,20 @@ class GameState {
 
   private persistSession(): void {
     db.prepare(
-      `INSERT INTO lootbox_session (player_id, keys, server_seed, server_seed_hash, client_seed, nonce, created_at, since_epic, since_legendary)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO lootbox_session (player_id, server_seed, server_seed_hash, client_seed, nonce, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT(player_id) DO UPDATE SET
-         keys = excluded.keys,
          server_seed = excluded.server_seed,
          server_seed_hash = excluded.server_seed_hash,
          client_seed = excluded.client_seed,
-         nonce = excluded.nonce,
-         since_epic = excluded.since_epic,
-         since_legendary = excluded.since_legendary`
+         nonce = excluded.nonce`
     ).run(
       this.playerId,
-      this.keys,
       this.current.serverSeed,
       this.current.serverSeedHash,
       this.current.clientSeed,
       this.current.nonce,
-      this.current.createdAt,
-      this.sinceEpic,
-      this.sinceLegendary
+      this.current.createdAt
     );
   }
 
@@ -312,59 +335,56 @@ class GameState {
     };
   }
 
-  // -- economy --------------------------------------------------------------
-
-  spendKeys(amount: number): boolean {
-    // Reject zero/negative/non-integer amounts: `keys < amount` alone lets
-    // spendKeys(0) "succeed" and spendKeys(-n) INCREASE the balance (QA M-001).
-    if (!Number.isInteger(amount) || amount <= 0) return false;
-    if (this.keys < amount) return false;
-    this.keys -= amount;
-    this.persistSession();
-    return true;
-  }
-
-  grantKeys(amount: number): number {
-    this.keys += amount;
-    this.persistSession();
-    return this.keys;
-  }
-
   // -- inventory ------------------------------------------------------------
 
-  record(drop: StoredDrop | Omit<StoredDrop, "id">): StoredDrop {
+  /**
+   * Store a minted drop. If the player's unlocked inventory is already at the
+   * 200-monster cap, the drop goes to the mailbox instead — the spec's
+   * checklist forbids silently discarding a reward, and the old "delete the
+   * oldest unlocked row" behaviour did exactly that.
+   */
+  record(drop: StoredDrop | Omit<StoredDrop, "id">): RecordResult {
     const stored: StoredDrop = "id" in drop && drop.id ? drop : { ...drop, id: randomUUID() };
-    this.inventory.push(stored);
-    db.prepare(`INSERT INTO lootbox_drop (player_id, drop_id, payload) VALUES (?, ?, ?)`).run(
+    const overflowed = this.availableDrops().length >= INVENTORY_CAP;
+    if (overflowed) {
+      this.mailbox.push(stored);
+    } else {
+      this.inventory.push(stored);
+    }
+    db.prepare(`INSERT INTO lootbox_drop (player_id, drop_id, payload, overflow) VALUES (?, ?, ?, ?)`).run(
       this.playerId,
       stored.id,
-      JSON.stringify(stored)
+      JSON.stringify(stored),
+      overflowed ? 1 : 0
     );
-    // The session row stays in step with every inventory write: nonce and
-    // pity counters mutated by the caller are durable by the time the drop
-    // exists, so a restart cannot rewind into used nonces or lost pity.
+    // The session row stays in step with every inventory write: the nonce the
+    // caller consumed is durable by the time the drop exists, so a restart
+    // cannot rewind into a used nonce.
     this.persistSession();
-    // Keep only the newest MAX_HISTORY unlocked rows per player. Locked
-    // (escrowed/staked) monsters are never evicted — deleting one would
-    // strand the round or arena battle that references it.
-    db.prepare(
-      `DELETE FROM lootbox_drop WHERE player_id = ? AND locked_by IS NULL AND seq NOT IN (
-         SELECT seq FROM lootbox_drop WHERE player_id = ? AND locked_by IS NULL ORDER BY seq DESC LIMIT ?
-       )`
-    ).run(this.playerId, this.playerId, MAX_HISTORY);
-    let excess = this.inventory.filter((d) => !d.lockedBy).length - MAX_HISTORY;
-    for (let i = 0; excess > 0 && i < this.inventory.length; ) {
-      if (this.inventory[i].lockedBy) {
-        i++;
-      } else {
-        this.inventory.splice(i, 1);
-        excess--;
-      }
-    }
-    return stored;
+    return { drop: stored, overflowed };
   }
 
-  /** One owned monster by its instance id. */
+  /**
+   * Move mailbox monsters into the inventory, up to the free space. Returns
+   * the ids that actually moved — the caller answers with those, not with a
+   * promise.
+   */
+  claimMailbox(ids: string[]): { claimed: string[]; remaining: number } {
+    const free = INVENTORY_CAP - this.availableDrops().length;
+    const claimable = ids.filter((id) => this.mailbox.some((d) => d.id === id)).slice(0, Math.max(0, free));
+    const statement = db.prepare(
+      `UPDATE lootbox_drop SET overflow = 0 WHERE player_id = ? AND drop_id = ? AND overflow = 1`
+    );
+    for (const id of claimable) {
+      const index = this.mailbox.findIndex((d) => d.id === id);
+      statement.run(this.playerId, id);
+      this.inventory.push(this.mailbox[index]);
+      this.mailbox.splice(index, 1);
+    }
+    return { claimed: claimable, remaining: this.mailbox.length };
+  }
+
+  /** One owned monster by its instance id — inventory only, not the mailbox. */
   dropById(id: string): StoredDrop | undefined {
     return this.inventory.find((drop) => drop.id === id);
   }
@@ -476,23 +496,22 @@ class GameState {
    * nothing at all.
    */
   reset(): void {
-    this.keys = STARTING_KEYS;
     this.current = createSeedPair();
     this.retired = [];
     this.inventory = [];
-    this.sinceEpic = 0;
-    this.sinceLegendary = 0;
+    this.mailbox = [];
     db.prepare(`DELETE FROM lootbox_session WHERE player_id = ?`).run(this.playerId);
     db.prepare(`DELETE FROM lootbox_retired WHERE player_id = ?`).run(this.playerId);
     db.prepare(`DELETE FROM lootbox_drop WHERE player_id = ?`).run(this.playerId);
+    db.prepare(`DELETE FROM pending_case WHERE player_id = ?`).run(this.playerId);
     this.persistSession();
   }
 }
 
 /**
- * Per-player registry. Every player gets an isolated GameState (keys, seeds,
- * inventory) keyed by the X-Player-Id header, hydrated from SQLite on first
- * access so state survives restarts (issue #23).
+ * Per-player registry. Every player gets an isolated GameState (seeds,
+ * inventory, mailbox) keyed by the X-Player-Id header, hydrated from SQLite
+ * on first access so state survives restarts (issue #23).
  */
 const sessions = new Map<string, GameState>();
 const MAX_PLAYERS = Number(process.env.MAX_PLAYERS ?? 10_000);
@@ -517,12 +536,17 @@ export function playerCount(): number {
 }
 
 /**
- * Mint an owned drop for a character that never came out of a crate — a
- * barcode scan, a dish photo. This is what makes "sell or gamble any
- * character" true for monsters the app minted outside the lootbox path.
+ * Mint an owned drop for a character that never came out of a cookbook — a
+ * barcode scan. This is what makes "sell or gamble any character" true for
+ * monsters the app minted outside the lootbox path.
  */
-export function mintCollectionDrop(playerId: string, character: Character, crateId: string): StoredDrop {
-  return stateFor(playerId).mintOwnedDrop(character, crateId);
+export function mintCollectionDrop(
+  playerId: string,
+  character: Character,
+  crateId: string,
+  mint?: { value: number; rolls: LootDrop["rolls"] }
+): StoredDrop {
+  return stateFor(playerId).mintOwnedDrop(character, crateId, mint);
 }
 
 /** Legacy single-session export — kept only so old imports keep compiling.
@@ -532,5 +556,62 @@ state.attach("legacy");
 
 /** Clears one player's session (used by POST /lootbox/reset with a header). */
 export function resetPlayer(playerId: string): void {
-  stateFor(playerId).reset();
+  sessions.get(playerId)?.reset();
+}
+
+// ---------------------------------------------------------------------------
+// Granted Cases (spec §3/§5)
+//
+// A Case is a promise of a monster of one rarity — ranked wins grant them,
+// promos can grant them, and a Cookbook open is conceptually "buy a random
+// Case, open it immediately". Persisted rows keep a granted Case durable
+// across restarts and un-openable twice.
+// ---------------------------------------------------------------------------
+
+export interface PendingCase {
+  caseId: string;
+  rarity: Rarity;
+  /** Who granted it: 'ranked_win', 'promo', ... */
+  source: string;
+  createdAt: string;
+}
+
+/**
+ * Grant a Case of a fixed rarity. Called inside the granter's transaction so
+ * a failed battle/promo never leaves a case behind.
+ */
+export function grantCase(playerId: string, rarity: Rarity, source: string): PendingCase {
+  const row: PendingCase = {
+    caseId: randomUUID(),
+    rarity,
+    source,
+    createdAt: new Date().toISOString()
+  };
+  db.prepare(
+    `INSERT INTO pending_case (case_id, player_id, rarity, source, created_at)
+     VALUES (?, ?, ?, ?, ?)`
+  ).run(row.caseId, playerId, rarity, source, row.createdAt);
+  return row;
+}
+
+/** Cases waiting to be opened, oldest first. */
+export function pendingCases(playerId: string): PendingCase[] {
+  return (db
+    .prepare(`SELECT case_id, rarity, source, created_at FROM pending_case WHERE player_id = ? ORDER BY created_at`)
+    .all(playerId) as { case_id: string; rarity: string; source: string; created_at: string }[])
+    .map((r) => ({ caseId: r.case_id, rarity: r.rarity as Rarity, source: r.source, createdAt: r.created_at }));
+}
+
+/**
+ * Consume a pending case for opening. Returns the row and deletes it — a
+ * delete inside the opener's transaction is what makes a double-open
+ * impossible: the second call sees no row.
+ */
+export function consumeCase(playerId: string, caseId: string): PendingCase | null {
+  const row = db
+    .prepare(`SELECT case_id, rarity, source, created_at FROM pending_case WHERE player_id = ? AND case_id = ?`)
+    .get(playerId, caseId) as { case_id: string; rarity: string; source: string; created_at: string } | undefined;
+  if (!row) return null;
+  db.prepare(`DELETE FROM pending_case WHERE player_id = ? AND case_id = ?`).run(playerId, caseId);
+  return { caseId: row.case_id, rarity: row.rarity as Rarity, source: row.source, createdAt: row.created_at };
 }

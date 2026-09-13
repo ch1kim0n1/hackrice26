@@ -60,7 +60,7 @@ export interface MinesRound {
   startedAt: string;
   cashOutMultiplier: number | null;
   finalNetWorth: number | null;
-  reward: (StoredDrop & { budget: number }) | null;
+  reward: (StoredDrop & { budget: number; overflowed?: boolean }) | null;
   completedAt: string | null;
   fairness: Fairness;
 }
@@ -312,19 +312,17 @@ export function cashOut(playerId: string, roundId: string, now = Date.now()): Mi
     roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, MINES_CURSOR.rewardPower)
   );
 
-  const stored = payoutDrop(playerId, {
+  const { drop: stored, overflowed } = payoutDrop(playerId, {
     crateId: "kitchen-mines",
     character: prize.character,
     stars: prize.stars,
-    power: prize.power,
-    powerLabel: prize.powerLabel,
-    shiny: prize.shiny,
+    baseMintValue: prize.baseMintValue,
     value: prize.value,
     rolls: {
       rarity: 0,
       character: roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, MINES_CURSOR.rewardCharacter),
-      power: roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, MINES_CURSOR.rewardPower),
-      shiny: 0
+      mintSegment: -1,
+      mintPosition: roll(pair.serverSeed, round.fairness.clientSeed, round.fairness.nonce, MINES_CURSOR.rewardPower)
     },
     fairness: round.fairness,
     openedAt: new Date(now).toISOString()
@@ -335,7 +333,7 @@ export function cashOut(playerId: string, roundId: string, now = Date.now()): Mi
     status: "SERVED",
     cashOutMultiplier: multiplier,
     finalNetWorth,
-    reward: { ...stored, budget: prize.budget },
+    reward: { ...stored, budget: prize.budget, overflowed },
     completedAt: new Date(now).toISOString()
   };
   persist(served);

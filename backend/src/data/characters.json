@@ -1,160 +1,244 @@
 {
-  "$comment": "MVP roster (issue #92). Pokedex entries for the 14 established characters. Schema + invariants: src/data/roster.ts. Base net worth is deliberately NOT here -- valuation logic is still to come; today a monster's worth is derived from its rarity band at mint time (game/rarityBands.ts).",
-  "version": 1,
+  "$comment": "Master authored-character catalog (spec §2 checklist). 14 designs, permanent kebab ids, no element, no 4-stat blob, no intrinsic rarity -- a monster's rarity is rolled per instance at mint, never a property of the design. Each entry embeds its 3 authored standard moves + one Mana Special + baseMana (usable only when the instance is Epic+). Move shape is schemas/monster.ts moveSchema: power is a 0-10 multiplier for BaseDamage, accuracy/statusChance are percents, manaCost is 0 on standards. Status vocabulary lives in data/attacks.ts. Invariants enforced in data/roster.ts.",
+  "version": 2,
   "characters": [
     {
       "id": "broccoli-bud",
       "name": "Broccoli Bud",
-      "rarity": "common",
-      "element": "fiber",
       "colorHex": "#5FCB82",
+      "imageKey": "broccoli-bud",
       "tagline": "Small, green, relentlessly wholesome.",
       "bio": "Turns up to every meal early and leaves last. Bud has never won a fight quickly, but it has finished an awful lot of them.",
-      "imageKey": "broccoli-bud",
-      "baseStats": { "power": 28, "guard": 46, "vitality": 34, "tempo": 30 }
+      "baseHealth": 95,
+      "baseAttack": 42,
+      "baseMana": 90,
+      "moves": [
+        { "id": "broccoli-bud-1", "name": "Sprout Jab", "power": 3, "accuracy": 100, "manaCost": 0, "description": "A brisk headbutt from the smallest floret on the team." },
+        { "id": "broccoli-bud-2", "name": "Verdant Slam", "power": 5, "accuracy": 90, "manaCost": 0, "description": "A headbutt with the structural integrity of a cruciferous vegetable." },
+        { "id": "broccoli-bud-3", "name": "Root Guard", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 3, "manaCost": 0, "description": "Digs in and lets the fight come to it." }
+      ],
+      "special": { "id": "broccoli-bud-sp", "name": "Canopy Crush", "power": 8, "accuracy": 85, "manaCost": 40, "description": "The whole garden lands on the opponent at once." }
     },
     {
       "id": "carrot-cadet",
       "name": "Carrot Cadet",
-      "rarity": "common",
-      "element": "vitamin",
       "colorHex": "#F2913D",
+      "imageKey": "carrot-cadet",
       "tagline": "Claims to improve your eyesight.",
       "bio": "Insists it can see in the dark and volunteers for every night patrol. Nobody has been able to prove otherwise, which Cadet considers proof.",
-      "imageKey": "carrot-cadet",
-      "baseStats": { "power": 30, "guard": 28, "vitality": 45, "tempo": 33 }
+      "baseHealth": 105,
+      "baseAttack": 44,
+      "baseMana": 85,
+      "moves": [
+        { "id": "carrot-cadet-1", "name": "Night Patrol Jab", "power": 3.5, "accuracy": 95, "manaCost": 0, "description": "Strikes where it cannot see. Allegedly." },
+        { "id": "carrot-cadet-2", "name": "Vita Flash", "power": 3, "accuracy": 100, "statusEffect": "acc_down", "statusChance": 30, "duration": 2, "manaCost": 0, "description": "A blinding beta-carotene flare." },
+        { "id": "carrot-cadet-3", "name": "Recon Rations", "power": 3, "accuracy": 100, "statusEffect": "heal", "statusChance": 100, "manaCost": 0, "description": "Eats its own supplies mid-fight." }
+      ],
+      "special": { "id": "carrot-cadet-sp", "name": "Midnight Recon", "power": 7.5, "accuracy": 90, "statusEffect": "acc_down", "statusChance": 50, "duration": 2, "manaCost": 35, "description": "Reports back with the opponent's weaknesses, violently." }
     },
     {
       "id": "water-droplet",
       "name": "Water Droplet",
-      "rarity": "common",
-      "element": "hydration",
       "colorHex": "#7CC5E8",
+      "imageKey": "water-droplet",
       "tagline": "Unremarkable until you go without.",
       "bio": "The squadmate nobody picks and everybody misses. Droplet asks for nothing and quietly decides how long the rest of the team lasts.",
-      "imageKey": "water-droplet",
-      "baseStats": { "power": 22, "guard": 30, "vitality": 32, "tempo": 48 }
+      "baseHealth": 90,
+      "baseAttack": 40,
+      "baseMana": 90,
+      "moves": [
+        { "id": "water-droplet-1", "name": "Splash", "power": 3, "accuracy": 100, "manaCost": 0, "description": "Unremarkable. Until you go without." },
+        { "id": "water-droplet-2", "name": "Undertow", "power": 4.5, "accuracy": 90, "statusEffect": "acc_down", "statusChance": 25, "duration": 2, "manaCost": 0, "description": "Pulls the fight down to its level." },
+        { "id": "water-droplet-3", "name": "Mist Veil", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 2, "manaCost": 0, "description": "Becomes briefly ungraspable." }
+      ],
+      "special": { "id": "water-droplet-sp", "name": "Riptide", "power": 8, "accuracy": 85, "statusEffect": "stun", "statusChance": 20, "manaCost": 40, "description": "The polite way to drown someone." }
     },
     {
       "id": "bean-sprout",
       "name": "Bean Sprout",
-      "rarity": "common",
-      "element": "protein",
       "colorHex": "#8FD16A",
+      "imageKey": "bean-sprout",
       "tagline": "Punches slightly above its weight.",
       "bio": "Barely a week old and already picking fights with vegetables twice its size. Sprout wins more of them than the odds allow.",
-      "imageKey": "bean-sprout",
-      "baseStats": { "power": 44, "guard": 26, "vitality": 30, "tempo": 34 }
+      "baseHealth": 85,
+      "baseAttack": 52,
+      "baseMana": 100,
+      "moves": [
+        { "id": "bean-sprout-1", "name": "Quick Jab", "power": 2.5, "accuracy": 100, "manaCost": 0, "description": "Lands before anyone notices it swung." },
+        { "id": "bean-sprout-2", "name": "Underdog Uppercut", "power": 4.5, "accuracy": 95, "manaCost": 0, "description": "Hits harder than anything that size should." },
+        { "id": "bean-sprout-3", "name": "Bulk Up", "power": 0, "accuracy": 100, "statusEffect": "atk_up", "statusChance": 100, "duration": 3, "manaCost": 0, "description": "Pure protein confidence." }
+      ],
+      "special": { "id": "bean-sprout-sp", "name": "Sprout Surge", "power": 8.5, "accuracy": 80, "manaCost": 45, "description": "One week of growth, delivered in a single punch." }
     },
     {
       "id": "spinach-scout",
       "name": "Spinach Scout",
-      "rarity": "uncommon",
-      "element": "vitamin",
       "colorHex": "#3E9B5F",
+      "imageKey": "spinach-scout",
       "tagline": "Wilts dramatically, recovers instantly.",
       "bio": "Collapses at the first sign of heat and is back on its feet before anyone can check on it. The team has stopped worrying; Scout has not stopped collapsing.",
-      "imageKey": "spinach-scout",
-      "baseStats": { "power": 38, "guard": 36, "vitality": 58, "tempo": 40 }
+      "baseHealth": 120,
+      "baseAttack": 46,
+      "baseMana": 80,
+      "moves": [
+        { "id": "spinach-scout-1", "name": "Leaf Slap", "power": 3, "accuracy": 100, "manaCost": 0, "description": "More dignity in the slap than in the scout." },
+        { "id": "spinach-scout-2", "name": "Iron Rebound", "power": 5, "accuracy": 85, "manaCost": 0, "description": "Collapses, then returns the hit with interest." },
+        { "id": "spinach-scout-3", "name": "Play Dead", "power": 3, "accuracy": 100, "statusEffect": "heal", "statusChance": 100, "manaCost": 0, "description": "Wilts dramatically. Recovers instantly." }
+      ],
+      "special": { "id": "spinach-scout-sp", "name": "Second Wind", "power": 7, "accuracy": 90, "statusEffect": "atk_up", "statusChance": 100, "duration": 2, "manaCost": 35, "description": "The collapse was tactical." }
     },
     {
       "id": "almond-knight",
       "name": "Almond Knight",
-      "rarity": "uncommon",
-      "element": "protein",
       "colorHex": "#C08A5E",
+      "imageKey": "almond-knight",
       "tagline": "Armoured in its own shell.",
       "bio": "Arrived already wearing the armour and has never taken it off. Whatever the Knight looks like underneath is a matter of speculation.",
-      "imageKey": "almond-knight",
-      "baseStats": { "power": 56, "guard": 48, "vitality": 34, "tempo": 30 }
+      "baseHealth": 95,
+      "baseAttack": 60,
+      "baseMana": 90,
+      "moves": [
+        { "id": "almond-knight-1", "name": "Nut Crack", "power": 3, "accuracy": 100, "manaCost": 0, "description": "Armour meeting armour." },
+        { "id": "almond-knight-2", "name": "Shellbreaker", "power": 5.5, "accuracy": 90, "manaCost": 0, "description": "Ending badly for one of them." },
+        { "id": "almond-knight-3", "name": "Harden", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 3, "manaCost": 0, "description": "The shell was already there. Now it is more so." }
+      ],
+      "special": { "id": "almond-knight-sp", "name": "Armour Press", "power": 8, "accuracy": 85, "manaCost": 40, "description": "The full weight of the shell, applied deliberately." }
     },
     {
       "id": "salmon-striker",
       "name": "Salmon Striker",
-      "rarity": "rare",
-      "element": "protein",
       "colorHex": "#F08A70",
-      "tagline": "Swims upstream out of principle.",
-      "bio": "Chooses the hardest route available on every single occasion. Striker is not confused about which way the current runs; it simply disagrees.",
       "imageKey": "salmon-striker",
-      "baseStats": { "power": 68, "guard": 40, "vitality": 46, "tempo": 52 }
+      "tagline": "Swims upstream out of principle.",
+      "bio": "Insists it can see in the dark and disagrees with the current. Striker chooses the hardest route available on every single occasion.",
+      "baseHealth": 100,
+      "baseAttack": 66,
+      "baseMana": 100,
+      "moves": [
+        { "id": "salmon-striker-1", "name": "Scale Slap", "power": 3, "accuracy": 100, "manaCost": 0, "description": "A wet, contemptuous slap." },
+        { "id": "salmon-striker-2", "name": "Upstream Rush", "power": 4.5, "accuracy": 95, "manaCost": 0, "description": "Charges directly into whatever current the fight is running." },
+        { "id": "salmon-striker-3", "name": "Spawning Drive", "power": 0, "accuracy": 100, "statusEffect": "atk_up", "statusChance": 100, "duration": 3, "manaCost": 0, "description": "Homeward fury." }
+      ],
+      "special": { "id": "salmon-striker-sp", "name": "Leaping Falls", "power": 8.5, "accuracy": 85, "manaCost": 45, "description": "Clears the waterfall and the opponent in one jump." }
     },
     {
       "id": "avocado-aegis",
       "name": "Avocado Aegis",
-      "rarity": "rare",
-      "element": "fiber",
       "colorHex": "#6C9B4A",
+      "imageKey": "avocado-aegis",
       "tagline": "Ready for exactly eleven minutes.",
       "bio": "Spends most of its life not quite ready and then, briefly, is the best defender on the field. Timing the Aegis is the entire skill.",
-      "imageKey": "avocado-aegis",
-      "baseStats": { "power": 42, "guard": 70, "vitality": 50, "tempo": 36 }
+      "baseHealth": 130,
+      "baseAttack": 48,
+      "baseMana": 110,
+      "moves": [
+        { "id": "avocado-aegis-1", "name": "Pit Toss", "power": 3.5, "accuracy": 95, "manaCost": 0, "description": "Dense. Surprisingly aerodynamic." },
+        { "id": "avocado-aegis-2", "name": "Smash Ripe", "power": 5, "accuracy": 85, "manaCost": 0, "description": "The eleven minutes are now." },
+        { "id": "avocado-aegis-3", "name": "Eleven-Minute Wall", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 3, "manaCost": 0, "description": "Becomes briefly immovable." }
+      ],
+      "special": { "id": "avocado-aegis-sp", "name": "Peak Ripeness", "power": 9, "accuracy": 80, "statusEffect": "atk_up", "statusChance": 100, "duration": 2, "manaCost": 50, "description": "Perfect. For exactly one attack." }
     },
     {
       "id": "kale-colossus",
       "name": "Kale Colossus",
-      "rarity": "epic",
-      "element": "vitamin",
       "colorHex": "#2F6B4F",
+      "imageKey": "kale-colossus",
       "tagline": "Nobody asked for it. It came anyway.",
       "bio": "Appeared one season without invitation and simply would not leave. The Colossus is now the largest thing in the garden and mentions it often.",
-      "imageKey": "kale-colossus",
-      "baseStats": { "power": 58, "guard": 62, "vitality": 78, "tempo": 38 }
+      "baseHealth": 150,
+      "baseAttack": 62,
+      "baseMana": 100,
+      "moves": [
+        { "id": "kale-colossus-1", "name": "Frond Whip", "power": 3, "accuracy": 95, "manaCost": 0, "description": "A leaf the size of a sail." },
+        { "id": "kale-colossus-2", "name": "Gardenquake", "power": 5.5, "accuracy": 85, "manaCost": 0, "description": "The largest thing in the garden lands on you." },
+        { "id": "kale-colossus-3", "name": "Photosynthesise", "power": 3, "accuracy": 100, "statusEffect": "heal", "statusChance": 100, "manaCost": 0, "description": "Stands in the light and repairs itself." }
+      ],
+      "special": { "id": "kale-colossus-sp", "name": "Overgrowth", "power": 8, "accuracy": 85, "statusEffect": "burn", "statusChance": 35, "duration": 3, "manaCost": 45, "description": "The garden expands until the fight is inside it." }
     },
     {
       "id": "chia-chieftain",
       "name": "Chia Chieftain",
-      "rarity": "epic",
-      "element": "fiber",
       "colorHex": "#5B5B6E",
+      "imageKey": "chia-chieftain",
       "tagline": "Expands to fill any vessel.",
       "bio": "Small, patient, and considerably larger than it was an hour ago. The Chieftain has never lost a siege, only outlasted one.",
-      "imageKey": "chia-chieftain",
-      "baseStats": { "power": 50, "guard": 80, "vitality": 60, "tempo": 44 }
+      "baseHealth": 140,
+      "baseAttack": 55,
+      "baseMana": 100,
+      "moves": [
+        { "id": "chia-chieftain-1", "name": "Seed Spit", "power": 3, "accuracy": 100, "manaCost": 0, "description": "A single seed, delivered at speed." },
+        { "id": "chia-chieftain-2", "name": "Siege Expansion", "power": 4, "accuracy": 90, "statusEffect": "atk_up", "statusChance": 100, "duration": 2, "manaCost": 0, "description": "Fills every gap in the defence, then all of yours." },
+        { "id": "chia-chieftain-3", "name": "Hydrogel Bulwark", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 3, "manaCost": 0, "description": "Expands into the incoming hit." }
+      ],
+      "special": { "id": "chia-chieftain-sp", "name": "Absorb All", "power": 7, "accuracy": 90, "statusEffect": "leech", "statusChance": 100, "manaCost": 45, "description": "Takes on the weight of everything thrown at it." }
     },
     {
       "id": "pomegranate-paladin",
       "name": "Pomegranate Paladin",
-      "rarity": "legendary",
-      "element": "vitamin",
       "colorHex": "#C0334D",
+      "imageKey": "pomegranate-paladin",
       "tagline": "Guards a thousand small rubies.",
       "bio": "Carries its entire treasury inside its own armour and will open for no one. Cracking the Paladin has ruined a great many kitchens.",
-      "imageKey": "pomegranate-paladin",
-      "baseStats": { "power": 66, "guard": 72, "vitality": 88, "tempo": 48 }
+      "baseHealth": 155,
+      "baseAttack": 68,
+      "baseMana": 120,
+      "moves": [
+        { "id": "pomegranate-paladin-1", "name": "Aril Shot", "power": 3, "accuracy": 100, "statusEffect": "burn", "statusChance": 25, "duration": 2, "manaCost": 0, "description": "One ruby, spent." },
+        { "id": "pomegranate-paladin-2", "name": "Ruby Barrage", "power": 5.5, "accuracy": 90, "manaCost": 0, "description": "Opens the treasury for exactly one volley." },
+        { "id": "pomegranate-paladin-3", "name": "Vault Wards", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 2, "manaCost": 0, "description": "The armour seals itself." }
+      ],
+      "special": { "id": "pomegranate-paladin-sp", "name": "Sealed Treasury", "power": 9.5, "accuracy": 80, "statusEffect": "burn", "statusChance": 30, "duration": 3, "manaCost": 55, "description": "A thousand rubies, spent at once." }
     },
     {
       "id": "turmeric-titan",
       "name": "Turmeric Titan",
-      "rarity": "legendary",
-      "element": "vitamin",
       "colorHex": "#E3A008",
+      "imageKey": "turmeric-titan",
       "tagline": "Stains everything it touches, permanently.",
       "bio": "Every surface the Titan has ever crossed still bears the mark. It considers this a signature rather than a problem.",
-      "imageKey": "turmeric-titan",
-      "baseStats": { "power": 74, "guard": 58, "vitality": 90, "tempo": 52 }
+      "baseHealth": 160,
+      "baseAttack": 72,
+      "baseMana": 110,
+      "moves": [
+        { "id": "turmeric-titan-1", "name": "Root Smash", "power": 3.5, "accuracy": 95, "manaCost": 0, "description": "A rhizome the size of a fist." },
+        { "id": "turmeric-titan-2", "name": "Golden Stain", "power": 3.5, "accuracy": 95, "statusEffect": "acc_down", "statusChance": 30, "duration": 2, "manaCost": 0, "description": "Marks the target. Permanently." },
+        { "id": "turmeric-titan-3", "name": "Curcumin Guard", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 3, "manaCost": 0, "description": "Anti-inflammatory, anti-your-attack." }
+      ],
+      "special": { "id": "turmeric-titan-sp", "name": "Permanent Mark", "power": 8.5, "accuracy": 85, "statusEffect": "burn", "statusChance": 40, "duration": 3, "manaCost": 50, "description": "The stain outlives the battle." }
     },
     {
       "id": "spirulina-wyrm",
       "name": "Spirulina Wyrm",
-      "rarity": "mythic",
-      "element": "protein",
       "colorHex": "#1F7A6E",
+      "imageKey": "spirulina-wyrm",
       "tagline": "Older than the lakes it sleeps in.",
       "bio": "Was here before the water was, and will be here after. The Wyrm surfaces roughly once a generation and nobody agrees on why.",
-      "imageKey": "spirulina-wyrm",
-      "baseStats": { "power": 92, "guard": 70, "vitality": 84, "tempo": 66 }
+      "baseHealth": 150,
+      "baseAttack": 80,
+      "baseMana": 110,
+      "moves": [
+        { "id": "spirulina-wyrm-1", "name": "Algae Lash", "power": 3.5, "accuracy": 95, "statusEffect": "leech", "statusChance": 50, "manaCost": 0, "description": "The lake's patience, withdrawn." },
+        { "id": "spirulina-wyrm-2", "name": "Ancient Bloom", "power": 6, "accuracy": 85, "manaCost": 0, "description": "Surfaces for the first time this generation." },
+        { "id": "spirulina-wyrm-3", "name": "Still Water", "power": 0, "accuracy": 100, "statusEffect": "guard_up", "statusChance": 100, "duration": 2, "manaCost": 0, "description": "Sinks below the fight for a moment." }
+      ],
+      "special": { "id": "spirulina-wyrm-sp", "name": "Primordial Depths", "power": 9, "accuracy": 85, "statusEffect": "stun", "statusChance": 25, "manaCost": 50, "description": "The lake remembers being an ocean." }
     },
     {
       "id": "the-first-seed",
       "name": "The First Seed",
-      "rarity": "secret",
-      "element": "fiber",
       "colorHex": "#22D3EE",
+      "imageKey": "the-first-seed",
       "tagline": "No record of where it came from.",
       "bio": "There is no entry for the Seed in any almanac, no season it belongs to, and no second one. Only that it is yours now, and that everything else grew from something like it.",
-      "imageKey": "the-first-seed",
-      "baseStats": { "power": 88, "guard": 96, "vitality": 90, "tempo": 82 }
+      "baseHealth": 165,
+      "baseAttack": 82,
+      "baseMana": 130,
+      "moves": [
+        { "id": "the-first-seed-1", "name": "Taproot", "power": 3, "accuracy": 100, "statusEffect": "leech", "statusChance": 50, "manaCost": 0, "description": "The first root still holds." },
+        { "id": "the-first-seed-2", "name": "Genesis Bloom", "power": 6, "accuracy": 90, "manaCost": 0, "description": "Everything else grew from something like this." },
+        { "id": "the-first-seed-3", "name": "Dormancy", "power": 4, "accuracy": 100, "statusEffect": "heal", "statusChance": 100, "manaCost": 0, "description": "Waits out the current era." }
+      ],
+      "special": { "id": "the-first-seed-sp", "name": "Origin Pulse", "power": 10, "accuracy": 80, "statusEffect": "stun", "statusChance": 30, "manaCost": 60, "description": "The thing everything else is a copy of." }
     }
   ]
 }

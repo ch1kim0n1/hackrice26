@@ -18,7 +18,7 @@ struct JourneyView: View {
                         header(journey)
                             .nqSlideUp(delay: 0.05)
                         summaryGrid(journey.summary)
-                        if !journey.timeline.scansByDay.isEmpty || !journey.timeline.cratesByDay.isEmpty {
+                        if !journey.timeline.scansByDay.isEmpty || !journey.timeline.dropsByDay.isEmpty {
                             timelineSection(journey.timeline)
                                 .nqSlideUp(delay: 0.15)
                         }
@@ -29,14 +29,6 @@ struct JourneyView: View {
                                 color: { _ in accent.accent }
                             )
                             .nqSlideUp(delay: 0.2)
-                        }
-                        if !journey.collection.byElement.isEmpty {
-                            distributionSection(
-                                title: "Collection by Element",
-                                data: journey.collection.byElement,
-                                color: { elementColor($0) }
-                            )
-                            .nqSlideUp(delay: 0.25)
                         }
                         if !journey.vitals.isEmpty {
                             vitalsSection(journey.vitals)
@@ -82,8 +74,8 @@ struct JourneyView: View {
                 .font(NQText.displayL.font)
                 .foregroundStyle(NQTheme.ink)
             HStack(spacing: NQTheme.spaceS) {
-                NQChip("Lvl \(journey.profile.level)", filled: true)
-                NQChip("\(journey.profile.streakDays) day streak", icon: .flame)
+                NQChip("\(journey.profile.rr ?? 0) RR", filled: true)
+                NQChip("\(journey.profile.nutritionStreakDays ?? journey.profile.streakDays ?? 0) day streak", icon: .flame)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -95,9 +87,8 @@ struct JourneyView: View {
         let columns = [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())]
         let tiles = [
             ("Scans", summary.totalScans, "barcode.viewfinder"),
-            ("Crates", summary.totalCrateOpens, "gift.fill"),
+            ("Drops", summary.totalDrops, "gift.fill"),
             ("Characters", summary.totalCharacters, "person.3.fill"),
-            ("Keys", summary.currentKeys, "key.fill"),
             ("Loot Value", summary.totalLootValue, "dollarsign.circle.fill"),
             ("Vitals", summary.totalVitalsSnapshots, "heart.fill")
         ]
@@ -152,14 +143,14 @@ struct JourneyView: View {
                         .frame(height: 160)
                     }
 
-                    if !timeline.cratesByDay.isEmpty {
-                        Text("Crates per day")
+                    if !timeline.dropsByDay.isEmpty {
+                        Text("Drops per day")
                             .font(NQText.bodyL.font.weight(.semibold))
                             .foregroundStyle(NQTheme.ink)
-                        Chart(timeline.cratesByDay, id: \.date) { point in
+                        Chart(timeline.dropsByDay, id: \.date) { point in
                             BarMark(
                                 x: .value("Date", point.date),
-                                y: .value("Crates", point.count)
+                                y: .value("Drops", point.count)
                             )
                             .foregroundStyle(NQTheme.inkSubtle)
                             .cornerRadius(4)
@@ -198,16 +189,6 @@ struct JourneyView: View {
                     AxisMarks(position: .leading)
                 }
             }
-        }
-    }
-
-    private func elementColor(_ element: String) -> Color {
-        switch element {
-        case "protein": return Color(hex: 0xFF6B6B)
-        case "fiber": return Color(hex: 0x4ECDC4)
-        case "vitamin": return Color(hex: 0xFFD93D)
-        case "hydration": return Color(hex: 0x56B8F5)
-        default: return NQTheme.inkMuted
         }
     }
 
@@ -282,14 +263,15 @@ struct JourneyView: View {
                 Text(drop.character.name)
                     .font(NQText.bodyL.font.weight(.semibold))
                     .foregroundStyle(NQTheme.ink)
-                Text("\(drop.powerLabel) · value \(drop.value)")
+                Text("\(drop.character.rarity.capitalized) · value \(drop.value)")
                     .font(NQText.microS.font)
                     .foregroundStyle(NQTheme.inkMuted)
             }
             Spacer()
-            if drop.shiny {
-                Image(systemName: "sparkles")
-                    .foregroundStyle(NQTheme.flame)
+            if (drop.stars ?? 1) > 1 {
+                Text("★\(drop.stars ?? 1)")
+                    .font(NQText.captionS.font.weight(.heavy))
+                    .foregroundStyle(NQTheme.gold)
             }
         }
         .nqPadding(.card)
@@ -306,6 +288,4 @@ extension JourneyDistribution: JourneyDistributionItem {
     var label: String { rarity }
 }
 
-extension JourneyElementDistribution: JourneyDistributionItem {
-    var label: String { element }
-}
+

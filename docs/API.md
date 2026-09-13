@@ -35,7 +35,7 @@ Every stateful route requires `X-Player-Id: <id>` — a UUID the client generate
 | `GET /characters/coins` | coin balance |
 | `POST /characters/sell` | `dropIds[]` → coins credited at net worth |
 | `POST /characters/merge` | `dropIds[3]` same character + same rarity + same ★ → one ★+1 drop (keeps source crateId) |
-| `POST /vitals` | HealthKit snapshot (validated); scoped per player |
+| `POST /vitals` | HealthKit snapshot (validated); scoped per player. Producer: the iOS app's `Health/HealthSyncService` (Profile › Connected devices, onboarding, and every foreground) |
 | `GET /vitals/latest`, `/vitals/recent?limit=` | per-player history; limit 1-MAX |
 | `POST /vitals/reset` | clears caller's history only |
 
@@ -94,7 +94,7 @@ Every stateful route requires `X-Player-Id: <id>` — a UUID the client generate
 | `GET /characters/coins` | coin balance |
 | `POST /characters/sell` | `dropIds[]` → coins credited at net worth |
 | `POST /characters/merge` | `dropIds[3]` same character + same rarity + same ★ → one ★+1 drop (keeps source crateId) |
-| `POST /vitals` | HealthKit snapshot (validated); scoped per player |
+| `POST /vitals` | HealthKit snapshot (validated); scoped per player. Producer: the iOS app's `Health/HealthSyncService` (Profile › Connected devices, onboarding, and every foreground) |
 | `GET /vitals/latest`, `/vitals/recent?limit=` | per-player history; limit 1-MAX |
 | `POST /vitals/reset` | clears caller's history only |
 

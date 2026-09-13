@@ -47,7 +47,7 @@ export interface PlinkoDrop {
   multiplier: number;
   finalNetWorth: number;
   /** null when the orb landed on 0x — the monster is spent, nothing returns. */
-  reward: (StoredDrop & { budget: number }) | null;
+  reward: (StoredDrop & { budget: number; overflowed?: boolean }) | null;
   createdAt: string;
   fairness: Fairness;
 }
@@ -76,7 +76,7 @@ function hydrate(row: DropRow): PlinkoDrop {
     slot: row.slot,
     multiplier: row.multiplier,
     finalNetWorth: row.final_net_worth,
-    reward: row.reward ? (JSON.parse(row.reward) as StoredDrop & { budget: number }) : null,
+    reward: row.reward ? (JSON.parse(row.reward) as StoredDrop & { budget: number; overflowed?: boolean }) : null,
     createdAt: row.created_at,
     fairness: JSON.parse(row.fairness) as Fairness
   };
@@ -147,31 +147,29 @@ export function drop(playerId: string, wagerDropId: string, now = Date.now()): P
 
   // A 0x landing is a real outcome, not a failure: the monster is spent and
   // nothing is minted.
-  let reward: (StoredDrop & { budget: number }) | null = null;
+  let reward: (StoredDrop & { budget: number; overflowed?: boolean }) | null = null;
   if (finalNetWorth > 0) {
     const prize: MonsterReward = rewardFor(
       finalNetWorth,
       rollAt(PLINKO_CURSOR.rewardCharacter),
       rollAt(PLINKO_CURSOR.rewardPower)
     );
-    const stored = payoutDrop(playerId, {
+    const { drop: stored, overflowed } = payoutDrop(playerId, {
       crateId: "plinko",
       character: prize.character,
       stars: prize.stars,
-      power: prize.power,
-      powerLabel: prize.powerLabel,
-      shiny: prize.shiny,
+      baseMintValue: prize.baseMintValue,
       value: prize.value,
       rolls: {
         rarity: 0,
         character: rollAt(PLINKO_CURSOR.rewardCharacter),
-        power: rollAt(PLINKO_CURSOR.rewardPower),
-        shiny: 0
+        mintSegment: -1,
+        mintPosition: rollAt(PLINKO_CURSOR.rewardPower)
       },
       fairness,
       openedAt: new Date(now).toISOString()
     }, "plinko");
-    reward = { ...stored, budget: prize.budget };
+    reward = { ...stored, budget: prize.budget, overflowed };
   }
 
   const resolved: PlinkoDrop = {

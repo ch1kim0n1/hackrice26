@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		00D502FC89112C5ECE6CA6F5 /* WorkoutSummary.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E32994F76F52FC4A261194A /* WorkoutSummary.swift */; };
 		03461E13091C8D3EE383DAAB /* DishReviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27A178BC1BCAAA42B0EE0DD8 /* DishReviewView.swift */; };
 		04EB62BF0CA027847B8DF200 /* HumanGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39D1677FC4D6136C587AA8EA /* HumanGateView.swift */; };
 		0653B227DAE320B30676A856 /* BattleEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C2E0CA4A793739737B7568 /* BattleEngineTests.swift */; };
@@ -21,11 +22,13 @@
 		23C68A3FADC8D61259313557 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64CE10476129B1ED098A63A /* HomeView.swift */; };
 		2990358D29CF67F59C5A6935 /* BattleHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD52285DC114B6B2660F977D /* BattleHubView.swift */; };
 		2B5242112D570192B6879AA6 /* NutriQuestApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3760A6F93969CB515E706B1 /* NutriQuestApp.swift */; };
+		2C603B97017B76B6A4424FCC /* HealthKitManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 75591C47CFE5CD1E720436E9 /* HealthKitManager.swift */; };
 		2C9F1E9442FC35F13F6C032D /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 82930BA2971F8DBFDBBC9EF6 /* SessionStore.swift */; };
 		3954C97B71E2F2A26AF86F32 /* LANLobbyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 285167B39A9F98AC073AEE70 /* LANLobbyView.swift */; };
 		3AF44E9524682DB3FAD7B4DE /* JourneyView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D8A9CAFEA349E7337340C4C /* JourneyView.swift */; };
 		3E0BF30C14366382DC08E336 /* ProfileView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97CA1129653E7E25D7307C6A /* ProfileView.swift */; };
 		3E1ADC414C9F6266F1820D09 /* Color+Hex.swift in Sources */ = {isa = PBXBuildFile; fileRef = 879294FA1B86E90585A7AA7F /* Color+Hex.swift */; };
+		40C916385FDDFE43E25DA4C2 /* HealthSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8CB555000F6EF6D413B7DFB8 /* HealthSyncService.swift */; };
 		41A88104A1DFA600EEA689AF /* ScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7CBDD0600B8249A61929B154 /* ScanView.swift */; };
 		42A9DFE50004FC1709A4B4E8 /* LeaderboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 52369D9BC6D2E80B6F54DD7D /* LeaderboardView.swift */; };
 		444DAF3851E02D2D49C02C6E /* CauldronCashOutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BE25C65283FB213EE72D1B3A /* CauldronCashOutTests.swift */; };
@@ -60,7 +63,6 @@
 		9DFF4F0CD03EBB752BD80CF9 /* LANMultipeer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0403DFF8FEDD08659E4414E2 /* LANMultipeer.swift */; };
 		9E0D5BB49EC4E818E61DDA35 /* CharacterDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4C3894E067CAE94B508A12A /* CharacterDetailView.swift */; };
 		9F642EDAD1101AE0D9F9CAAF /* KitBridging.swift in Sources */ = {isa = PBXBuildFile; fileRef = F4E494C697135C3755277737 /* KitBridging.swift */; };
-		A1BEEEFAB61D182668862FC0 /* game-assets in Resources */ = {isa = PBXBuildFile; fileRef = 74A3B685DED14D3DB81E25D9 /* game-assets */; };
 		A4B629DF4C1C98E407FC9CA8 /* CollectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCAEF89F81FE0EDB05A590CA /* CollectionView.swift */; };
 		A606A919398F9CA975DC1196 /* LANProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = 62E571A5A296E0327AC3EED9 /* LANProtocol.swift */; };
 		B13687DB1585311112E3219C /* StatType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1F67C1ADDA4258BE80A784CD /* StatType.swift */; };
@@ -68,6 +70,7 @@
 		BB057BEABE205F6E1F111907 /* RootTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A895E0E755FBC76AA59CACBB /* RootTabView.swift */; };
 		BB0A0D0C4741620940C89FE1 /* BattleKit in Frameworks */ = {isa = PBXBuildFile; productRef = 12EF5FB9A8BCA4EEB940C570 /* BattleKit */; };
 		BCBD4BCDC53578B1E775F112 /* WatchConnectView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64173722F51710D196A6C3F7 /* WatchConnectView.swift */; };
+		BEE10240A1B1AC028DE4C5F3 /* game-assets in Resources */ = {isa = PBXBuildFile; fileRef = 78D9E2ED4C99CA863D1F242E /* game-assets */; };
 		C0296742AF08312A6682855E /* LANTournamentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 23CE9A03DDD3B2F84BD11D9B /* LANTournamentTests.swift */; };
 		C071CE30CE3D8A263A229059 /* LaunchGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBB319994EBB87A6BAA41508 /* LaunchGateView.swift */; };
 		C0C9255AED877997786E820B /* LANProtocolTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C6FC0540636169213ADE2B /* LANProtocolTests.swift */; };
@@ -82,6 +85,7 @@
 		D25A48BFBDFC8D07B9865590 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = F50179EE5AAEE08C0FCB81A5 /* Fonts */; };
 		D29A87BF4AE1A58B668ECF6D /* FoodDataService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8AD2876558076202EA95115B /* FoodDataService.swift */; };
 		D46BC08A405AD317016E0EF9 /* SquadPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F941A4022E72AD7BEC6DB964 /* SquadPickerView.swift */; };
+		D5D7EED529F03A9576289678 /* HealthKitSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C822A50B46EBDCFD6D0A406A /* HealthKitSnapshot.swift */; };
 		D63454F9FF40922A4939FBC0 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137936CDB011C5B7E6FE06BD /* APIModels.swift */; };
 		DCAAA79A9A71F0D07380BEBF /* BodyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C030FB0134776A73A42C9F1B /* BodyMetricsTests.swift */; };
 		E08A2EE722652550140909CD /* LANSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A8F56ABF6DD4934679CE67 /* LANSession.swift */; };
@@ -91,6 +95,7 @@
 		EAAB967F70349AFCD7271B73 /* LANHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F04A367FE902628B6C91D40 /* LANHost.swift */; };
 		EB98860670275942ACDD229F /* LANHostIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4276CE36E6E9F75F9425C903 /* LANHostIntegrationTests.swift */; };
 		EE7EF50636EA1FA9DFB240A0 /* Rarity.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6A6E74A63D448AB2789D4DE /* Rarity.swift */; };
+		F943B2CDAD2887D377AAF138 /* HealthKitSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D82D7B1DDA55C8F24D3A468 /* HealthKitSnapshotTests.swift */; };
 		FA8A3C6E9ADA720D64BB26BA /* NQAchievements.swift in Sources */ = {isa = PBXBuildFile; fileRef = 14BBE6DFC4F647C941CAC824 /* NQAchievements.swift */; };
 		FBE44ED222DEF20EC8A9410D /* Character.swift in Sources */ = {isa = PBXBuildFile; fileRef = 99A3574F110807E98AD10ED7 /* Character.swift */; };
 		FFD34A1A8E919630A9E2CC48 /* BattleReplayMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5798E49E21720763CE0AE0E6 /* BattleReplayMapper.swift */; };
@@ -117,6 +122,7 @@
 		15F4374A030705C10CB3419A /* CasinoHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CasinoHubView.swift; sourceTree = "<group>"; };
 		18EB6CF6C45D8D8C3BC90B76 /* LANClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANClient.swift; sourceTree = "<group>"; };
 		1C6C1A080D8038405488E203 /* ScannerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScannerView.swift; sourceTree = "<group>"; };
+		1D82D7B1DDA55C8F24D3A468 /* HealthKitSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSnapshotTests.swift; sourceTree = "<group>"; };
 		1F67C1ADDA4258BE80A784CD /* StatType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatType.swift; sourceTree = "<group>"; };
 		205934A45344A61D0CE98920 /* BattleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleView.swift; sourceTree = "<group>"; };
 		2158CFD64CCE3C30F4C01624 /* ScanPipelineTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanPipelineTests.swift; sourceTree = "<group>"; };
@@ -146,14 +152,17 @@
 		62E571A5A296E0327AC3EED9 /* LANProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANProtocol.swift; sourceTree = "<group>"; };
 		64173722F51710D196A6C3F7 /* WatchConnectView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchConnectView.swift; sourceTree = "<group>"; };
 		684E036C4AE5581378F5F4D7 /* OnboardingStepViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingStepViews.swift; sourceTree = "<group>"; };
-		74A3B685DED14D3DB81E25D9 /* game-assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "game-assets"; path = "../game-assets"; sourceTree = SOURCE_ROOT; };
+		6E32994F76F52FC4A261194A /* WorkoutSummary.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkoutSummary.swift; sourceTree = "<group>"; };
+		75591C47CFE5CD1E720436E9 /* HealthKitManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitManager.swift; sourceTree = "<group>"; };
 		75E3F7281A314FBA8931CA9F /* ImageColorExtractor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageColorExtractor.swift; sourceTree = "<group>"; };
+		78D9E2ED4C99CA863D1F242E /* game-assets */ = {isa = PBXFileReference; lastKnownFileType = folder; name = "game-assets"; path = "../game-assets"; sourceTree = SOURCE_ROOT; };
 		7AB602D2B3D6DBF6725D2720 /* HealthDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDashboardView.swift; sourceTree = "<group>"; };
 		7CBDD0600B8249A61929B154 /* ScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScanView.swift; sourceTree = "<group>"; };
 		7F88BB3D3BA8DC5A2E7D877E /* BodyMetricsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BodyMetricsView.swift; sourceTree = "<group>"; };
 		82930BA2971F8DBFDBBC9EF6 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		879294FA1B86E90585A7AA7F /* Color+Hex.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Color+Hex.swift"; sourceTree = "<group>"; };
 		8AD2876558076202EA95115B /* FoodDataService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FoodDataService.swift; sourceTree = "<group>"; };
+		8CB555000F6EF6D413B7DFB8 /* HealthSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncService.swift; sourceTree = "<group>"; };
 		8CD9A140A0FB687BDE8C7D1D /* CharacterFactory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CharacterFactory.swift; sourceTree = "<group>"; };
 		90F2B16B629FEE5AB15F5B40 /* CauldronCrashView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CauldronCrashView.swift; sourceTree = "<group>"; };
 		97CA1129653E7E25D7307C6A /* ProfileView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileView.swift; sourceTree = "<group>"; };
@@ -172,6 +181,7 @@
 		C2A8F56ABF6DD4934679CE67 /* LANSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANSession.swift; sourceTree = "<group>"; };
 		C51E6884EBB9D25602808EF7 /* GymCheckView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GymCheckView.swift; sourceTree = "<group>"; };
 		C6C3DB05E7C0029DFC4918CE /* LANHostMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANHostMatch.swift; sourceTree = "<group>"; };
+		C822A50B46EBDCFD6D0A406A /* HealthKitSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitSnapshot.swift; sourceTree = "<group>"; };
 		CCAEF89F81FE0EDB05A590CA /* CollectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CollectionView.swift; sourceTree = "<group>"; };
 		D4A367D08DD5A7DABD1176DA /* CauldronCashOut.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CauldronCashOut.swift; sourceTree = "<group>"; };
 		D7FBC0B430D9F714B0E2BBF8 /* GameState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameState.swift; sourceTree = "<group>"; };
@@ -246,6 +256,7 @@
 				D8768A5DA1CF563EA0B0E887 /* GameArt.swift */,
 				65A40832A6D3ED5B06518E1B /* App */,
 				30A038EBB358F1385BEC4CD3 /* DesignSystem */,
+				3615FF2755680FAC8EECF2AE /* Health */,
 				1912C75BD362A8854FD16893 /* LAN */,
 				BC071324A9969672C9946791 /* Models */,
 				9B36112ECAC6027CDE65E66B /* Networking */,
@@ -297,6 +308,17 @@
 			path = DesignSystem;
 			sourceTree = "<group>";
 		};
+		3615FF2755680FAC8EECF2AE /* Health */ = {
+			isa = PBXGroup;
+			children = (
+				75591C47CFE5CD1E720436E9 /* HealthKitManager.swift */,
+				C822A50B46EBDCFD6D0A406A /* HealthKitSnapshot.swift */,
+				8CB555000F6EF6D413B7DFB8 /* HealthSyncService.swift */,
+				6E32994F76F52FC4A261194A /* WorkoutSummary.swift */,
+			);
+			path = Health;
+			sourceTree = "<group>";
+		};
 		42B40135569EAEEF87946777 /* Onboarding */ = {
 			isa = PBXGroup;
 			children = (
@@ -317,7 +339,7 @@
 		5281ADD134160CC82821B949 = {
 			isa = PBXGroup;
 			children = (
-				F2330B128949E287BAF5D174 /* hackrice26-precode */,
+				87FD99F4F1FC4A31C06832D4 /* hackrice26 */,
 				0C9AA11D1B21A8AA807CDCBE /* Packages */,
 				47D65886E7831EFCD0FFF7A0 /* Resources */,
 				1E8F46EA117D935C10055799 /* Sources */,
@@ -338,6 +360,15 @@
 				A895E0E755FBC76AA59CACBB /* RootTabView.swift */,
 			);
 			path = App;
+			sourceTree = "<group>";
+		};
+		87FD99F4F1FC4A31C06832D4 /* hackrice26 */ = {
+			isa = PBXGroup;
+			children = (
+				78D9E2ED4C99CA863D1F242E /* game-assets */,
+			);
+			name = hackrice26;
+			path = ..;
 			sourceTree = "<group>";
 		};
 		9B14DF41234D20B01F0C483D /* Tests */ = {
@@ -368,6 +399,7 @@
 				C030FB0134776A73A42C9F1B /* BodyMetricsTests.swift */,
 				BE25C65283FB213EE72D1B3A /* CauldronCashOutTests.swift */,
 				ED14063699D4A328F1173D67 /* GameArtTests.swift */,
+				1D82D7B1DDA55C8F24D3A468 /* HealthKitSnapshotTests.swift */,
 				4276CE36E6E9F75F9425C903 /* LANHostIntegrationTests.swift */,
 				DE76EE310D51FB67A9F7B65F /* LANHostMatchTests.swift */,
 				F6C6FC0540636169213ADE2B /* LANProtocolTests.swift */,
@@ -446,15 +478,6 @@
 				42B40135569EAEEF87946777 /* Onboarding */,
 			);
 			path = Screens;
-			sourceTree = "<group>";
-		};
-		F2330B128949E287BAF5D174 /* hackrice26-precode */ = {
-			isa = PBXGroup;
-			children = (
-				74A3B685DED14D3DB81E25D9 /* game-assets */,
-			);
-			name = "hackrice26-precode";
-			path = ..;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -561,7 +584,7 @@
 				7DD51A43094A15FBA71D4806 /* Assets.xcassets in Resources */,
 				65C4F2F89BCB97CFF3F31DFB /* Characters.xcassets in Resources */,
 				D25A48BFBDFC8D07B9865590 /* Fonts in Resources */,
-				A1BEEEFAB61D182668862FC0 /* game-assets in Resources */,
+				BEE10240A1B1AC028DE4C5F3 /* game-assets in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -576,6 +599,7 @@
 				DCAAA79A9A71F0D07380BEBF /* BodyMetricsTests.swift in Sources */,
 				444DAF3851E02D2D49C02C6E /* CauldronCashOutTests.swift in Sources */,
 				9124D0F77A75B6F43BF1941D /* GameArtTests.swift in Sources */,
+				F943B2CDAD2887D377AAF138 /* HealthKitSnapshotTests.swift in Sources */,
 				EB98860670275942ACDD229F /* LANHostIntegrationTests.swift in Sources */,
 				E3851D2F8079148F483B030A /* LANHostMatchTests.swift in Sources */,
 				C0C9255AED877997786E820B /* LANProtocolTests.swift in Sources */,
@@ -621,6 +645,9 @@
 				9DE7D4A7F8EA165ABE69CFCC /* GameState.swift in Sources */,
 				477012855040D758559170D4 /* GymCheckView.swift in Sources */,
 				8F88172B7F72EC5200D5E82C /* HealthDashboardView.swift in Sources */,
+				2C603B97017B76B6A4424FCC /* HealthKitManager.swift in Sources */,
+				D5D7EED529F03A9576289678 /* HealthKitSnapshot.swift in Sources */,
+				40C916385FDDFE43E25DA4C2 /* HealthSyncService.swift in Sources */,
 				23C68A3FADC8D61259313557 /* HomeView.swift in Sources */,
 				04EB62BF0CA027847B8DF200 /* HumanGateView.swift in Sources */,
 				9BF7AD79D721D0EF56E68D49 /* ImageColorExtractor.swift in Sources */,
@@ -658,6 +685,7 @@
 				D46BC08A405AD317016E0EF9 /* SquadPickerView.swift in Sources */,
 				B13687DB1585311112E3219C /* StatType.swift in Sources */,
 				BCBD4BCDC53578B1E775F112 /* WatchConnectView.swift in Sources */,
+				00D502FC89112C5ECE6CA6F5 /* WorkoutSummary.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -763,11 +791,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Support/NutriQuest.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Support/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "NutriQuest scans food barcodes and meal photos to summon characters.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "NutriQuest reads your steps, heart rate, activity rings and workouts from Apple Watch to boost your daily stats.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NutriQuest finds friends on the same Wi-Fi so you can battle nearby.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "NutriQuest can use a meal photo from your library when the camera isn't available.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -839,11 +869,13 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = Support/NutriQuest.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Support/Info.plist;
 				INFOPLIST_KEY_NSCameraUsageDescription = "NutriQuest scans food barcodes and meal photos to summon characters.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "NutriQuest reads your steps, heart rate, activity rings and workouts from Apple Watch to boost your daily stats.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "NutriQuest finds friends on the same Wi-Fi so you can battle nearby.";
 				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "NutriQuest can use a meal photo from your library when the camera isn't available.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { CHARACTERS, RARITY_ORDER, RARITY_TIERS, RARITY_TOTAL } from "../data/lootTable";
+import { COOKBOOKS, RARITY_ORDER, RARITY_TIERS, RARITY_TOTAL } from "../data/lootTable";
 import { RARITY_MULT } from "./battle";
 import { Rarity } from "../types";
 
@@ -23,9 +23,8 @@ import { Rarity } from "../types";
 const battleAcceptedTiers = new Set<string>(Object.keys(RARITY_MULT));
 
 describe("rarity parity", () => {
-  it("every tier the loot table can drop is battle-legal", () => {
-    const droppable = new Set(Object.values(CHARACTERS).map((c) => c.rarity));
-    const rejected = [...droppable].filter((r) => !battleAcceptedTiers.has(r));
+  it("every tier a cookbook can mint is battle-legal", () => {
+    const rejected = RARITY_ORDER.filter((r) => !battleAcceptedTiers.has(r));
     expect(rejected).toEqual([]);
   });
 
@@ -64,8 +63,11 @@ describe("rarity parity", () => {
     expect(sum).toBe(RARITY_TOTAL);
   });
 
-  it("every tier is reachable from at least one crate character", () => {
-    const covered = new Set(Object.values(CHARACTERS).map((c) => c.rarity));
-    for (const id of RARITY_ORDER) expect(covered.has(id)).toBe(true);
+  it("every tier is reachable from at least one cookbook", () => {
+    // Rarity lives on the instance now: a mint rolls a tier, then any design
+    // can carry it. Every tier must have non-zero odds in some book.
+    for (const id of RARITY_ORDER) {
+      expect(COOKBOOKS.some((book) => (book.odds[id] ?? 0) > 0)).toBe(true);
+    }
   });
 });

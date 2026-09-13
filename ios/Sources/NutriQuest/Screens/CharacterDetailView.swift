@@ -12,7 +12,7 @@ struct CharacterDetailView: View {
     @Environment(\.nqAccent) private var accent
     @State private var settingDisplay = false
 
-    private var stats: FoodCharacter? {
+    private var stats: BattleUnitSpec? {
         character.isLocked ? nil : gameState.battleStats(for: character)
     }
 
@@ -94,9 +94,9 @@ struct CharacterDetailView: View {
                 .background(RoundedRectangle(cornerRadius: NQTheme.radiusS).fill(character.rarity.badgeBackground))
 
             HStack(spacing: 5) {
-                Image(systemName: character.statType.systemImageName)
+                Image(systemName: "star.fill")
                     .font(.system(size: 12, weight: .bold))
-                Text(character.statType.label)
+                Text("★\(character.starLevel)")
                     .font(NQText.captionS.font.weight(.bold))
             }
             .foregroundStyle(accent.accentDark)
@@ -141,25 +141,29 @@ struct CharacterDetailView: View {
             .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .soft)
     }
 
-    private func statBlock(_ fc: FoodCharacter) -> some View {
-        let scaled = fc.baseStats.scaled(by: fc.rarity, fusionTier: fc.fusionTier)
-        let maxValue = max(scaled.power, scaled.guard, scaled.vitality, scaled.tempo, 1)
+    /// Effective (rarity × star scaled) combat figures — what the unit
+    /// actually fights with, matching the server engine's scaling.
+    private func statBlock(_ unit: BattleUnitSpec) -> some View {
+        let maxValue = max(unit.maxHP, unit.effectiveAttack, 1)
 
         return VStack(alignment: .leading, spacing: NQTheme.spaceM - 2) {
             Text("Battle Stats")
                 .font(NQText.heading.font)
                 .foregroundStyle(NQTheme.ink)
             VStack(spacing: NQTheme.spaceS + 2) {
-                statRow("Power", scaled.power, maxValue, NQTheme.warning)
-                statRow("Guard", scaled.guard, maxValue, accent.accentDark)
-                statRow("Vitality", scaled.vitality, maxValue, NQTheme.success)
-                statRow("Tempo", scaled.tempo, maxValue, NQTheme.info)
+                statRow("Health", unit.maxHP, maxValue, NQTheme.success)
+                statRow("Attack", unit.effectiveAttack, maxValue, NQTheme.warning)
             }
-            if fc.fusionTier > 0 {
+            if unit.baseMana != nil {
+                Text("Mana \(unit.startingMana) — Special Ability available")
+                    .font(NQText.captionS.font.weight(.bold))
+                    .foregroundStyle(NQTheme.info)
+            }
+            if unit.star > 1 {
                 HStack(spacing: NQTheme.spaceS) {
                     NQAssetImage("star-badge")
                         .frame(width: 28, height: 28)
-                    Text("★\(fc.fusionTier) fusion, +\(fc.fusionTier * 8)% stats")
+                    Text("★\(unit.star) — stats scale with stars")
                         .font(NQText.captionS.font.weight(.bold))
                         .foregroundStyle(NQTheme.gold)
                 }

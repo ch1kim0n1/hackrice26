@@ -89,8 +89,7 @@ struct CaseRouletteStrip: View {
                 id: character.id,
                 name: character.name,
                 colorHex: character.colorHex,
-                rarity: rarity,
-                statType: StatType(rawValue: character.statType) ?? .fiber
+                rarity: rarity
             )
         )
         .padding(6)

@@ -23,6 +23,8 @@ struct ProfileView: View {
     /// QA hook, matching RootTabView's `-uiTab`: `-uiHumanGate` launches
     /// straight into the human-gate web game for screenshots/demo.
     @State private var showHumanGate = ProcessInfo.processInfo.arguments.contains("-uiHumanGate")
+    /// `-uiWatch` opens Connected devices (WatchConnectView) directly.
+    @State private var showWatchQA = ProcessInfo.processInfo.arguments.contains("-uiWatch")
     /// QA hook: `-uiBodyMetrics` opens the body-and-goals editor directly.
     @State private var showBodyMetrics = ProcessInfo.processInfo.arguments.contains("-uiBodyMetrics")
 
@@ -34,7 +36,7 @@ struct ProfileView: View {
                     .font(NQText.displayL.font)
                     .foregroundStyle(NQTheme.ink)
                     .nqSlideUp(delay: 0.05)
-                xpBar.nqSlideUp(delay: 0.1)
+                rankCard.nqSlideUp(delay: 0.1)
                 if profileLoading && gameState.profile == nil {
                     NQSkeleton(height: 64, cornerRadius: NQTheme.radiusL)
                     NQSkeleton(height: 180, cornerRadius: NQTheme.radiusL)
@@ -59,6 +61,17 @@ struct ProfileView: View {
         .fullScreenCover(isPresented: $showHumanGate) {
             HumanGateView()
         }
+        .fullScreenCover(isPresented: $showWatchQA) {
+            NavigationStack {
+                WatchConnectView(step: .prompt)
+                    .toolbar {
+                        ToolbarItem(placement: .cancellationAction) {
+                            Button("Close") { showWatchQA = false }
+                        }
+                    }
+            }
+            .environmentObject(gameState)
+        }
         .fullScreenCover(isPresented: $showBodyMetrics) {
             NavigationStack {
                 BodyMetricsView(gameState: gameState, metrics: gameState.bodyMetrics)
@@ -66,28 +79,32 @@ struct ProfileView: View {
         }
     }
 
-    // MARK: - XP bar
+    // MARK: - Rank card
 
-    /// Lifetime progression: level badge + animated fill + "x / y XP to
-    /// next level" — pulled from the server-derived progression block.
-    private var xpBar: some View {
-        let prog = gameState.progression
-        let level = prog?.level ?? gameState.profile?.level ?? 1
-        let into = prog?.xpIntoLevel ?? 0
-        let needed = prog?.xpForLevel ?? 100
-        let progress = prog?.progress ?? 0
+    /// Ranked standing (spec §5): rank label + RR inside the 100-RR band,
+    /// with the ranked record and nutrition streak alongside. No XP — the
+    /// spec has no levels.
+    private var rankCard: some View {
+        let rr = gameState.rank?.rr ?? gameState.profile?.rr ?? 0
+        let label = gameState.rank?.rankLabel ?? "Iron"
+        // Progress within the current rank band: RR modulo the band floor.
+        let bandProgress = Double(rr % 100) / 100
+        let toNext = gameState.rank?.rrToNextRank
+        let wins = gameState.record?.rankedWins ?? 0
+        let losses = gameState.record?.rankedLosses ?? 0
+        let winRate = gameState.record?.winRate ?? 0
 
         return VStack(spacing: NQTheme.spaceXS) {
             HStack {
                 HStack(spacing: 6) {
                     NQIcon.sparkle.view.frame(width: 12, height: 12)
                         .foregroundStyle(NQTheme.gold)
-                    Text("Level \(level)")
+                    Text(label)
                         .font(NQText.caption.font.weight(.bold))
                         .foregroundStyle(NQTheme.ink)
                 }
                 Spacer()
-                Text("\(into) / \(needed) XP")
+                Text(toNext.map { "\($0) RR to next rank" } ?? "Top rank")
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.inkMuted)
                     .contentTransition(.numericText())
@@ -99,16 +116,33 @@ struct ProfileView: View {
                     Capsule()
                         .fill(LinearGradient(colors: [NQTheme.gold, NQTheme.flame],
                                              startPoint: .leading, endPoint: .trailing))
-                        .frame(width: geo.size.width * progress)
-                        .animation(NQMotion.springy, value: progress)
+                        .frame(width: geo.size.width * bandProgress)
+                        .animation(NQMotion.springy, value: bandProgress)
                 }
             }
             .frame(height: 10)
+
+            HStack {
+                Text("\(rr) RR")
+                    .font(NQText.captionS.font.weight(.bold))
+                    .foregroundStyle(NQTheme.gold)
+                Spacer()
+                Text("\(wins)W \(losses)L · \(Int(winRate * 100))%")
+                    .font(NQText.captionS.font)
+                    .foregroundStyle(NQTheme.inkMuted)
+                if let streakDays = gameState.streak?.days, streakDays > 0 {
+                    Text("·")
+                        .foregroundStyle(NQTheme.inkFaint)
+                    Text("\(streakDays)d streak")
+                        .font(NQText.captionS.font)
+                        .foregroundStyle(NQTheme.inkMuted)
+                }
+            }
         }
         .nqPadding(.card)
         .nqSurface(.sticker)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel("Level \(level), \(into) of \(needed) XP to next level")
+        .accessibilityLabel("\(label) rank, \(rr) rating points, \(wins) wins, \(losses) losses")
     }
 
     @EnvironmentObject private var gameState: GameState

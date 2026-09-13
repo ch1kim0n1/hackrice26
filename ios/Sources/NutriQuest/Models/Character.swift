@@ -16,23 +16,25 @@ struct Character: Identifiable, Codable, Equatable {
     /// The character's own color — becomes the app accent color whenever this
     /// character is active (colorMode == .active) or suggested (.bestUnselected).
     var colorHex: String
+    /// Sprite/art lookup key from the master catalog — the checked-in asset
+    /// name. nil for local placeholders, which fall back to the id.
+    var imageKey: String? = nil
     var rarity: Rarity
-    var statType: StatType
+    /// Source-neutral combat stats (final-dev-doc §2): the rolled instance's
+    /// Health and Base Attack before rarity/star scaling, plus Mana on Epic+.
+    /// Replaces the old power/guard/vitality/tempo blob and the element model.
+    var baseHealth: Double = 100
+    var baseAttack: Double = 50
+    /// Mana pool — only Epic-and-higher instances carry Mana at all.
+    var baseMana: Double? = nil
     var isLocked: Bool = false
-    /// produce/grain/dairy/protein/other, for characters summoned from a
-    /// photographed dish. Shapes the procedural artwork so different kinds of
-    /// meal read as different creatures rather than one recolored mascot.
-    /// nil for barcode scans and the hand-drawn starter roster.
-    var foodGroup: String? = nil
-    /// Holo variant from a crate pull — cosmetic sparkle + doubled value.
-    var isShiny: Bool = false
-    /// Mastery, ★1–★5 (see backend/src/game/power.ts). Every monster starts
-    /// at ★1; fusing raises it.
+    /// Mastery, ★1–★5 (Secret caps at ★2). Every monster starts at ★1;
+    /// fusing raises it.
     var starLevel: Int = 1
     /// Pokédex entry, shown on the character sheet. Comes off the wire with a
-    /// crate pull or a dish summon (`flavor`); nil for the starter roster,
-    /// which `CharacterBios` fills in locally so the sheet reads the same
-    /// offline.
+    /// cookbook pull or scan mint (`flavor`/`bio`); nil for the starter
+    /// roster, which `CharacterBios` fills in locally so the sheet reads the
+    /// same offline.
     var bio: String? = nil
     /// Real, server-tracked drop instance ids this card represents — one
     /// entry per pull, several when the same character was pulled more than
@@ -47,6 +49,16 @@ struct Character: Identifiable, Codable, Equatable {
     /// the inventory sync. Merge needs it because the backend fuses three
     /// same-character *and* same-rarity *and* same-star instances.
     var dropMeta: [String: DropMeta] = [:]
+
+    /// Cosmetic chest-badge category for the procedural chibi. Stat types are
+    /// gone from the game itself — this stays only so `ChibiCharacterView`
+    /// keeps a stable, varied glyph per character. Deterministic on the id,
+    /// never sent to or decoded from the backend.
+    var statType: StatType {
+        let kinds = StatType.allCases
+        let hash = baseID.utf8.reduce(5381) { ($0 &* 33) &+ Int($1) }
+        return kinds[abs(hash) % kinds.count]
+    }
 
     /// Whether the server actually owns this as a sellable/wagerable drop.
     var isSellable: Bool { !dropIDs.isEmpty }
@@ -94,11 +106,12 @@ struct Character: Identifiable, Codable, Equatable {
             id: Self.lanOpponentPrefix + baseID,
             name: name,
             colorHex: colorHex,
+            imageKey: imageKey,
             rarity: rarity,
-            statType: statType,
+            baseHealth: baseHealth,
+            baseAttack: baseAttack,
+            baseMana: baseMana,
             isLocked: isLocked,
-            foodGroup: foodGroup,
-            isShiny: isShiny,
             starLevel: starLevel,
             bio: bio
         )
@@ -110,42 +123,36 @@ struct Character: Identifiable, Codable, Equatable {
     }
 
     /// Cartoon sprite in `game-assets/`. Locked slots use the silhouette.
+    /// The catalog `imageKey` wins over the id — it names the checked-in
+    /// asset directly.
     var artworkAssetName: String? {
         if isLocked { return "unknown-characters" }
-        return GameArt.sprite(id: baseID)
+        return GameArt.sprite(id: imageKey ?? baseID)
     }
 
     /// Server-generated anime art (GET /characters/:id/art, 302 → image
-    /// service). Roster ids resolve directly; crate pulls strip their prefix
-    /// to hit the roster id; scanned-food characters use the query endpoint.
+    /// service). Every minted monster is a catalog character now, so the
+    /// roster id always resolves; crate pulls strip their prefix to hit it.
     /// nil for locked placeholders — those stay procedural.
     var artworkRemoteURL: URL? {
         guard !isLocked else { return nil }
         let base = AppConfig.backendBaseURL.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-        let id = baseID
-        if id.hasPrefix("scan-") {
-            var comps = URLComponents(string: "\(base)/characters/art")
-            comps?.queryItems = [
-                URLQueryItem(name: "name", value: name),
-                URLQueryItem(name: "color", value: colorHex),
-                URLQueryItem(name: "type", value: statType.rawValue),
-                URLQueryItem(name: "rarity", value: rarity.rawValue)
-            ]
-            return comps?.url
-        }
         return URL(string: "\(base)/characters/\(rosterID)/art")
     }
 }
 
 enum SampleData {
+    // The backend starter six (data/sampleCharacters.ts) — the same catalog
+    // characters with the same stats the server mints on first attach, so the
+    // pre-sync collection renders exactly what the player actually owns.
     static let characters: [Character] = [
-        Character(id: "broccoli-bud", name: "Broccoli Bud", colorHex: "#5FCB82", rarity: .common, statType: .fiber),
-        Character(id: "sushi-sam", name: "Sushi Sam", colorHex: "#56B8F5", rarity: .rare, statType: .protein),
-        Character(id: "berry-belle", name: "Berry Belle", colorHex: "#F78FB3", rarity: .epic, statType: .vitamin),
-        Character(id: "citrus-chip", name: "Citrus Chip", colorHex: "#FFB86B", rarity: .common, statType: .vitamin),
-        Character(id: "grape-gus", name: "Grape Gus", colorHex: "#B892FF", rarity: .legendary, statType: .hydration),
-        Character(id: "sprout-wisp", name: "Sprout Wisp", colorHex: "#8FE3A0", rarity: .common, statType: .fiber),
-        Character(id: "locked-1", name: "???", colorHex: "#9C978F", rarity: .common, statType: .fiber, isLocked: true),
-        Character(id: "locked-2", name: "???", colorHex: "#9C978F", rarity: .common, statType: .fiber, isLocked: true)
+        Character(id: "broccoli-bud", name: "Broccoli Bud", colorHex: "#5FCB82", imageKey: "broccoli-bud", rarity: .common, baseHealth: 95, baseAttack: 42),
+        Character(id: "bean-sprout", name: "Bean Sprout", colorHex: "#8FD16A", imageKey: "bean-sprout", rarity: .common, baseHealth: 85, baseAttack: 52),
+        Character(id: "carrot-cadet", name: "Carrot Cadet", colorHex: "#F2913D", imageKey: "carrot-cadet", rarity: .common, baseHealth: 105, baseAttack: 44),
+        Character(id: "water-droplet", name: "Water Droplet", colorHex: "#7CC5E8", imageKey: "water-droplet", rarity: .common, baseHealth: 90, baseAttack: 40),
+        Character(id: "spinach-scout", name: "Spinach Scout", colorHex: "#3E9B5F", imageKey: "spinach-scout", rarity: .uncommon, baseHealth: 120, baseAttack: 46),
+        Character(id: "almond-knight", name: "Almond Knight", colorHex: "#C08A5E", imageKey: "almond-knight", rarity: .rare, baseHealth: 95, baseAttack: 60),
+        Character(id: "locked-1", name: "???", colorHex: "#9C978F", rarity: .common, isLocked: true),
+        Character(id: "locked-2", name: "???", colorHex: "#9C978F", rarity: .common, isLocked: true)
     ]
 }
