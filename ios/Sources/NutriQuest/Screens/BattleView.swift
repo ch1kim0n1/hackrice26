@@ -3,26 +3,24 @@ import BattleKit
 import NutriQuestUI
 
 /// What drives a battle screen:
-///  - `.ranked`   — POST /battle/ranked: the server picks the opponent via
-///                  SBMM (bot on an empty queue), resolves authoritatively,
-///                  applies the RR delta and grants a rank-odds Case on a win.
-///                  The returned event stream animates turn by turn.
-///  - `.lan`      — a server/friendly/LAN host already resolved the match;
-///                  the replay is handed in verbatim.
-///  - `.practice` — a live local `Battle`: the player picks every action for
-///                  their side (move buttons with accuracy/mana, voluntary
-///                  switches), the rival runs the engine's auto policy.
+///  - `.ranked`   — POST /battle/ranked/begin parks the SBMM matchup; the
+///                  player drives every turn locally, then /commit replays
+///                  the submitted script server-side for RR + Case + faints.
+///  - `.friendly` — same interactive flow against a friend's stored squad
+///                  snapshot (begin/commit, no RR).
+///  - `.lan`      — the group host already resolved the match; the replay is
+///                  handed in verbatim.
+///  - `.practice` — a live local `Battle`, no server round-trip at all.
 enum BattleMode {
     case ranked
-    case lan(LANBattleContext)
-    /// A friendly already resolved server-side (POST /battle/friendly): the
-    /// replay animates verbatim — history entry, no RR.
     case friendly(FriendlyBattleContext)
+    case lan(LANBattleContext)
     case practice
 }
 
 struct FriendlyBattleContext {
-    let replay: BattleReplay
+    /// The parked interactive match from POST /battle/friendly/begin.
+    let match: GameState.InteractiveMatch
     let opponentId: String
 }
 
@@ -58,10 +56,15 @@ struct BattleView: View {
     /// What the last ranked match did to the ladder — drives the result card.
     @State private var rankedOutcome: GameState.RankedOutcome?
 
-    /// Live engine handle — practice mode only.
+    /// Live engine handle — every interactive mode (ranked/friendly/practice).
     @State private var battle: Battle?
-    /// Replay cursor for ranked/LAN animation.
+    /// Replay cursor for LAN animation and the interactive event drain.
     @State private var replayCursor = 0
+    /// The parked server match + the decisions made so far — what commit sends.
+    @State private var match: GameState.InteractiveMatch?
+    @State private var script: [BattleActionDTO] = []
+    /// Begin/commit in flight — blocks re-entry without freezing the UI.
+    @State private var serverBusy = false
 
     /// Presentation state derived from the event stream.
     @State private var scene = BattleScene()
@@ -96,9 +99,14 @@ struct BattleView: View {
         return nil
     }
 
-    private var isPractice: Bool {
-        if case .practice = mode { return true }
-        return false
+    /// Player-driven modes — ranked/friendly/practice all run the local
+    /// engine turn by turn; only LAN is a pure replay.
+    private var isInteractive: Bool { lanContext == nil }
+
+    /// True while the player's active monster is down and the bench needs a
+    /// pick — the replacement is free and the engine waits for it.
+    private var needsReplacement: Bool {
+        battle?.needsReplacement(myEngineSide) == true && battle?.isFinished == false
     }
 
     private var displayedSquad: [Character] {
@@ -106,21 +114,17 @@ struct BattleView: View {
     }
 
     /// The rival squad on screen: the `opponentSquad` argument, or — once a
-    /// ranked match resolves — the real squad the server matched against.
+    /// begin/commit round-trip lands — the real locked squad the server parked.
     private var displayedOpponent: [Character] {
-        serverOpponent ?? opponentSquad
+        match?.opponentCharacters ?? serverOpponent ?? opponentSquad
     }
 
-    /// Engine side rendered at the bottom (yours). 0 for ranked/practice.
+    /// Engine side rendered at the bottom (yours). 0 for every mode but LAN.
     private var myEngineSide: Int { lanContext?.mySide ?? 0 }
 
     /// The unit ids fighting for each engine side, in squad order.
     private var sideUnitIDs: [[String]] {
         if let lan = lanContext {
-            // LAN unit ids are derived (match, side, slot) uuids; order = squad order.
-            var out: [[String]] = [[], []]
-            for (slot, u) in lan.unitSpecs.sorted(by: { $0.key < $1.key }).enumerated() { _ = (slot, u) }
-            out = [[], []]
             // Rebuild deterministically from the id map: ids group by which
             // character they resolve to; my characters → my side.
             var mine: [String] = [], theirs: [String] = []
@@ -137,16 +141,26 @@ struct BattleView: View {
                 (displayedOpponent.firstIndex { $0.id == lan.unitCharacterIDs[a] } ?? 0)
                     < (displayedOpponent.firstIndex { $0.id == lan.unitCharacterIDs[b] } ?? 0)
             }
+            var out: [[String]] = [[], []]
             out[myEngineSide] = mine
             out[1 - myEngineSide] = theirs
             return out
         }
-        return [displayedSquad.map(\.id), displayedOpponent.map(\.id)]
+        // A parked match carries the server-resolved unit ids — identical
+        // for the player's own squad, authoritative for the opponent's.
+        let mine = match?.yourSpecs.map(\.id) ?? displayedSquad.map(\.id)
+        let theirs = match?.opponentSpecs.map(\.id) ?? displayedOpponent.map(\.id)
+        return [mine, theirs]
     }
 
     /// Best-known snapshot per unit id — real specs where we have them.
     private var specByUnitID: [String: BattleUnitSpec] {
         if let lan = lanContext { return lan.unitSpecs }
+        if let match {
+            var map: [String: BattleUnitSpec] = [:]
+            for s in match.yourSpecs + match.opponentSpecs { map[s.id] = s }
+            return map
+        }
         var map: [String: BattleUnitSpec] = [:]
         for c in yourSquad + displayedOpponent { map[c.id] = gameState.battleStats(for: c) }
         return map
@@ -175,8 +189,9 @@ struct BattleView: View {
             VStack(spacing: NQTheme.spaceL - 2) {
                 turnBanner
                 arena
+                battleLog
                 actionSection
-                if isPractice { switchRow }
+                if isInteractive { switchRow }
                 secondaryActions
             }
             .padding(NQTheme.spaceL)
@@ -186,8 +201,10 @@ struct BattleView: View {
         .navigationBarTitleDisplayMode(.inline)
         .preferredColorScheme(.dark)
         .nqSuccessBurst(on: simulateTrigger)
+        .overlay { replacementOverlay }
         .onAppear {
             if orderedSquad.isEmpty { orderedSquad = yourSquad }
+            if case .friendly(let ctx) = mode { match = ctx.match }
             resetScene()
         }
     }
@@ -223,8 +240,12 @@ struct BattleView: View {
 
     private var bannerText: String {
         if let resultText { return resultText.hasPrefix("VICTORY") ? "Victory" : "Defeat" }
+        if needsReplacement { return "Choose your next monster" }
+        if serverBusy { return match == nil ? "Finding match…" : "Reporting result…" }
+        if isInteractive, let battle, !battle.isFinished {
+            return battle.currentSide == myEngineSide ? "Your move" : "Rival's turn…"
+        }
         if running { return scene.turn > 0 ? "Turn \(scene.turn)" : "Battling…" }
-        if isPractice, let battle, battle.currentSide == myEngineSide { return "Your move" }
         return "Ready"
     }
 
@@ -241,13 +262,6 @@ struct BattleView: View {
                 .offset(y: yourLunge ? -14 : 0)
                 .scaleEffect(x: yourLunge ? 1.05 : 1, y: yourLunge ? 0.94 : 1)
                 .overlay { popupLayer(side: 0) }
-            // Latest event, one line — the play-by-play.
-            Text(scene.lastAction)
-                .font(NQText.captionS.font.weight(.semibold))
-                .foregroundStyle(NQTheme.battleInkMuted)
-                .frame(maxWidth: .infinity)
-                .multilineTextAlignment(.center)
-                .animation(NQMotion.quick, value: scene.lastAction)
         }
         .animation(.spring(response: 0.28, dampingFraction: 0.6), value: yourLunge)
         .animation(.spring(response: 0.28, dampingFraction: 0.6), value: opponentLunge)
@@ -308,16 +322,39 @@ struct BattleView: View {
         }
     }
 
-    /// The active unit: artwork, HP bar, mana bar (Epic+), status chips.
+    /// The active unit: large artwork in a rarity-glow ring, HP bar, mana
+    /// bar (Epic+), status chips. Faints slump and grey out.
     private func activeCard(unitID: String, unit: BattleScene.Unit, side: Int) -> some View {
-        HStack(spacing: NQTheme.spaceM) {
-            characterArtwork(unitID: unitID, hurt: (side == 0 && yourHit) || (side == 1 && opponentHit), fainted: unit.fainted)
-                .frame(width: 64, height: 84)
+        let hurt = (side == 0 && yourHit) || (side == 1 && opponentHit)
+        let rarity = character(for: unitID)?.rarity.kitRarity
+        return HStack(spacing: NQTheme.spaceM) {
+            ZStack {
+                if let rarity {
+                    Circle()
+                        .fill(rarity.outline.opacity(0.28))
+                        .frame(width: 108, height: 108)
+                        .blur(radius: 14)
+                }
+                characterArtwork(unitID: unitID, hurt: hurt, fainted: unit.fainted)
+                    .frame(width: 104, height: 132)
+                    .scaleEffect(unit.fainted ? 0.9 : 1)
+                    .opacity(unit.fainted ? 0.35 : 1)
+                    .saturation(unit.fainted ? 0 : 1)
+                    .rotationEffect(.degrees(unit.fainted ? (side == myEngineSide ? -10 : 10) : 0))
+                    .offset(y: unit.fainted ? 12 : 0)
+                    .animation(NQMotion.quick, value: unit.fainted)
+                    .animation(NQMotion.quick, value: hurt)
+            }
             VStack(alignment: .leading, spacing: 4) {
-                Text(name(for: unitID))
-                    .font(NQText.caption.font.weight(.bold))
-                    .foregroundStyle(NQTheme.battleInk)
-                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(name(for: unitID))
+                        .font(NQText.caption.font.weight(.bold))
+                        .foregroundStyle(NQTheme.battleInk)
+                        .lineLimit(1)
+                    if let rarity {
+                        NQChip(rarity.rawValue.capitalized, tint: rarity.outline)
+                    }
+                }
                 hpBar(unit: unit)
                 if unit.maxMana > 0 {
                     manaBar(unit: unit)
@@ -444,22 +481,38 @@ struct BattleView: View {
         .accessibilityHidden(true)
     }
 
+    /// Scrolling play-by-play — the last few beats, newest on top.
+    private var battleLog: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            ForEach(Array(scene.log.prefix(3).enumerated()), id: \.offset) { index, line in
+                Text(line)
+                    .font(NQText.captionS.font.weight(index == 0 ? .bold : .regular))
+                    .foregroundStyle(index == 0 ? NQTheme.battleInk : NQTheme.battleInkMuted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .lineLimit(1)
+            }
+        }
+        .frame(minHeight: 54)
+        .nqPadding(.badge)
+        .frame(maxWidth: .infinity)
+        .background(RoundedRectangle(cornerRadius: NQTheme.radiusM).fill(.white.opacity(0.05)))
+        .animation(NQMotion.quick, value: scene.log)
+    }
+
     // MARK: - Action section
 
-    /// Ranked/LAN: a single resolve/play button. Practice: the active unit's
-    /// authored moves as real action buttons — accuracy and mana cost shown,
-    /// specials disabled without the mana.
+    /// Interactive modes: the active unit's authored moves as real action
+    /// buttons once it's your turn. LAN: a single watch button. Before any
+    /// battle exists, the big button starts (or parks) the fight.
     private var actionSection: some View {
         VStack(spacing: NQTheme.spaceS + 2) {
-            if isPractice, let battle, let actions = practiceActions(battle) {
+            if isInteractive, let battle, let actions = availableActions(battle) {
                 moveButtons(actions.moves)
-            } else {
+            } else if battle == nil {
                 NQButton(primaryTitle, style: .primary) { startBattle() }
                     .disabled(primaryDisabled)
-                    .accessibilityHint("Runs a deterministic battle simulation")
-            }
-
-            if running {
+                    .accessibilityHint("Starts a deterministic battle")
+            } else if serverBusy || running {
                 NQDotsLoader(color: accent.accent)
             }
 
@@ -481,22 +534,24 @@ struct BattleView: View {
     }
 
     private var primaryTitle: String {
-        if running { return "Battling…" }
-        // LAN and friendly arrive with the result already resolved.
-        if lanContext != nil || friendlyContext != nil {
+        if serverBusy { return match == nil ? "Finding match…" : "Reporting…" }
+        // LAN arrives with the result already resolved by the host.
+        if lanContext != nil {
             return resultText == nil ? "Watch the battle" : "Battle over"
         }
-        return "Begin battle"
+        return resultText == nil ? "Begin battle" : "Battle over"
     }
 
     private var primaryDisabled: Bool {
-        if running { return true }
+        if running || serverBusy { return true }
         return resultText != nil
     }
 
-    /// Practice mode: legal move actions for your active unit.
-    private func practiceActions(_ battle: Battle) -> (moves: [(index: Int, move: BattleMoveSpec)], switches: [Int])? {
+    /// Legal move + switch actions for your active unit — same for practice,
+    /// ranked and friendly; the engine decides what's legal.
+    private func availableActions(_ battle: Battle) -> (moves: [(index: Int, move: BattleMoveSpec)], switches: [Int])? {
         guard battle.currentSide == myEngineSide, !battle.isFinished,
+              !battle.needsReplacement(myEngineSide),
               let activeID = sideUnitIDs[myEngineSide].indices.contains(battle.activeIndex(myEngineSide))
                   ? sideUnitIDs[myEngineSide][battle.activeIndex(myEngineSide)] : nil,
               let spec = specByUnitID[activeID] ?? battleSpec(for: activeID) else { return nil }
@@ -532,7 +587,7 @@ struct BattleView: View {
     private func moveButton(index: Int, move: BattleMoveSpec) -> some View {
         Button {
             NQSound.play(.tapAlt)
-            practiceAct(.move(index))
+            playerAct(.move(index))
         } label: {
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -571,7 +626,7 @@ struct BattleView: View {
     /// Bench switch targets — voluntary switches consume the whole turn.
     private var switchRow: some View {
         Group {
-            if let battle, let actions = practiceActions(battle), !actions.switches.isEmpty {
+            if let battle, let actions = availableActions(battle), !actions.switches.isEmpty {
                 VStack(alignment: .leading, spacing: NQTheme.spaceS) {
                     Text("Switch (uses your turn)")
                         .font(NQText.microS.font)
@@ -582,7 +637,7 @@ struct BattleView: View {
                             let unitID = sideUnitIDs[myEngineSide][index]
                             Button {
                                 NQSound.play(.tapAlt)
-                                practiceAct(.switchTo(index))
+                                playerAct(.switchTo(index))
                             } label: {
                                 HStack(spacing: 6) {
                                     if let unit = scene.units[unitID] {
@@ -608,42 +663,121 @@ struct BattleView: View {
     // MARK: - Battle flow
 
     private func startBattle() {
-        guard !running else { return }
-        running = true
+        guard !running, !serverBusy else { return }
         resultText = nil
         resetScene()
 
         switch mode {
         case .lan(let context):
-            Task { await animateReplay(context.replay) ; finish(context.replay) }
-        case .friendly(let context):
+            running = true
             Task { await animateReplay(context.replay) ; finish(context.replay) }
         case .practice:
-            startPractice()
+            launchInteractive()
+        case .friendly(let context):
+            // The match was parked before this screen was pushed — the seed,
+            // specs and opponent are already locked server-side.
+            match = context.match
+            launchInteractive()
         case .ranked:
-            Task {
-                // The ladder fight: the server picks the opponent via SBMM,
-                // resolves authoritatively, applies RR and rolls a Case.
-                guard let outcome = await gameState.playRanked(squad: displayedSquad) else {
-                    running = false
-                    return
-                }
-                serverOpponent = outcome.opponentSquad
+            Task { await beginRanked() }
+        }
+    }
+
+    /// POST /battle/ranked/begin — SBMM parks the matchup and returns the
+    /// locked specs + seed, then the fight runs locally off those specs.
+    private func beginRanked() async {
+        serverBusy = true
+        let parked = await gameState.beginRankedBattle(squad: displayedSquad)
+        serverBusy = false
+        guard let parked else {
+            logLine("No match — check your connection")
+            return
+        }
+        match = parked
+        resetScene()
+        launchInteractive()
+    }
+
+    /// Build the live engine over the locked specs, then play it out —
+    /// the player acts through `playerAct`, the rival through autoPolicy.
+    private func launchInteractive() {
+        let specsA = sideUnitIDs[0].compactMap { specByUnitID[$0] }
+        let specsB = sideUnitIDs[1].compactMap { specByUnitID[$0] }
+        guard specsA.count == 3, specsB.count == 3 else { return }
+        // Practice has no parked seed — derive one locally, still seeded.
+        let seed = match?.seed ?? displayedSquad.reduce(UInt64(1469598103934665603)) { acc, c in
+            c.id.utf8.reduce(acc) { ($0 ^ UInt64($1)) &* 1099511628211 }
+        }
+        let b = Battle(squadA: specsA, squadB: specsB, seed: seed,
+                       options: .init(firstTurn: .coinFlip, manualReplacement: myEngineSide))
+        battle = b
+        script = []
+        Task { await runInteractive(b) }
+    }
+
+    /// One player decision: apply it locally (and onto the commit script),
+    /// animate the fallout, then let the rival answer until it's our turn.
+    private func playerAct(_ action: BattleAction) {
+        guard let b = battle, !b.isFinished, b.currentSide == myEngineSide else { return }
+        b.act(myEngineSide, action: action)
+        if match != nil { script.append(action.scriptEntry) }
+        running = true
+        Task { await runInteractive(b) }
+    }
+
+    /// Pick the next monster after a faint — free action, no turn consumed.
+    private func playerChooseReplacement(_ unitIndex: Int) {
+        guard let b = battle, b.needsReplacement(myEngineSide) else { return }
+        b.chooseReplacement(myEngineSide, unitIndex: unitIndex)
+        if match != nil { script.append(.choose(unitIndex)) }
+        running = true
+        Task { await runInteractive(b) }
+    }
+
+    /// The turn pump: animate pending events, auto-drive the rival, stop at
+    /// a decision point (player turn / faint pick) or the final commit.
+    private func runInteractive(_ b: Battle) async {
+        while !b.isFinished {
+            await drainAnimated(b)
+            if needsReplacement { running = false; return }
+            guard let side = b.currentSide else { break }
+            if side == myEngineSide { break }
+            try? await Task.sleep(nanoseconds: 300_000_000)
+            b.act(side, action: Battle.autoPolicy(battle: b, side: side))
+        }
+        await drainAnimated(b)
+        running = false
+        if b.isFinished { await concludeInteractive(b) }
+    }
+
+    /// Settle the fight: practice reports locally; parked matches submit the
+    /// recorded script — the server's replay is what counts for RR/Cases.
+    private func concludeInteractive(_ b: Battle) async {
+        guard let replay = localReplay(b) else { return }
+        guard let match else { finish(replay); return }
+        serverBusy = true
+        switch match.kind {
+        case .ranked:
+            if let outcome = await gameState.commitRankedBattle(match, actions: script) {
                 rankedOutcome = outcome
-                resetScene()
-                await animateReplay(outcome.replay)
-                finish(outcome.replay)
+                serverOpponent = outcome.opponentSquad
+            } else {
+                logLine("Result sync failed — showing local replay")
+            }
+        case .friendly:
+            if await gameState.commitFriendlyBattle(match, actions: script) == nil {
+                logLine("Result sync failed — showing local replay")
             }
         }
+        serverBusy = false
+        finish(replay)
     }
 
     private func resetScene() {
         scene = BattleScene()
-        var specs = specByUnitID
-        // Practice mode fights with the same snapshots the engine got.
-        for (i, ids) in sideUnitIDs.enumerated() {
-            for (j, id) in ids.enumerated() {
-                if specs[id] == nil { specs[id] = specByUnitID[id] }
+        let specs = specByUnitID
+        for ids in sideUnitIDs {
+            for id in ids {
                 if let spec = specs[id] {
                     scene.units[id] = BattleScene.Unit(
                         hp: spec.maxHP, maxHP: spec.maxHP,
@@ -652,7 +786,6 @@ struct BattleView: View {
                 } else {
                     scene.units[id] = BattleScene.Unit(hp: 100, maxHP: 100, mana: 0, maxMana: 0)
                 }
-                _ = (i, j)
             }
         }
         replayCursor = 0
@@ -685,48 +818,74 @@ struct BattleView: View {
         }
     }
 
-    // MARK: - Practice mode (interactive, local engine)
+    // MARK: - Interactive engine drive
 
-    private func startPractice() {
-        let specsA = displayedSquad.map { gameState.battleStats(for: $0) }
-        let specsB = displayedOpponent.map { gameState.battleStats(for: $0) }
-        let seed = displayedSquad.reduce(UInt64(1469598103934665603)) { acc, c in
-            c.id.utf8.reduce(acc) { ($0 ^ UInt64($1)) &* 1099511628211 }
-        }
-        let b = Battle(squadA: specsA, squadB: specsB, seed: seed, options: .init(firstTurn: .coinFlip))
-        battle = b
-        drainEngineEvents(b)
-        if b.currentSide == 1 - myEngineSide { runOpponentTurns(b) }
-    }
-
-    /// Apply one player action, then let the rival's auto policy answer.
-    private func practiceAct(_ action: BattleAction) {
-        guard let battle, !battle.isFinished, battle.currentSide == myEngineSide else { return }
-        running = true
-        battle.act(myEngineSide, action: action)
-        drainEngineEvents(battle)
-        runOpponentTurns(battle)
-        running = false
-        if battle.isFinished, let replay = practiceReplay(battle) {
-            finish(replay)
-        }
-    }
-
-    private func runOpponentTurns(_ battle: Battle) {
-        while !battle.isFinished, let side = battle.currentSide, side != myEngineSide {
-            battle.act(side, action: Battle.autoPolicy(battle: battle, side: side))
-            drainEngineEvents(battle)
-        }
-        // If the coin flip gave the rival the opener, it's our turn now.
-    }
-
-    private func drainEngineEvents(_ battle: Battle) {
+    /// Animate each new engine event with its choreography beat, then fold
+    /// it into the scene — the interactive version of `animateReplay`.
+    private func drainAnimated(_ battle: Battle) async {
         let newEvents = Array(battle.events.dropFirst(replayCursor))
         replayCursor = battle.events.count
-        for event in newEvents { apply(event) }
+        for event in newEvents {
+            if Task.isCancelled { return }
+            await animate(event)
+            apply(event)
+        }
     }
 
-    private func practiceReplay(_ battle: Battle) -> BattleReplay? {
+    /// Faint replacement overlay — dim the arena, offer the living bench.
+    /// The pick is free and recorded onto the commit script.
+    @ViewBuilder private var replacementOverlay: some View {
+        if needsReplacement, let b = battle {
+            let candidates = sideUnitIDs[myEngineSide].indices.filter {
+                !b.unitState(myEngineSide, $0).fainted
+            }
+            ZStack {
+                Color.black.opacity(0.55)
+                    .ignoresSafeArea()
+                VStack(spacing: NQTheme.spaceM) {
+                    Text("Choose your next monster")
+                        .font(NQText.headingL.font.weight(.bold))
+                        .foregroundStyle(NQTheme.battleInk)
+                    HStack(spacing: NQTheme.spaceS) {
+                        ForEach(candidates, id: \.self) { index in
+                            let unitID = sideUnitIDs[myEngineSide][index]
+                            Button {
+                                NQSound.play(.tapAlt)
+                                playerChooseReplacement(index)
+                            } label: {
+                                VStack(spacing: 4) {
+                                    characterArtwork(unitID: unitID)
+                                        .frame(width: 56, height: 72)
+                                    Text(name(for: unitID))
+                                        .font(NQText.captionS.font.weight(.bold))
+                                        .foregroundStyle(NQTheme.battleInk)
+                                        .lineLimit(1)
+                                    if let u = scene.units[unitID] {
+                                        Text("\(Int(u.hp)) HP")
+                                            .font(NQText.micro.font.weight(.semibold))
+                                            .foregroundStyle(NQTheme.battleInkMuted)
+                                            .monospacedDigit()
+                                    }
+                                }
+                                .nqPadding(.badge)
+                                .frame(maxWidth: .infinity)
+                                .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .card)
+                            }
+                            .buttonStyle(.nqPressable(scale: 0.96, haptic: false))
+                        }
+                    }
+                }
+                .nqPadding(.card)
+                .frame(maxWidth: .infinity)
+                .background(RoundedRectangle(cornerRadius: NQTheme.radiusXL).fill(NQTheme.battleBg))
+                .padding(NQTheme.spaceL)
+            }
+            .transition(NQTransition.pop)
+            .zIndex(10)
+        }
+    }
+
+    private func localReplay(_ battle: Battle) -> BattleReplay? {
         guard battle.isFinished, let winner = battle.winner, let reason = battle.victoryReason else { return nil }
         let sides = sideUnitIDs
         let frac: (Int) -> [Double] = { s in
@@ -840,7 +999,7 @@ struct BattleView: View {
     private func apply(_ event: BattleEvent) {
         switch event {
         case .battleStart:
-            scene.lastAction = "Battle begins"
+            logLine("Battle begins")
         case .turnStart(let turn, _, _):
             scene.turn = turn
         case .turnEnd:
@@ -852,42 +1011,49 @@ struct BattleView: View {
                 unit.fainted = unit.hp <= 0
                 scene.units[defender] = unit
             }
-            scene.lastAction = "\(name(for: attacker)) used \(move) — \(damage) dmg\(crit ? " CRIT" : "")"
+            logLine("\(name(for: attacker)) used \(move) — \(damage) dmg\(crit ? " CRIT" : "")")
         case .miss(let attacker, _, let move, let moveID):
             spendMana(attacker: attacker, moveID: moveID)
-            scene.lastAction = "\(name(for: attacker)) used \(move) — missed"
+            logLine("\(name(for: attacker)) used \(move) — missed")
         case .status(let unit, let kind, _):
             scene.units[unit]?.statuses.insert(kind)
-            scene.lastAction = "\(name(for: unit)): \(kind.displayName)"
+            logLine("\(name(for: unit)): \(kind.displayName)")
         case .statusTick(let unit, let kind, let damage):
             if var u = scene.units[unit] {
                 u.hp = max(0, u.hp - damage)
                 u.fainted = u.hp <= 0
                 scene.units[unit] = u
             }
-            scene.lastAction = "\(name(for: unit)) suffers \(Int(damage)) \(kind.displayName)"
+            logLine("\(name(for: unit)) suffers \(Int(damage)) \(kind.displayName)")
         case .heal(let unit, let amount, _):
             if var u = scene.units[unit] {
                 u.hp = min(u.maxHP, u.hp + amount)
                 scene.units[unit] = u
             }
-            scene.lastAction = "\(name(for: unit)) healed \(Int(amount))"
+            logLine("\(name(for: unit)) healed \(Int(amount))")
         case .stunned(let unit):
-            scene.lastAction = "\(name(for: unit)) is stunned"
+            logLine("\(name(for: unit)) is stunned")
         case .switchEvent(let side, _, let newIn, _):
             if let idx = sideUnitIDs[side].firstIndex(of: newIn) {
                 scene.active[side] = idx
             }
-            scene.lastAction = "\(name(for: newIn)) enters the fight"
+            logLine("\(name(for: newIn)) enters the fight")
         case .faint(let unit):
             scene.units[unit]?.fainted = true
             scene.units[unit]?.statuses = []
-            scene.lastAction = "\(name(for: unit)) fainted"
+            logLine("\(name(for: unit)) fainted")
         case .victory(let winner, _, let reason):
-            scene.lastAction = reason == .turnLimit
+            logLine(reason == .turnLimit
                 ? "Turn limit — \(name(for: sideUnitIDs[winner].first ?? ""))'s side holds the field"
-                : "\(name(for: sideUnitIDs[winner].first ?? ""))'s side wins"
+                : "\(name(for: sideUnitIDs[winner].first ?? ""))'s side wins")
         }
+    }
+
+    /// Ticker + log in one place — the newest beat leads the log.
+    private func logLine(_ text: String) {
+        scene.lastAction = text
+        scene.log.insert(text, at: 0)
+        if scene.log.count > 24 { scene.log.removeLast() }
     }
 
     /// Specials spend mana on use — the wire doesn't echo the cost, so look
@@ -998,6 +1164,20 @@ private struct BattleScene {
     var active: [Int] = [0, 0]
     var turn = 0
     var lastAction = "Battle begins"
+    /// Recent play-by-play lines, newest first — drives the battle log.
+    var log: [String] = []
+}
+
+// MARK: - Action → script entry
+
+/// The local engine action → the wire shape `battleActionSchema` replays.
+private extension BattleAction {
+    var scriptEntry: BattleActionDTO {
+        switch self {
+        case .move(let i): return .move(i)
+        case .switchTo(let i): return .switchTo(i)
+        }
+    }
 }
 
 // MARK: - Status presentation

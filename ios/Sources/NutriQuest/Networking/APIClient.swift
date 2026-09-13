@@ -254,31 +254,6 @@ final class APIClient {
 
     // MARK: - Battle (backend/src/routes/battle.ts)
 
-    /// POST /battle/ranked — SBMM picks the opponent (bot on an empty queue),
-    /// the server resolves the fight, applies the RR delta, and rolls a
-    /// rank-odds Case onto the pending pile on a win.
-    func playRanked(squad: [BattleSquadMember]) async throws -> RankedBattleResponse {
-        struct RankedBody: Encodable { let squad: [BattleSquadMember] }
-        return try await request(
-            RankedBattleResponse.self,
-            method: "POST",
-            path: "battle/ranked",
-            body: RankedBody(squad: squad)
-        )
-    }
-
-    /// POST /battle/friendly — fight a friend's stored squad snapshot.
-    /// Friendly results land in battle history with rrDelta 0 — no RR moves.
-    func challengeFriend(opponentId: String, squad: [BattleSquadMember]) async throws -> FriendlyBattleResponse {
-        struct ChallengeBody: Encodable { let opponentId: String; let squad: [BattleSquadMember] }
-        return try await request(
-            FriendlyBattleResponse.self,
-            method: "POST",
-            path: "battle/friendly",
-            body: ChallengeBody(opponentId: opponentId, squad: squad)
-        )
-    }
-
     /// POST /battle/ranked/begin — matchmake and park an interactive match.
     /// The response carries the locked specs + seed the local engine runs.
     func beginRanked(squad: [BattleSquadMember]) async throws -> BattleBeginResponse {

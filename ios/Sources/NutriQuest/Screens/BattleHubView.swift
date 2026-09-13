@@ -14,22 +14,33 @@ struct BattleHubView: View {
     @State private var showFriendlyPrompt = false
     @State private var friendlyOpponentId = ""
     @State private var friendlyBusy = false
-    /// The resolved friendly, ready to push — navigation waits for the
-    /// server result so the replay arrives with its opponent squad.
-    @State private var friendlyReady: (replay: BattleReplay, opponentSquad: [Character], opponentId: String)?
+    /// The parked friendly match, ready to push — navigation waits for the
+    /// begin round-trip so the screen opens with locked specs + seed.
+    @State private var friendlyReady: (match: GameState.InteractiveMatch, opponentId: String)?
+
+    /// Pre-battle squad pick: which mode the sheet is fielding a team for.
+    @State private var pickTarget: PickTarget?
+    @State private var pickedSquad: [Character] = []
+    /// The picked squad + mode, ready to push.
+    @State private var readyFight: (mode: BattleMode, yours: [Character], theirs: [Character])?
+
+    enum PickTarget: Identifiable {
+        case ranked, practice
+        var id: Self { self }
+    }
 
     private var characters: [Character] { gameState.collection }
 
     private var yourBattleSquad: [Character] { gameState.battleReadySquad }
 
-    /// Practice sparring partner: never your own lead three. Prefer other
+    /// Practice sparring partner: never the picked squad. Prefer other
     /// unlocked characters; fall back to the starter roster so a small
     /// collection still has a rival.
-    private var practiceOpponentSquad: [Character] {
-        let yours = Set(yourBattleSquad.map(\.id))
-        let others = characters.filter { !$0.isLocked && !yours.contains($0.id) }
+    private func practiceOpponentSquad(excluding yours: [Character]) -> [Character] {
+        let yoursIDs = Set(yours.map(\.id))
+        let others = characters.filter { !$0.isLocked && !yoursIDs.contains($0.id) }
         if others.count >= 3 { return Array(others.prefix(3)) }
-        let fallback = SampleData.characters.filter { !$0.isLocked && !yours.contains($0.id) }
+        let fallback = SampleData.characters.filter { !$0.isLocked && !yoursIDs.contains($0.id) }
         return Array((others + fallback).prefix(3))
     }
 
@@ -46,13 +57,10 @@ struct BattleHubView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: NQTheme.spaceM) {
-                NavigationLink {
-                    BattleView(
-                        yourSquad: yourBattleSquad,
-                        opponentSquad: [],
-                        gameState: gameState,
-                        mode: .ranked
-                    )
+                Button {
+                    NQHaptic.selection()
+                    pickedSquad = yourBattleSquad
+                    pickTarget = .ranked
                 } label: {
                     hubCard(
                         title: "Ranked",
@@ -63,6 +71,7 @@ struct BattleHubView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(yourBattleSquad.count < 3)
 
                 Button {
                     NQHaptic.selection()
@@ -93,13 +102,10 @@ struct BattleHubView: View {
                 }
                 .buttonStyle(.plain)
 
-                NavigationLink {
-                    BattleView(
-                        yourSquad: yourBattleSquad,
-                        opponentSquad: practiceOpponentSquad,
-                        gameState: gameState,
-                        mode: .practice
-                    )
+                Button {
+                    NQHaptic.selection()
+                    pickedSquad = yourBattleSquad
+                    pickTarget = .practice
                 } label: {
                     hubCard(
                         title: "Practice",
@@ -109,6 +115,7 @@ struct BattleHubView: View {
                     )
                 }
                 .buttonStyle(.plain)
+                .disabled(yourBattleSquad.count < 3)
 
                 NavigationLink {
                     LANLobbyView(gameState: gameState)
@@ -158,9 +165,39 @@ struct BattleHubView: View {
             if let ready = friendlyReady {
                 BattleView(
                     yourSquad: yourBattleSquad,
-                    opponentSquad: ready.opponentSquad,
+                    opponentSquad: ready.match.opponentCharacters,
                     gameState: gameState,
-                    mode: .friendly(FriendlyBattleContext(replay: ready.replay, opponentId: ready.opponentId))
+                    mode: .friendly(FriendlyBattleContext(match: ready.match, opponentId: ready.opponentId))
+                )
+            }
+        }
+        .sheet(item: $pickTarget) { target in
+            SquadPickSheet(
+                characters: characters.filter { !$0.isLocked },
+                faintedIds: gameState.faintedIds,
+                selection: $pickedSquad,
+                title: target == .ranked ? "Ranked squad" : "Practice squad"
+            ) { squad in
+                pickTarget = nil
+                switch target {
+                case .ranked:
+                    readyFight = (.ranked, squad, [])
+                case .practice:
+                    readyFight = (.practice, squad, practiceOpponentSquad(excluding: squad))
+                }
+            }
+            .presentationDetents([.medium, .large])
+        }
+        .navigationDestination(isPresented: Binding(
+            get: { readyFight != nil },
+            set: { if !$0 { readyFight = nil } }
+        )) {
+            if let fight = readyFight {
+                BattleView(
+                    yourSquad: fight.yours,
+                    opponentSquad: fight.theirs,
+                    gameState: gameState,
+                    mode: fight.mode
                 )
             }
         }
@@ -173,15 +210,15 @@ struct BattleHubView: View {
         }
     }
 
-    /// Resolve the friendly first — the BattleView only appears once the
-    /// server has answered, so the screen can animate the real replay.
+    /// Park the friendly first — the BattleView only appears once the server
+    /// has locked the matchup, so the screen can play the real fight.
     private func startFriendly() {
         let opponentId = friendlyOpponentId.trimmingCharacters(in: .whitespaces)
         guard !opponentId.isEmpty, !friendlyBusy else { return }
         friendlyBusy = true
         Task {
-            if let result = await gameState.challengeFriend(opponentId: opponentId) {
-                friendlyReady = (result.replay, result.opponentSquad, opponentId)
+            if let parked = await gameState.beginFriendlyBattle(opponentId: opponentId, squad: yourBattleSquad) {
+                friendlyReady = (parked, opponentId)
             }
             friendlyBusy = false
         }
@@ -224,5 +261,91 @@ struct BattleHubView: View {
         .frame(maxWidth: .infinity)
         .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL + 2), elevation: .card)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Pick three monsters, in order — slot 1 leads. Fainted monsters are shown
+/// but can't be fielded. Used by ranked and practice.
+private struct SquadPickSheet: View {
+    let characters: [Character]
+    let faintedIds: Set<String>
+    @Binding var selection: [Character]
+    let title: String
+    let confirm: ([Character]) -> Void
+
+    @Environment(\.nqAccent) private var accent
+
+    private func pickOrder(of character: Character) -> Int? {
+        selection.firstIndex(of: character).map { $0 + 1 }
+    }
+
+    private func toggle(_ character: Character) {
+        guard !faintedIds.contains(character.id) else { return }
+        if let i = selection.firstIndex(of: character) {
+            selection.remove(at: i)
+        } else if selection.count < 3 {
+            selection.append(character)
+        }
+        NQHaptic.selection()
+    }
+
+    var body: some View {
+        VStack(spacing: NQTheme.spaceM) {
+            Text(title)
+                .font(NQText.headingL.font.weight(.bold))
+                .foregroundStyle(NQTheme.ink)
+            Text("Pick 3 — the first leads the fight")
+                .font(NQText.captionS.font)
+                .foregroundStyle(NQTheme.inkMuted)
+
+            ScrollView {
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: NQTheme.spaceS) {
+                    ForEach(characters) { c in
+                        let fainted = faintedIds.contains(c.id)
+                        let order = pickOrder(of: c)
+                        Button { toggle(c) } label: {
+                            VStack(spacing: 4) {
+                                ZStack(alignment: .topTrailing) {
+                                    CharacterArtwork(character: c, expression: fainted ? .sleepy : .happy, hurt: fainted)
+                                        .frame(height: 72)
+                                    if let order {
+                                        Text("\(order)")
+                                            .font(NQText.micro.font.weight(.heavy))
+                                            .foregroundStyle(accent.accent.readableTextColor())
+                                            .frame(width: 20, height: 20)
+                                            .background(Circle().fill(accent.accent))
+                                    }
+                                }
+                                Text(c.name)
+                                    .font(NQText.micro.font.weight(.bold))
+                                    .foregroundStyle(NQTheme.ink)
+                                    .lineLimit(1)
+                                if fainted {
+                                    Text("FAINTED")
+                                        .font(NQText.microXS.font.weight(.heavy))
+                                        .foregroundStyle(NQTheme.warning)
+                                }
+                            }
+                            .nqPadding(.badge)
+                            .frame(maxWidth: .infinity)
+                            .background(RoundedRectangle(cornerRadius: NQTheme.radiusM)
+                                .fill(order != nil ? accent.accent.opacity(0.14) : Color.clear))
+                            .overlay {
+                                RoundedRectangle(cornerRadius: NQTheme.radiusM)
+                                    .strokeBorder(order != nil ? accent.accent : NQTheme.hairline, lineWidth: order != nil ? 2 : 1)
+                            }
+                            .opacity(fainted ? 0.4 : 1)
+                        }
+                        .buttonStyle(.nqPressable(scale: 0.96, haptic: false))
+                        .disabled(fainted)
+                    }
+                }
+            }
+
+            NQButton("Fight (\(selection.count)/3)", style: .primary) { confirm(selection) }
+                .disabled(selection.count != 3)
+        }
+        .padding(NQTheme.spaceL)
+        .nqPageBackground()
     }
 }
