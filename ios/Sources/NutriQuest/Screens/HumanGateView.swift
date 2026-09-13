@@ -11,20 +11,10 @@ struct HumanGateView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.nqAccent) private var accent
 
-    /// Gate URL with the backend address forwarded so the web app registers
-    /// against the same server the app talks to.
-    private var gateURL: URL? {
-        guard var components = URLComponents(string: AppConfig.humanGateURL) else { return nil }
-        components.queryItems = (components.queryItems ?? []) + [
-            URLQueryItem(name: "api", value: AppConfig.backendBaseURL)
-        ]
-        return components.url
-    }
-
     var body: some View {
         NavigationStack {
             Group {
-                if let url = gateURL {
+                if let url = HumanGateWebView.url(mode: .signup) {
                     HumanGateWebView(url: url, onAuth: { dismiss() })
                         .ignoresSafeArea(edges: .bottom)
                 } else {
@@ -53,9 +43,29 @@ struct HumanGateView: View {
     }
 }
 
-private struct HumanGateWebView: UIViewRepresentable {
+/// Which account screen the embedded gate opens on. Signup runs the reflex
+/// human check; login runs the Persona identity check.
+enum HumanGateMode: String {
+    case signup, login
+}
+
+/// The web gate in a WKWebView. Hands the session the page posts back to
+/// `SessionStore`, then calls `onAuth`. Shared by the Profile sheet and the
+/// onboarding account step.
+struct HumanGateWebView: UIViewRepresentable {
     let url: URL
     let onAuth: () -> Void
+
+    /// Gate URL for a mode, with the app's backend forwarded so the page
+    /// registers and logs in against the same server the app talks to.
+    static func url(mode: HumanGateMode) -> URL? {
+        guard var components = URLComponents(string: AppConfig.humanGateURL) else { return nil }
+        components.queryItems = (components.queryItems ?? []) + [
+            URLQueryItem(name: "api", value: AppConfig.backendBaseURL),
+            URLQueryItem(name: "mode", value: mode.rawValue)
+        ]
+        return components.url
+    }
 
     func makeCoordinator() -> Coordinator {
         Coordinator(onAuth: onAuth)
@@ -64,17 +74,22 @@ private struct HumanGateWebView: UIViewRepresentable {
     func makeUIView(context: Context) -> WKWebView {
         let config = WKWebViewConfiguration()
         config.userContentController.add(context.coordinator, name: "nutriquest")
+        // Persona's liveness check streams the camera inline.
+        config.allowsInlineMediaPlayback = true
+        config.mediaTypesRequiringUserActionForPlayback = []
         let webView = WKWebView(frame: .zero, configuration: config)
+        webView.uiDelegate = context.coordinator
         webView.scrollView.bounces = false
         webView.scrollView.isScrollEnabled = false
         webView.isOpaque = false
+        webView.backgroundColor = .clear
         webView.load(URLRequest(url: url))
         return webView
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKScriptMessageHandler {
+    final class Coordinator: NSObject, WKScriptMessageHandler, WKUIDelegate {
         let onAuth: () -> Void
 
         init(onAuth: @escaping () -> Void) {
@@ -101,6 +116,18 @@ private struct HumanGateWebView: UIViewRepresentable {
                 )
                 onAuth()
             }
+        }
+
+        /// Camera access for Persona still goes through the app's own camera
+        /// permission; this only stops the page asking a second time.
+        func webView(
+            _ webView: WKWebView,
+            requestMediaCapturePermissionFor origin: WKSecurityOrigin,
+            initiatedByFrame frame: WKFrameInfo,
+            type: WKMediaCaptureType,
+            decisionHandler: @escaping (WKPermissionDecision) -> Void
+        ) {
+            decisionHandler(.grant)
         }
     }
 }
