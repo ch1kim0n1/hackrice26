@@ -18,6 +18,8 @@ import { mintValue } from "../game/rarityBands";
 import { baseValueOf } from "../game/revaluation";
 import { INVENTORY_CAP } from "../game/spec";
 import { refundStaleArenaStakes } from "./characterMutations";
+import { hasDatabaseUrl } from "../db/pg";
+import { enqueueMirror } from "./mirrorQueue";
 
 const MAX_MAILBOX = 500;
 
@@ -366,6 +368,18 @@ class GameState {
       JSON.stringify(stored),
       overflowed ? 1 : 0
     );
+    if (hasDatabaseUrl()) {
+      enqueueMirror("owned_character", `owned:${stored.id}:grant`, {
+        action: "grant",
+        playerId: this.playerId,
+        id: stored.id,
+        definitionId: stored.character.id,
+        starLevel: stored.stars,
+        netWorth: Math.round(stored.value),
+        rarity: stored.character.rarity,
+        imageKey: stored.character.imageKey ?? null,
+      });
+    }
     // The session row stays in step with every inventory write: the nonce the
     // caller consumed is durable by the time the drop exists, so a restart
     // cannot rewind into a used nonce.
@@ -460,6 +474,13 @@ class GameState {
       const drop = this.dropById(id);
       if (!drop) continue;
       statement.run(this.playerId, id);
+      if (hasDatabaseUrl()) {
+        enqueueMirror("owned_character", `owned:${id}:remove`, {
+          action: "remove",
+          playerId: this.playerId,
+          id,
+        });
+      }
       const index = this.inventory.findIndex((candidate) => candidate.id === id);
       if (index >= 0) this.inventory.splice(index, 1);
       removed.push({ ...drop, lockedBy: null });
@@ -480,6 +501,16 @@ class GameState {
     // `locked` is 004's boolean, kept in step so the two never disagree.
     db.prepare(`UPDATE lootbox_drop SET locked_by = ?, locked = 1 WHERE player_id = ? AND drop_id = ?`)
       .run(heldBy, this.playerId, id);
+    if (hasDatabaseUrl()) {
+      // Same idempotency key as unlockDrop's: only the freshest lock state
+      // for this monster should ever be in flight, not a history of them.
+      enqueueMirror("owned_character", `owned:${id}:lock`, {
+        action: "lock",
+        playerId: this.playerId,
+        id,
+        lockedBy: heldBy,
+      });
+    }
     return true;
   }
 
@@ -489,6 +520,13 @@ class GameState {
     if (drop) drop.lockedBy = null;
     db.prepare(`UPDATE lootbox_drop SET locked_by = NULL, locked = 0 WHERE player_id = ? AND drop_id = ?`)
       .run(this.playerId, id);
+    if (hasDatabaseUrl()) {
+      enqueueMirror("owned_character", `owned:${id}:lock`, {
+        action: "unlock",
+        playerId: this.playerId,
+        id,
+      });
+    }
   }
 
   /** Monsters free to sell, gamble or fuse. */
@@ -608,6 +646,15 @@ export function grantCase(playerId: string, rarity: Rarity, source: string): Pen
     `INSERT INTO pending_case (case_id, player_id, rarity, source, created_at)
      VALUES (?, ?, ?, ?, ?)`
   ).run(row.caseId, playerId, rarity, source, row.createdAt);
+  if (hasDatabaseUrl()) {
+    enqueueMirror("case_grant", row.caseId, {
+      caseId: row.caseId,
+      playerId,
+      rarity,
+      source,
+      createdAt: row.createdAt,
+    });
+  }
   return row;
 }
 
@@ -630,5 +677,8 @@ export function consumeCase(playerId: string, caseId: string): PendingCase | nul
     .get(playerId, caseId) as { case_id: string; rarity: string; source: string; created_at: string } | undefined;
   if (!row) return null;
   db.prepare(`DELETE FROM pending_case WHERE player_id = ? AND case_id = ?`).run(playerId, caseId);
+  if (hasDatabaseUrl()) {
+    enqueueMirror("case_open", `${caseId}:open`, { caseId, playerId });
+  }
   return { caseId: row.case_id, rarity: row.rarity as Rarity, source: row.source, createdAt: row.created_at };
 }

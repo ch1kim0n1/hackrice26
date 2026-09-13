@@ -17,6 +17,8 @@
 
 import crypto, { randomBytes, scryptSync, timingSafeEqual, createHash } from "crypto";
 import { db } from "../db";
+import { hasDatabaseUrl } from "../db/pg";
+import { enqueueMirror } from "../services/mirrorQueue";
 
 // ===== Password hashing (scrypt, stdlib crypto — no deps) =====
 
@@ -67,17 +69,28 @@ export interface Account {
 export function createAccount(username: string, password: string, displayName?: string): Account {
   const playerId = crypto.randomUUID();
   const name = displayName?.trim() || username;
+  const passwordHash = hashPassword(password);
   db.exec("BEGIN");
   try {
     db.prepare(`INSERT INTO players (id, display_name, is_portable) VALUES (?, ?, 1)`).run(playerId, name);
     db.prepare(
       `INSERT INTO account (player_id, username, password_hash, display_name)
        VALUES (?, ?, ?, ?)`
-    ).run(playerId, username, hashPassword(password), displayName ?? "");
+    ).run(playerId, username, passwordHash, displayName ?? "");
     db.exec("COMMIT");
   } catch (error) {
     db.exec("ROLLBACK");
     throw error;
+  }
+  if (hasDatabaseUrl()) {
+    // The already-computed hash crosses to Postgres, same as it just crossed
+    // into SQLite's own `account` table -- never the plaintext password.
+    enqueueMirror("account_created", playerId, {
+      playerId,
+      username,
+      displayName: name,
+      passwordHash,
+    });
   }
   return accountFor(playerId)!;
 }
@@ -113,10 +126,19 @@ const tokenHash = (token: string) => createHash("sha256").update(token).digest("
 
 export function createSession(playerId: string): string {
   const token = randomBytes(32).toString("base64url");
+  const hash = tokenHash(token);
   db.prepare(
     `INSERT INTO session (token_hash, player_id, expires_at)
      VALUES (?, ?, datetime('now', '+30 days'))`
-  ).run(tokenHash(token), playerId);
+  ).run(hash, playerId);
+  if (hasDatabaseUrl()) {
+    enqueueMirror("session_event", `session:${hash}`, {
+      action: "create",
+      playerId,
+      tokenHashHex: hash,
+      expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString(),
+    });
+  }
   return token;
 }
 
@@ -132,11 +154,30 @@ export function resolveSession(token: string): string | null {
 }
 
 export function revokeSession(token: string): void {
-  db.prepare(`UPDATE session SET revoked = 1 WHERE token_hash = ?`).run(tokenHash(token));
+  const hash = tokenHash(token);
+  // Look up the owner before revoking -- resolveSession filters on
+  // revoked = 0, so it would come back null if asked after the UPDATE below.
+  const row = db.prepare(`SELECT player_id FROM session WHERE token_hash = ?`).get(hash) as
+    | { player_id: string }
+    | undefined;
+  db.prepare(`UPDATE session SET revoked = 1 WHERE token_hash = ?`).run(hash);
+  if (hasDatabaseUrl() && row) {
+    enqueueMirror("session_event", `revoke:${hash}`, {
+      action: "revoke",
+      playerId: row.player_id,
+      tokenHashHex: hash,
+    });
+  }
 }
 
 export function revokeAllSessions(playerId: string): void {
   db.prepare(`UPDATE session SET revoked = 1 WHERE player_id = ?`).run(playerId);
+  if (hasDatabaseUrl()) {
+    enqueueMirror("session_event", `revoke-all:${playerId}`, {
+      action: "revoke_all",
+      playerId,
+    });
+  }
 }
 
 /** Housekeeping: drop expired sessions. Call on a timer from index.ts. */

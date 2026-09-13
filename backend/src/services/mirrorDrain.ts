@@ -33,6 +33,21 @@ import {
   recordStreakEvent,
 } from "../db/repositories/telemetryRepo";
 import { recordCoinsPg } from "./coinsPg";
+import {
+  mirrorScanMint,
+  mirrorCaseGrant,
+  mirrorCaseOpen,
+  mirrorFaintedMonster,
+  mirrorBattleMatchBegin,
+  mirrorOwnedCharacter,
+  mirrorSquadSnapshot,
+} from "../db/repositories/progressionRepo";
+import { mirrorPromoRedemption } from "../db/repositories/promoRepo";
+import {
+  mirrorAccountCreated,
+  mirrorSessionEvent,
+  mirrorProfileUpdate,
+} from "../db/repositories/identityRepo";
 
 /** How many rows one pass will attempt. Small: a pass holds no transaction and
  *  the loop comes round again immediately when there is more to do. */
@@ -77,6 +92,17 @@ const DELIVERERS: Record<MirrorKind, Deliver> = {
     };
     return recordCoinsPg(e.playerId, e.id, e.amount, e.reason as never, e.refId ?? null);
   },
+  scan_mint: mirrorScanMint as Deliver,
+  case_grant: mirrorCaseGrant as Deliver,
+  case_open: mirrorCaseOpen as Deliver,
+  fainted_monster: mirrorFaintedMonster as Deliver,
+  battle_match_begin: mirrorBattleMatchBegin as Deliver,
+  owned_character: mirrorOwnedCharacter as Deliver,
+  squad_snapshot: mirrorSquadSnapshot as Deliver,
+  promo_redemption: mirrorPromoRedemption as Deliver,
+  account_created: mirrorAccountCreated as Deliver,
+  session_event: mirrorSessionEvent as Deliver,
+  profile_update: mirrorProfileUpdate as Deliver,
 };
 
 let timer: NodeJS.Timeout | null = null;

@@ -396,6 +396,14 @@ scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "
         starLevel: SCAN_MINT_STAR,
         characterRef: character.id,
       });
+      enqueueMirror("scan_mint", `scanmint:${key}:${barcode}`, {
+        playerId: key,
+        barcode,
+        dropId: mint.dropId,
+        characterId: character.id,
+        nutrition: asScanNutrition(nutrition),
+        source: "openfoodfacts",
+      });
     }
     enqueueMirror("meal_intake", `${mealId}:intake`, {
       playerId: key,
