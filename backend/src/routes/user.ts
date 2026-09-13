@@ -3,7 +3,8 @@ import { UserProfile, Character, LootDrop } from "../types";
 import { PlayerRequest, requirePlayerId } from "../middleware/player";
 import { db } from "../db";
 import { stateFor } from "../services/lootboxState";
-import { vitalsStoreFor } from "../vitals/vitalsStore";
+import { MAX_SNAPSHOTS, vitalsStoreFor } from "../vitals/vitalsStore";
+import { activityByDay } from "../vitals/activityCalendar";
 import { rateLimitByPlayer } from "../middleware/security";
 import { RARITY_TIERS } from "../data/lootTable";
 import {
@@ -648,8 +649,8 @@ function buildJourney(playerId: string, profile: PlayerProfile) {
 
   const vitals = vitalsStoreFor(playerId).recent(30).map((s) => ({
     date: s.receivedAt.slice(0, 10),
-    steps: s.snapshot.stepsToday ?? null,
-    activeCalories: s.snapshot.activeCaloriesToday ?? null,
+    steps: s.snapshot.stepsToday == null ? null : Math.round(s.snapshot.stepsToday),
+    activeCalories: s.snapshot.activeCaloriesToday == null ? null : Math.round(s.snapshot.activeCaloriesToday),
     heartRate: s.snapshot.heartRateBpm ?? null
   }));
 
@@ -680,7 +681,10 @@ function buildJourney(playerId: string, profile: PlayerProfile) {
         stars: d.stars ?? 1,
         openedAt: d.openedAt
       })),
-    vitals
+    vitals,
+    activity: {
+      byDay: activityByDay(vitalsStoreFor(playerId).recent(MAX_SNAPSHOTS))
+    }
   };
 }
 

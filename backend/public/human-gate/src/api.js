@@ -12,7 +12,10 @@ const DEFAULT_API = "http://localhost:4000";
 
 export function apiBase() {
   const param = new URLSearchParams(location.search).get("api");
-  return (param || window.NQ_API_BASE || DEFAULT_API).replace(/\/+$/, "");
+  // Served by the backend itself at /gate → same origin is the API. Only a
+  // standalone dev server (python http.server on :8123) needs the fallback.
+  const implicit = location.port === "8123" ? DEFAULT_API : location.origin;
+  return (param || window.NQ_API_BASE || implicit).replace(/\/+$/, "");
 }
 
 export class ApiError extends Error {

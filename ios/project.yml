@@ -56,6 +56,8 @@ targets:
         # (APIClient also reads this key at runtime as the compiled-in default;
         # AppConfig.backendBaseURL can still override it via UserDefaults).
         BackendBaseURL: https://main-production-3bbd.up.railway.app
+        # The signup human-gate web app, served by the backend itself.
+        HumanGateURL: https://main-production-3bbd.up.railway.app/gate/
         UIAppFonts:
           - Fonts/Baloo2.ttf
           - Fonts/Quicksand.ttf

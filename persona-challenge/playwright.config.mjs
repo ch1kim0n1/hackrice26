@@ -13,7 +13,9 @@ export default defineConfig({
     viewport: { width: 420, height: 800 },
   },
   webServer: {
-    command: "python3 -m http.server 8123",
+    // Runtime files live in backend/public/human-gate/ — served at /gate by
+    // the backend in production, mirrored here from the same source.
+    command: "python3 -m http.server 8123 -d ../backend/public/human-gate",
     url: "http://localhost:8123",
     reuseExistingServer: true,
   },

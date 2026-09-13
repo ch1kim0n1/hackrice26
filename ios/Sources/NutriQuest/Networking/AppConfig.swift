@@ -37,9 +37,9 @@ enum AppConfig {
         }
     }
 
-    /// Base URL of the standalone "Prove You're Human" pre-gate web app
-    /// (persona-challenge/). Serve it with `python3 -m http.server 8123`
-    /// inside that directory — same LAN caveat as `backendBaseURL` applies.
+    /// Base URL of the standalone "Prove You're Human" pre-gate web app.
+    /// Production serves it from the backend itself at /gate; for local
+    /// development run `python3 -m http.server 8123 -d backend/public/human-gate`.
     static var humanGateURL: String {
         get {
             let stored = UserDefaults.standard.string(forKey: humanGateURLKey) ?? ""

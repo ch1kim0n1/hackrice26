@@ -20,6 +20,7 @@
 		15C07579E45A62FE7285365D /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 589E1F9B242A850F9FFB2EB8 /* OnboardingView.swift */; };
 		16775AC590EAAA581DF92F07 /* ScannerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C6C1A080D8038405488E203 /* ScannerView.swift */; };
 		1DF172F20FD26F9851F2708C /* BodyMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = 477C9D1892868D080F6DD2B5 /* BodyMetrics.swift */; };
+		21785D39917D076AB1686FB8 /* JourneyActivityCalendar.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED51295404DDF35566BDB19E /* JourneyActivityCalendar.swift */; };
 		23C68A3FADC8D61259313557 /* HomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F64CE10476129B1ED098A63A /* HomeView.swift */; };
 		2990358D29CF67F59C5A6935 /* BattleHubView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD52285DC114B6B2660F977D /* BattleHubView.swift */; };
 		2B5242112D570192B6879AA6 /* NutriQuestApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3760A6F93969CB515E706B1 /* NutriQuestApp.swift */; };
@@ -93,6 +94,7 @@
 		D46BC08A405AD317016E0EF9 /* SquadPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F941A4022E72AD7BEC6DB964 /* SquadPickerView.swift */; };
 		D5D7EED529F03A9576289678 /* HealthKitSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C822A50B46EBDCFD6D0A406A /* HealthKitSnapshot.swift */; };
 		D63454F9FF40922A4939FBC0 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137936CDB011C5B7E6FE06BD /* APIModels.swift */; };
+		D64641F01F7AC55D87DC6C5F /* BarcodeUtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4B92B92027BB76739FE31D5 /* BarcodeUtilsTests.swift */; };
 		DCAAA79A9A71F0D07380BEBF /* BodyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C030FB0134776A73A42C9F1B /* BodyMetricsTests.swift */; };
 		DDB78FA7CDA51160C6DB0E89 /* game-assets in Resources */ = {isa = PBXBuildFile; fileRef = 93A470DD2ACD7130B1C43577 /* game-assets */; };
 		E08A2EE722652550140909CD /* LANSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A8F56ABF6DD4934679CE67 /* LANSession.swift */; };
@@ -186,6 +188,7 @@
 		AD52285DC114B6B2660F977D /* BattleHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleHubView.swift; sourceTree = "<group>"; };
 		AD6E67C745E454F1A74AFDFF /* NQNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NQNotifications.swift; sourceTree = "<group>"; };
 		B49A99726C1DC2C5DF944B0B /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
+		B4B92B92027BB76739FE31D5 /* BarcodeUtilsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeUtilsTests.swift; sourceTree = "<group>"; };
 		B6558DD7BAB6A544FF3565A6 /* NutriQuest.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NutriQuest.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7EF8099151DFFA30CE3943C /* LANTournament.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANTournament.swift; sourceTree = "<group>"; };
 		BBB319994EBB87A6BAA41508 /* LaunchGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateView.swift; sourceTree = "<group>"; };
@@ -212,6 +215,7 @@
 		E5BE5A5A080CDEA4912ABB03 /* AppConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfig.swift; sourceTree = "<group>"; };
 		EB2455C6D40FB8F237906468 /* RarityAnimationConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RarityAnimationConfiguration.swift; sourceTree = "<group>"; };
 		ED14063699D4A328F1173D67 /* GameArtTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GameArtTests.swift; sourceTree = "<group>"; };
+		ED51295404DDF35566BDB19E /* JourneyActivityCalendar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyActivityCalendar.swift; sourceTree = "<group>"; };
 		F3760A6F93969CB515E706B1 /* NutriQuestApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NutriQuestApp.swift; sourceTree = "<group>"; };
 		F4E494C697135C3755277737 /* KitBridging.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KitBridging.swift; sourceTree = "<group>"; };
 		F50179EE5AAEE08C0FCB81A5 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Fonts; path = Resources/Fonts; sourceTree = SOURCE_ROOT; };
@@ -426,6 +430,7 @@
 			isa = PBXGroup;
 			children = (
 				3695D833EDA8B023BFEC62A9 /* APIErrorTests.swift */,
+				B4B92B92027BB76739FE31D5 /* BarcodeUtilsTests.swift */,
 				C030FB0134776A73A42C9F1B /* BodyMetricsTests.swift */,
 				BE25C65283FB213EE72D1B3A /* CauldronCashOutTests.swift */,
 				ED14063699D4A328F1173D67 /* GameArtTests.swift */,
@@ -503,6 +508,7 @@
 				7AB602D2B3D6DBF6725D2720 /* HealthDashboardView.swift */,
 				F64CE10476129B1ED098A63A /* HomeView.swift */,
 				39D1677FC4D6136C587AA8EA /* HumanGateView.swift */,
+				ED51295404DDF35566BDB19E /* JourneyActivityCalendar.swift */,
 				0D8A9CAFEA349E7337340C4C /* JourneyView.swift */,
 				C04360E042B736F05741E5C3 /* KitchenMinesView.swift */,
 				285167B39A9F98AC073AEE70 /* LANLobbyView.swift */,
@@ -635,6 +641,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5B5652062290FDE3A5688C47 /* APIErrorTests.swift in Sources */,
+				D64641F01F7AC55D87DC6C5F /* BarcodeUtilsTests.swift in Sources */,
 				DCAAA79A9A71F0D07380BEBF /* BodyMetricsTests.swift in Sources */,
 				444DAF3851E02D2D49C02C6E /* CauldronCashOutTests.swift in Sources */,
 				9124D0F77A75B6F43BF1941D /* GameArtTests.swift in Sources */,
@@ -691,6 +698,7 @@
 				23C68A3FADC8D61259313557 /* HomeView.swift in Sources */,
 				04EB62BF0CA027847B8DF200 /* HumanGateView.swift in Sources */,
 				9BF7AD79D721D0EF56E68D49 /* ImageColorExtractor.swift in Sources */,
+				21785D39917D076AB1686FB8 /* JourneyActivityCalendar.swift in Sources */,
 				3AF44E9524682DB3FAD7B4DE /* JourneyView.swift in Sources */,
 				9F642EDAD1101AE0D9F9CAAF /* KitBridging.swift in Sources */,
 				13BF32F83AAE3C370CD3DCBE /* KitchenMinesView.swift in Sources */,
