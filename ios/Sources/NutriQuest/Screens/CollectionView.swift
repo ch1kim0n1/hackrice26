@@ -210,13 +210,16 @@ struct CollectionView: View {
                 artwork: character.isLocked ? nil : AnyView(
                     // Fainted monsters wear the hurt sprite on their card —
                     // the FAINTED badge alone was too easy to miss.
-                    CharacterArtwork(character: character, hurt: gameState.faintedIds.contains(character.id))
-                        .frame(width: 96, height: 124)
+                    MonsterRarityPresentationView(rarity: character.rarity) {
+                        CharacterArtwork(character: character, hurt: gameState.faintedIds.contains(character.id))
+                            .frame(width: 96, height: 124)
+                    }
                 ),
                 artworkSize: CGSize(width: 96, height: 124),
                 // Sell/merge/faint badges take the top-right corner — the
                 // rarity chip must yield it or the two paint on each other.
-                hidesRarityChip: sellMode || mergeMode || gameState.faintedIds.contains(character.id)
+                hidesRarityChip: sellMode || mergeMode || gameState.faintedIds.contains(character.id),
+                showsArtworkFrame: showsInnerFrame
             )
             .overlay {
                 rarityAura(for: character)
@@ -253,7 +256,7 @@ struct CollectionView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(character.name), \(character.rarity.label) rarity\(character.isLocked ? "" : ", \(character.starLevel) star\(character.starLevel == 1 ? "" : "s")")")
         .accessibilityHint(cardHint(for: character, isSelected: isSelected))
-        .nqShineSweep(active: character.rarity >= .legendary)
+        .nqShineSweep(active: character.rarity >= .legendary, tint: sweepTint(character.rarity))
     }
 
     /// Mastery as drawn stars — ★★★ reads at a glance where "3 stars" text
@@ -499,22 +502,55 @@ struct CollectionView: View {
         }
     }
 
-    /// Legendary-and-up gold halo, or an epic purple rim. Compared by rank
-    /// so mythic and secret are not left plainer than the tier below them.
+    /// Squad cards drop the rigid inner frame so auras aren't boxed in.
+    /// Debug builds bring it back with `-squadInnerFrame` for comparison.
+    private var showsInnerFrame: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-squadInnerFrame")
+        #else
+        return false
+        #endif
+    }
+
+    /// Card border in the old inner frame's colors: the frame art no longer
+    /// boxes the monster in, so its palette moves out to the card's own edge.
     @ViewBuilder
     private func rarityAura(for character: Character) -> some View {
-        if character.rarity >= .legendary && !character.isLocked {
-            RoundedRectangle(cornerRadius: NQTheme.radiusXL)
-                .strokeBorder(NQTheme.gold.opacity(0.45), lineWidth: 2)
-                .shadow(color: NQTheme.gold.opacity(0.35), radius: 10)
+        if !character.isLocked {
+            NQPanelShape(cut: NQTheme.radiusM)
+                .strokeBorder(rarityBorder(character.rarity), lineWidth: 3.5)
                 .allowsHitTesting(false)
-        } else if character.rarity == .epic && !character.isLocked {
-            // Epic gets its own aura — a purple rim
-            // glow so the tier reads at a glance.
-            RoundedRectangle(cornerRadius: NQTheme.radiusXL)
-                .strokeBorder(NQRarity.epic.outline.opacity(0.4), lineWidth: 1.5)
-                .shadow(color: NQRarity.epic.outline.opacity(0.3), radius: 8)
-                .allowsHitTesting(false)
+        }
+    }
+
+    /// Mythic and Secret glow too brightly for a white sweep to show, so theirs
+    /// is tinted to contrast with the glow instead. nil keeps the white sweep.
+    private func sweepTint(_ rarity: Rarity) -> [Color]? {
+        switch rarity {
+        case .mythic: return [Color(hex: 0xFF4D7A)]
+        case .secret: return [Color(hex: 0x3ED9F2), Color(hex: 0xF29BB5), Color(hex: 0x9A7BF0)]
+        default: return nil
+        }
+    }
+
+    /// Colors sampled from each tier's `-frame` artwork: lit top-left and
+    /// shaded bottom-right like the frames, with Secret's holographic sweep.
+    private func rarityBorder(_ rarity: Rarity) -> AnyShapeStyle {
+        func lit(_ light: Color, _ dark: Color) -> AnyShapeStyle {
+            AnyShapeStyle(LinearGradient(colors: [light, dark], startPoint: .topLeading, endPoint: .bottomTrailing))
+        }
+        switch rarity {
+        case .common: return lit(Color(hex: 0xD2CEC6), Color(hex: 0xB9B4AA))
+        case .uncommon: return lit(Color(hex: 0x6FD892), Color(hex: 0x4FB872))
+        case .rare: return lit(Color(hex: 0x5CC0FA), Color(hex: 0x3F98DA))
+        case .epic: return lit(Color(hex: 0xA98BFA), Color(hex: 0x8B6BEF))
+        case .legendary: return lit(Color(hex: 0xFFD85E), Color(hex: 0xE39A2A))
+        case .mythic: return lit(Color(hex: 0xFFB070), Color(hex: 0xD45A47))
+        case .secret:
+            return AnyShapeStyle(AngularGradient(colors: [
+                Color(hex: 0x3ED9F2), Color(hex: 0xF29BB5), Color(hex: 0x9A7BF0),
+                Color(hex: 0xD9C4FF), Color(hex: 0x3ED9F2)
+            ], center: .center))
         }
     }
 

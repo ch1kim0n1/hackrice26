@@ -1,0 +1,15 @@
+Free Game FX — ashishlko11 (Ashish Kumar Yadav)
+Source: https://ashishlko11.itch.io/free-game-fx
+Author's alternate release: https://opengameart.org/content/free-game-fx
+License selected: Creative Commons Attribution 3.0
+https://creativecommons.org/licenses/by/3.0/
+https://creativecommons.org/licenses/by/3.0/legalcode
+
+The OpenGameArt release offers CC BY 3.0 and GPL 3.0 as alternatives.
+This project uses the CC BY 3.0 option.
+Production modifications: sequences 67, 69 and 72 renamed and losslessly
+optimized; source alpha and resolution preserved; runtime color multiplication.
+No endorsement by the original artist is implied.
+
+This is a provenance/credit record based on the source page inspected 2026-09-13.
+The downloaded archive did not contain a license file.

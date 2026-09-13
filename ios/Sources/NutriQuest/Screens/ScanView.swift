@@ -563,7 +563,7 @@ struct SummonRevealOverlay: View {
             // The spec's summon card: Health, Attack, rarity, ★1, net worth.
             HStack(spacing: NQTheme.spaceS) {
                 NQChip(rarityLabel, tint: rarityColor, filled: true)
-                NQChip("★\(character.starLevel)", icon: .star, tint: NQTheme.gold, filled: true)
+                NQChip(String(repeating: "★", count: max(1, character.starLevel)), tint: NQTheme.gold, filled: true)
             }
             HStack(spacing: NQTheme.spaceS) {
                 NQChip("HP \(Int(character.baseHealth.rounded()))", icon: .heart, tint: NQTheme.flame)

@@ -98,12 +98,15 @@ struct CharacterDetailView: View {
                 .padding(.horizontal, 4)
                 .background(RoundedRectangle(cornerRadius: NQTheme.radiusS).fill(character.rarity.badgeBackground))
 
-            HStack(spacing: 5) {
-                Image(systemName: "star.fill")
-                    .font(.system(size: 12, weight: .bold))
-                Text("★\(character.starLevel)")
-                    .font(NQText.captionS.font.weight(.bold))
+            // One star per level, matching the Squad card's star row.
+            HStack(spacing: 2) {
+                ForEach(0..<max(1, character.starLevel), id: \.self) { _ in
+                    Image(systemName: "star.fill")
+                        .font(.system(size: 12, weight: .bold))
+                }
             }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(character.starLevel) star\(character.starLevel == 1 ? "" : "s")")
             .foregroundStyle(accent.accentDark)
             .nqPadding(.badge)
             .padding(.horizontal, 4)

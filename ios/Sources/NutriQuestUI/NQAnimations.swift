@@ -354,12 +354,22 @@ public extension View {
 /// Diagonal light band sweeping across — attach to legendary cards / rewards.
 public struct NQShineSweep: ViewModifier {
     private var active: Bool
+    /// Band colors. nil is the classic white band, which brightens what's
+    /// under it; a tint draws in its own colors instead, so it still reads
+    /// over surfaces already too bright for white to show.
+    private var tint: [Color]?
     @State private var phase: CGFloat = -1.4
     @State private var running = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    public init(active: Bool = true) {
+    public init(active: Bool = true, tint: [Color]? = nil) {
         self.active = active
+        self.tint = tint
+    }
+
+    private var bandColors: [Color] {
+        guard let tint else { return [.clear, .white.opacity(0.55), .clear] }
+        return [.clear] + tint.map { $0.opacity(0.5) } + [.clear]
     }
 
     public func body(content: Content) -> some View {
@@ -371,13 +381,13 @@ public struct NQShineSweep: ViewModifier {
                 if active && running && !reduceMotion {
                     GeometryReader { geo in
                         LinearGradient(
-                            colors: [.clear, .white.opacity(0.55), .clear],
+                            colors: bandColors,
                             startPoint: .topLeading,
                             endPoint: .bottomTrailing
                         )
                         .frame(width: geo.size.width * 0.6)
                         .offset(x: phase * geo.size.width * 1.6)
-                        .blendMode(.plusLighter)
+                        .blendMode(tint == nil ? .plusLighter : .normal)
                         .allowsHitTesting(false)
                     }
                     .clipped()
@@ -394,7 +404,9 @@ public struct NQShineSweep: ViewModifier {
 }
 
 public extension View {
-    func nqShineSweep(active: Bool = true) -> some View { modifier(NQShineSweep(active: active)) }
+    func nqShineSweep(active: Bool = true, tint: [Color]? = nil) -> some View {
+        modifier(NQShineSweep(active: active, tint: tint))
+    }
 }
 
 // MARK: - Breathing glow (active character)

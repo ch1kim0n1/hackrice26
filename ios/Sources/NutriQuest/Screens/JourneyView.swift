@@ -296,7 +296,7 @@ struct JourneyView: View {
             }
             Spacer()
             if (drop.stars ?? 1) > 1 {
-                Text("★\(drop.stars ?? 1)")
+                Text(String(repeating: "★", count: drop.stars ?? 1))
                     .font(NQText.captionS.font.weight(.heavy))
                     .foregroundStyle(NQTheme.gold)
             }
