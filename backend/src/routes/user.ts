@@ -233,6 +233,14 @@ export function saveProfile(playerId: string, profile: PlayerProfile): void {
       },
       bodyType: profile.bodyType ?? null,
     });
+    // The other half of the user_profile -> TigerData mapping (see
+    // db-documentation/10-schema-parity-audit.md): theme/active-character
+    // preferences go to app.player_settings, not app.profile_versions.
+    enqueueMirror("player_settings_update", `${playerId}:settings`, {
+      playerId,
+      theme: profile.colorMode ?? null,
+      activeCharacterId: profile.activeCharacterId ?? null,
+    });
   }
 }
 

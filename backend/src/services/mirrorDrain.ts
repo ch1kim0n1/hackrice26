@@ -47,6 +47,7 @@ import {
   mirrorAccountCreated,
   mirrorSessionEvent,
   mirrorProfileUpdate,
+  mirrorPlayerSettings,
 } from "../db/repositories/identityRepo";
 
 /** How many rows one pass will attempt. Small: a pass holds no transaction and
@@ -103,6 +104,7 @@ const DELIVERERS: Record<MirrorKind, Deliver> = {
   account_created: mirrorAccountCreated as Deliver,
   session_event: mirrorSessionEvent as Deliver,
   profile_update: mirrorProfileUpdate as Deliver,
+  player_settings_update: mirrorPlayerSettings as Deliver,
 };
 
 let timer: NodeJS.Timeout | null = null;

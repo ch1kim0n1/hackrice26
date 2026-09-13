@@ -76,6 +76,51 @@ export async function mirrorSessionEvent(p: SessionEventMirror): Promise<void> {
   });
 }
 
+// --- Player settings ---------------------------------------------------------
+//
+// The other half of the user_profile -> TigerData mapping documented in
+// db-documentation/10-schema-parity-audit.md (`user_profile` ->
+// `app.profile_versions` + `app.player_settings`). profile_versions holds the
+// append-only measurement/goal history; this holds the single mutable
+// preferences row. Only the two fields the app actually has (colorMode as
+// theme, activeCharacterId) are set -- preferred_squad_id/game_timezone/
+// notification_prefs have no source in user_profile today, so they are left
+// alone rather than overwritten with defaults on every update.
+
+export interface PlayerSettingsMirror {
+  playerId: string;
+  theme: string | null;
+  activeCharacterId: string | null;
+}
+
+export async function mirrorPlayerSettings(p: PlayerSettingsMirror): Promise<void> {
+  await withPlayer(p.playerId, async (client: PoolClient) => {
+    await ensurePlayer(client, p.playerId);
+    // active_character_id is a strict FK to app.owned_characters(id); the
+    // referenced drop may not have been mirrored yet (or may belong to
+    // another player if the id is stale), so resolve it defensively rather
+    // than let one bad reference fail the whole settings upsert.
+    let activeCharacterId: string | null = null;
+    if (p.activeCharacterId) {
+      const owned = await client.query(
+        `select 1 from app.owned_characters where id = $1 and player_id = $2`,
+        [p.activeCharacterId, p.playerId]
+      );
+      if ((owned.rowCount ?? 0) > 0) activeCharacterId = p.activeCharacterId;
+    }
+    await client.query(
+      `insert into app.player_settings (player_id, theme, active_character_id)
+       values ($1, coalesce($2, 'system'), $3)
+       on conflict (player_id) do update set
+         theme = coalesce($2, app.player_settings.theme),
+         active_character_id = $3,
+         version = app.player_settings.version + 1,
+         updated_at = now()`,
+      [p.playerId, p.theme, activeCharacterId]
+    );
+  });
+}
+
 // --- Profile snapshot ------------------------------------------------------
 
 export interface ProfileUpdateMirror {

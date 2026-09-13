@@ -36,7 +36,8 @@ export type MirrorKind =
   | "promo_redemption"
   | "account_created"
   | "session_event"
-  | "profile_update";
+  | "profile_update"
+  | "player_settings_update";
 
 export interface QueuedMirror {
   id: number;
