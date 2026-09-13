@@ -21,6 +21,7 @@ import { rateLimitByPlayer, requireAdminToken } from "../middleware/security";
 import { Character, Cookbook, Rarity } from "../types";
 import { enqueueMirror } from "../services/mirrorQueue";
 import { COIN_ERRORS, coinBalance, recordCoinsInTransaction } from "../services/coins";
+import { consumeCookbookBoost } from "./user";
 import { ledger, transact } from "../services/characterMutations";
 import {
   clientSeedBodySchema,
@@ -154,7 +155,7 @@ lootboxRouter.post(
     const playerId = (req as PlayerRequest).playerId!;
 
     try {
-      const { outcome, stored, overflowed } = transact(() => {
+      const { outcome, stored, overflowed, boosted } = transact(() => {
         const session = stateFor(playerId);
         if (parsed.data.clientSeed !== undefined) session.setClientSeed(parsed.data.clientSeed);
         const pair = session.current;
@@ -162,7 +163,12 @@ lootboxRouter.post(
         // The debit first: insufficient coins throws and rolls the nonce
         // increment back too, so a failed open never burns a roll.
         recordCoinsInTransaction(playerId, -book.price, "case_open", book.id);
-        const outcome = engine.openCookbook(book, pair.serverSeed, pair.clientSeed, nonce);
+        // Cookbook Boost (spec §6): the player asks, the store decrements one
+        // held boost, and the rarity roll runs on the ×1.15 Rare+ table —
+        // all inside this transaction, so a failed open refunds the boost.
+        const boosted = parsed.data.useBoost === true && consumeCookbookBoost(playerId);
+        const odds = boosted ? engine.boostedOdds(book.odds) : book.odds;
+        const outcome = engine.openCookbook(book, pair.serverSeed, pair.clientSeed, nonce, odds);
         const { drop: stored, overflowed } = session.record({
           crateId: book.id,
           character: outcome.character,
@@ -171,6 +177,7 @@ lootboxRouter.post(
           value: outcome.value,
           rolls: outcome.rolls,
           caseRarity: outcome.caseRarity,
+          boosted,
           fairness: session.fairnessFor(pair, nonce),
           openedAt: outcome.openedAt
         });
@@ -179,13 +186,18 @@ lootboxRouter.post(
           price: book.price,
           caseRarity: outcome.caseRarity,
           value: outcome.value,
+          boosted,
           overflowed
         });
-        return { outcome, stored, overflowed };
+        return { outcome, stored, overflowed, boosted };
       });
 
       mirrorMint(playerId, "cookbook", book.id, stored, outcome);
-      return res.json(openResponse(playerId, outcome, stored, { coinsSpent: book.price, overflowed }));
+      return res.json(openResponse(playerId, outcome, stored, {
+        coinsSpent: book.price,
+        overflowed,
+        boostApplied: boosted
+      }));
     } catch (err) {
       if (err instanceof Error && err.message === COIN_ERRORS.INSUFFICIENT) {
         return res.status(402).json({
@@ -407,11 +419,14 @@ lootboxRouter.post("/verify", (req, res) => {
   if (!parsed.success) {
     return res.status(400).json({ error: "bookId, serverSeed, clientSeed and a non-negative integer nonce are required." });
   }
-  const { bookId, serverSeed, clientSeed, nonce } = parsed.data;
+  const { bookId, serverSeed, clientSeed, nonce, boosted } = parsed.data;
   const book = engine.cookbookFor(bookId);
   if (!book) return res.status(404).json({ error: `No cookbook '${bookId}'.` });
 
-  const outcome = engine.openCookbook(book, serverSeed, clientSeed, nonce);
+  const outcome = engine.openCookbook(
+    book, serverSeed, clientSeed, nonce,
+    boosted ? engine.boostedOdds(book.odds) : book.odds
+  );
   return res.json({
     serverSeedHash: engine.hashSeed(serverSeed),
     result: {

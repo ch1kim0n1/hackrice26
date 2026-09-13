@@ -254,22 +254,75 @@ final class APIClient {
 
     // MARK: - Battle (backend/src/routes/battle.ts)
 
-    /// POST /battle/simulate — server-authoritative deterministic resolution.
-    /// The seed is generated client-side so the returned replay can be
-    /// re-derived/animated locally with the same inputs.
-    func simulateBattle(_ body: BattleSimulateRequest) async throws -> ServerBattleResult {
-        try await request(ServerBattleResult.self, method: "POST", path: "battle/simulate", body: body)
+    /// POST /battle/ranked — SBMM picks the opponent (bot on an empty queue),
+    /// the server resolves the fight, applies the RR delta, and rolls a
+    /// rank-odds Case onto the pending pile on a win.
+    func playRanked(squad: [BattleSquadMember]) async throws -> RankedBattleResponse {
+        struct RankedBody: Encodable { let squad: [BattleSquadMember] }
+        return try await request(
+            RankedBattleResponse.self,
+            method: "POST",
+            path: "battle/ranked",
+            body: RankedBody(squad: squad)
+        )
     }
 
     /// POST /battle/friendly — fight a friend's stored squad snapshot.
     /// Friendly results land in battle history with rrDelta 0 — no RR moves.
-    func challengeFriend(opponentId: String, squad: [BattleSquadMember]) async throws -> AsyncChallengeResponse {
+    func challengeFriend(opponentId: String, squad: [BattleSquadMember]) async throws -> FriendlyBattleResponse {
         struct ChallengeBody: Encodable { let opponentId: String; let squad: [BattleSquadMember] }
         return try await request(
-            AsyncChallengeResponse.self,
+            FriendlyBattleResponse.self,
             method: "POST",
             path: "battle/friendly",
             body: ChallengeBody(opponentId: opponentId, squad: squad)
+        )
+    }
+
+    /// POST /battle/ranked/begin — matchmake and park an interactive match.
+    /// The response carries the locked specs + seed the local engine runs.
+    func beginRanked(squad: [BattleSquadMember]) async throws -> BattleBeginResponse {
+        struct RankedBody: Encodable { let squad: [BattleSquadMember] }
+        return try await request(
+            BattleBeginResponse.self,
+            method: "POST",
+            path: "battle/ranked/begin",
+            body: RankedBody(squad: squad)
+        )
+    }
+
+    /// POST /battle/ranked/commit — submit the decisions the player made.
+    /// The server replays them deterministically; every entry must be legal.
+    func commitRanked(matchId: String, actions: [BattleActionDTO]) async throws -> RankedBattleResponse {
+        struct CommitBody: Encodable { let matchId: String; let actions: [BattleActionDTO] }
+        return try await request(
+            RankedBattleResponse.self,
+            method: "POST",
+            path: "battle/ranked/commit",
+            body: CommitBody(matchId: matchId, actions: actions)
+        )
+    }
+
+    /// POST /battle/friendly/begin — park an interactive fight against a
+    /// friend's stored squad snapshot.
+    func beginFriendly(opponentId: String, squad: [BattleSquadMember]) async throws -> BattleBeginResponse {
+        struct BeginBody: Encodable { let opponentId: String; let squad: [BattleSquadMember] }
+        return try await request(
+            BattleBeginResponse.self,
+            method: "POST",
+            path: "battle/friendly/begin",
+            body: BeginBody(opponentId: opponentId, squad: squad)
+        )
+    }
+
+    /// POST /battle/friendly/commit — submit the friendly script.
+    func commitFriendly(matchId: String, actions: [BattleActionDTO]) async throws -> FriendlyBattleResponse {
+        struct CommitBody: Encodable { let matchId: String; let actions: [BattleActionDTO] }
+        return try await request(
+            FriendlyBattleResponse.self,
+            method: "POST",
+            path: "battle/friendly/commit",
+            body: CommitBody(matchId: matchId, actions: actions)
         )
     }
 
@@ -580,14 +633,18 @@ final class APIClient {
     }
 
     /// POST /lootbox/cookbooks/:id/open — coin-paid, atomic, one drop.
-    /// `clientSeed` is optional player entropy for the commit-reveal roll.
-    func openCookbook(id: String, clientSeed: String? = nil) async throws -> CrateOpenResponse {
-        struct OpenBody: Encodable { let clientSeed: String? }
+    /// `clientSeed` is optional player entropy for the commit-reveal roll;
+    /// `useBoost` spends one stored Cookbook Boost (×1.15 Rare+ odds, spec §6).
+    func openCookbook(id: String, clientSeed: String? = nil, useBoost: Bool = false) async throws -> CrateOpenResponse {
+        struct OpenBody: Encodable {
+            let clientSeed: String?
+            let useBoost: Bool
+        }
         return try await request(
             CrateOpenResponse.self,
             method: "POST",
             path: "lootbox/cookbooks/\(id)/open",
-            body: OpenBody(clientSeed: clientSeed)
+            body: OpenBody(clientSeed: clientSeed, useBoost: useBoost)
         )
     }
 

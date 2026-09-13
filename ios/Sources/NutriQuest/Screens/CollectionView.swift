@@ -205,6 +205,18 @@ struct CollectionView: View {
                     sellIndicator(character: character, isSelected: isSelected)
                 } else if mergeMode && !character.isLocked && isCentered {
                     mergeBadge(character: character)
+                } else if gameState.faintedIds.contains(character.id) && !character.isLocked {
+                    // Fainted monsters can't be fielded until the daily reset
+                    // or a nutrition-task revive (spec §6).
+                    Text("FAINTED")
+                        .font(NQText.microS.font.weight(.heavy))
+                        .tracking(1)
+                        .foregroundStyle(NQTheme.inkFaint.readableTextColor())
+                        .nqPadding(.badge)
+                        .padding(.horizontal, NQTheme.spaceXS)
+                        .background(Capsule().fill(NQTheme.inkFaint))
+                        .padding(NQTheme.spaceS)
+                        .allowsHitTesting(false)
                 }
             }
         }

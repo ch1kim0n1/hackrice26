@@ -24,12 +24,17 @@ struct CaseOpeningView: View {
         case revealed(CrateOpenResponse)
     }
     @State private var phase: Phase = .idle
+    /// Cookbook Boost (spec §6): earned every fifth streak day, spends one
+    /// per open to multiply Rare+ odds by ×1.15. Default on when held.
+    @State private var useBoost = true
 
     /// The rarest tier this book can produce — the aspirational ceiling.
     private var ceiling: Rarity {
         Rarity(rawValue: cookbook.odds.last?.rarity ?? "") ?? .common
     }
     private var affordable: Bool { gameState.coinBalance >= cookbook.price }
+    private var boostsHeld: Int { gameState.streak?.boosts ?? 0 }
+    private var boostActive: Bool { useBoost && boostsHeld > 0 }
     private var busy: Bool {
         if case .idle = phase { return false }
         return true
@@ -41,6 +46,8 @@ struct CaseOpeningView: View {
                 header
 
                 oddsCard
+
+                if boostsHeld > 0 { boostRow }
 
                 if case .spinning(let drop) = phase, let reel = drop.reel, let winnerIndex = drop.reelWinnerIndex {
                     CaseRouletteStrip(reel: reel, winnerIndex: winnerIndex) {
@@ -116,6 +123,36 @@ struct CaseOpeningView: View {
         }
     }
 
+    /// The Cookbook Boost toggle: one stored boost moves Rare+ odds ×1.15
+    /// (renormalized — Common/Uncommon exempt). The server only consumes it
+    /// when the open actually lands.
+    private var boostRow: some View {
+        HStack(spacing: NQTheme.spaceS) {
+            NQIconView(icon: .sparkle, tint: NQTheme.gold)
+                .frame(width: NQLayout.iconL, height: NQLayout.iconL)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Cookbook Boost")
+                    .font(NQText.caption.font.weight(.bold))
+                    .foregroundStyle(NQTheme.ink)
+                Text("Rare+ odds ×1.15 · \(boostsHeld) held")
+                    .font(NQText.micro.font)
+                    .foregroundStyle(NQTheme.inkMuted)
+            }
+            Spacer(minLength: 0)
+            Toggle("", isOn: $useBoost)
+                .labelsHidden()
+                .tint(NQTheme.gold)
+        }
+        .nqPadding(.card)
+        .nqSurface(.sticker)
+        .overlay {
+            NQPanelShape().strokeBorder(NQTheme.gold.opacity(0.6), lineWidth: NQLayout.hairlineWidth)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Cookbook Boost, \(boostsHeld) held")
+        .accessibilityHint("Rare and better odds are multiplied by 1.15 on this open")
+    }
+
     private func percent(_ chance: Double) -> String {
         chance >= 0.1
             ? String(format: "%.0f%%", chance * 100)
@@ -129,7 +166,7 @@ struct CaseOpeningView: View {
         Task {
             // The server has already decided the outcome by the time this
             // returns — the reel only animates what it resolved.
-            if let drop = await gameState.openCookbook(cookbookID: cookbook.id) {
+            if let drop = await gameState.openCookbook(cookbookID: cookbook.id, useBoost: boostActive) {
                 gameState.addCrateCharacter(drop: drop)
                 if drop.reel != nil, drop.reelWinnerIndex != nil {
                     phase = .spinning(drop)
@@ -171,6 +208,9 @@ struct CaseOpeningView: View {
                     .font(NQText.headingL.font.weight(.heavy))
                     .foregroundStyle(NQTheme.ink)
                 NQChip(rarity.label, tint: rarity.ringColor, filled: true)
+                if drop.boostApplied == true {
+                    NQChip("Boosted ×1.15", icon: .sparkle, tint: NQTheme.gold, filled: true)
+                }
                 Text("Worth \(drop.value.formatted()) coins")
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.inkMuted)

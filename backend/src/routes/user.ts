@@ -266,7 +266,10 @@ userRouter.get("/leaderboard", (req: PlayerRequest, res) => {
 // ===== Daily tasks (spec §6) ===============================================
 
 function taskContext(profile: PlayerProfile): TaskContext {
-  return { proteinTargetG: profile.proteinTargetG };
+  return {
+    proteinTargetG: profile.proteinTargetG,
+    watchConnected: profile.watchOptIn === true
+  };
 }
 
 /** GET /user/tasks/today — the day's three tasks with verified progress. */

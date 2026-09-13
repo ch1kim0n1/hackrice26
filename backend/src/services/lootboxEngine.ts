@@ -26,6 +26,7 @@ import {
 import { RosterCharacter, asCharacter } from "../data/roster";
 import { Character, Cookbook, CrateOdds, DropRolls, Rarity } from "../types";
 import { mintValue } from "../game/rarityBands";
+import { BOOST_EXEMPT, BOOST_RARE_PLUS_MULT } from "../game/spec";
 
 /** One cursor per independent decision, so no two draws share a digest. */
 export const CURSOR = {
@@ -70,6 +71,23 @@ export function roll(
  * at the bottom of the range where floating-point noise in a wide band ahead
  * of them cannot swallow them.
  */
+/**
+ * A Cookbook Boost's odds table (spec §6): Rare-and-above weights ×1.15,
+ * renormalized to sum to 1. Common/Uncommon are exempt — the boost pushes
+ * probability mass at the top of the ladder, exactly once.
+ */
+export function boostedOdds(odds: Partial<Record<Rarity, number>>): Partial<Record<Rarity, number>> {
+  const scaled = Object.fromEntries(
+    RARITY_ORDER.map((rarity) => [
+      rarity,
+      (odds[rarity] ?? 0) * (BOOST_EXEMPT.includes(rarity) ? 1 : BOOST_RARE_PLUS_MULT)
+    ])
+  ) as Record<Rarity, number>;
+  const total = RARITY_ORDER.reduce((sum, r) => sum + scaled[r], 0);
+  if (total <= 0) return { ...odds };
+  return Object.fromEntries(RARITY_ORDER.map((r) => [r, scaled[r] / total]));
+}
+
 export function pickRarity(odds: Partial<Record<Rarity, number>>, value: number): Rarity {
   const entries = RARITY_ORDER
     .map((rarity) => [rarity, odds[rarity] ?? 0] as [Rarity, number])
@@ -163,11 +181,14 @@ export function openCookbook(
   book: Cookbook,
   serverSeed: string,
   clientSeed: string,
-  nonce: number
+  nonce: number,
+  /** Cookbook Boost table — pass boostedOdds(book.odds) when a boost was
+   *  consumed for this open. Defaults to the book's published odds. */
+  odds: Partial<Record<Rarity, number>> = book.odds
 ): OpenOutcome {
   const rarityRoll = roll(serverSeed, clientSeed, nonce, CURSOR.rarity);
-  const rarity = pickRarity(book.odds, rarityRoll);
-  return mintMonster(book.id, rarity, { serverSeed, clientSeed }, nonce, rarityRoll, book.odds);
+  const rarity = pickRarity(odds, rarityRoll);
+  return mintMonster(book.id, rarity, { serverSeed, clientSeed }, nonce, rarityRoll, odds);
 }
 
 /**

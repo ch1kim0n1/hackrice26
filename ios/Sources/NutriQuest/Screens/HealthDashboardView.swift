@@ -193,13 +193,13 @@ struct HealthDashboardView: View {
     private var multiplierCard: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS + 2) {
             HStack {
-                Text("Today's Squad Boost")
+                Text("Today's Eating Score")
                     .font(NQText.heading.font)
                     .foregroundStyle(NQTheme.ink)
                 Spacer()
-                NQChip("×\(String(format: "%.2f", gameState.lastMultiplier))", icon: .battle, filled: true)
+                NQChip("×\(String(format: "%.2f", gameState.lastMultiplier))", icon: .leaf, filled: true)
             }
-            Text("Balanced eating powers your squad in battle. Here's what's driving today's number.")
+            Text("Balanced eating lifts the rarity of monsters your scans mint — and keeps the streak alive. What's driving today's number:")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.inkMuted)
             VStack(spacing: 6) {

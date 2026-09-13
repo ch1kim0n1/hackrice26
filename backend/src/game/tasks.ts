@@ -32,6 +32,8 @@ export interface DailyTask {
   label: string;
   /** Whether claiming awards task RR (spec §5). */
   rrEligible: boolean;
+  /** Needs watch/HealthKit data — only dealt to opted-in players. */
+  watchOnly?: boolean;
 }
 
 interface TaskDef extends DailyTask {
@@ -43,6 +45,8 @@ interface TaskDef extends DailyTask {
  *  independent of the profile store's shape. */
 export interface TaskContext {
   proteinTargetG?: number;
+  /** Watch-data opt-in (spec §7) — gates watch-only tasks. */
+  watchConnected?: boolean;
 }
 
 const NUTRITION_POOL: TaskDef[] = [
@@ -154,6 +158,24 @@ const FLEX_POOL: TaskDef[] = [
     label: "Log or scan any food",
     rrEligible: false,
     done: (p) => countToday("meal_log", "logged_at", p) > 0 || countToday("scan_seen", "seen_at", p) > 0
+  },
+  {
+    // Watch-only (spec §7): dealt only to opted-in players; everyone else
+    // gets the next non-watch task in the pool for the day.
+    id: "sync-workout",
+    category: "flex",
+    label: "Sync a workout from your watch",
+    rrEligible: false,
+    watchOnly: true,
+    done: (p) =>
+      (db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM vitals_snapshot
+           WHERE player_id = ?
+             AND date(json_extract(payload, '$.timestamp')) = date('now')
+             AND json_array_length(json_extract(payload, '$.recentWorkouts')) > 0`
+        )
+        .get(p) as { n: number }).n > 0
   }
 ];
 
@@ -174,12 +196,21 @@ function countToday(table: "meal_log" | "scan_seen", column: string, playerId: s
 }
 
 /** One pick per category, deterministic from the UTC date — every player
- *  gets the same trio, and no state is needed to know what today asks. */
-export function tasksForDay(day: string): DailyTask[] {
+ *  gets the same trio, and no state is needed to know what today asks.
+ *  Watch-only tasks substitute the next non-watch pool entry for players
+ *  who never opted in (spec §7: conditional, never a dead task). */
+export function tasksForDay(day: string, ctx: TaskContext = {}): DailyTask[] {
   return (Object.keys(POOLS) as TaskCategory[]).map((category) => {
     const pool = POOLS[category];
     const h = createHash("sha256").update(`tasks:${day}:${category}`).digest();
-    const pick = pool[h[0] % pool.length];
+    const start = h[0] % pool.length;
+    let pick = pool[start];
+    if (pick.watchOnly && !ctx.watchConnected) {
+      for (let i = 1; i < pool.length; i++) {
+        const alt = pool[(start + i) % pool.length];
+        if (!alt.watchOnly) { pick = alt; break; }
+      }
+    }
     const { done: _done, ...pub } = pick;
     return pub;
   });
@@ -196,7 +227,7 @@ export function taskStatuses(playerId: string, day = todayKey(), ctx: TaskContex
       .prepare(`SELECT quest_id FROM quest_claim WHERE player_id = ? AND day = ?`)
       .all(playerId, day) as { quest_id: string }[]).map((r) => r.quest_id)
   );
-  return tasksForDay(day).map((task) => {
+  return tasksForDay(day, ctx).map((task) => {
     const def = POOLS[task.category].find((t) => t.id === task.id)!;
     return { ...task, done: def.done(playerId, ctx), claimed: claimed.has(task.id) };
   });
@@ -273,7 +304,7 @@ export function claimTask(
   day = todayKey(),
   ctx: TaskContext = {}
 ): { result: TaskClaimResult; profilePatch: Partial<typeof profile> } {
-  const task = tasksForDay(day).find((t) => t.id === taskId);
+  const task = tasksForDay(day, ctx).find((t) => t.id === taskId);
   if (!task) throw new Error("TASK_NOT_TODAY");
   const def = POOLS[task.category].find((t) => t.id === task.id)!;
 
@@ -301,7 +332,7 @@ export function claimTask(
         .prepare(`SELECT COUNT(*) AS n FROM quest_claim WHERE player_id = ? AND day = ?`)
         .get(playerId, day) as { n: number }
     ).n;
-    const allDone = claimedCount >= tasksForDay(day).length;
+    const allDone = claimedCount >= tasksForDay(day, ctx).length;
     let bonusCoins = 0;
     if (allDone) {
       bonusCoins = TASK_ALL_DONE_BONUS;

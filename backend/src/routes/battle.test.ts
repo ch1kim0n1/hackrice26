@@ -445,3 +445,143 @@ describe("route adapter", () => {
     expect([...moves].some((m) => m?.startsWith("broccoli-bud-"))).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// Interactive replay (runScripted) — spec §4 player-driven battles.
+//
+// The client plays locally and submits its decisions; the server replays
+// them against the parked seed/squads. Anything illegal or missing rejects
+// the script — a fallback would diverge from what the client displayed.
+// ---------------------------------------------------------------------------
+
+describe("runScripted — interactive battle replay", () => {
+  const seed = 4242n;
+
+  function scriptedBattle(script: import("../services/battleEngine").ScriptedAction[]) {
+    const b = new Battle(squadOf("a"), squadOf("b"), seed, {
+      firstTurn: "coinFlip",
+      manualReplacement: 0
+    });
+    return { battle: b, outcome: b.runScripted(script) };
+  }
+
+  /** Drive a battle interactively (side A always picks move 0) and return
+   *  the script of decisions it made — what an honest client would submit. */
+  function recordScript(s: bigint): { script: import("../services/battleEngine").ScriptedAction[]; live: Battle } {
+    const live = new Battle(squadOf("a"), squadOf("b"), s, { firstTurn: "coinFlip", manualReplacement: 0 });
+    const script: import("../services/battleEngine").ScriptedAction[] = [];
+    while (!live.finished && live.turn < MAX_TURNS) {
+      if (live.needsReplacement(0)) {
+        const idx = live.sideState(0).findIndex((u, i) => !u.fainted && i !== live.activeIndex(0));
+        script.push({ type: "choose", unitIndex: idx });
+        live.chooseReplacement(0, idx);
+        continue;
+      }
+      if (live.currentSide === "A") {
+        script.push({ type: "move", moveIndex: 0 });
+        live.act(0, { type: "move", moveIndex: 0 });
+      } else {
+        live.act(1, Battle.defaultPolicy(live, 1));
+      }
+    }
+    return { script, live };
+  }
+
+  it("replays a recorded script deterministically", () => {
+    const { script, live } = recordScript(seed);
+    const first = scriptedBattle(script);
+    const second = scriptedBattle(script);
+    expect(first.outcome.ok).toBe(true);
+    expect(second.outcome.ok).toBe(true);
+    if (first.outcome.ok && second.outcome.ok) {
+      expect(first.battle.events).toEqual(live.events);
+      expect(second.battle.events).toEqual(live.events);
+      expect(first.outcome.result.winner).toBe(live.winner);
+    }
+  });
+
+  it("player-scripted match equals a client-driven match with same decisions", () => {
+    // Drive an identical battle interactively: side 0 picks move 0 whenever
+    // legal, side 1 uses the default policy. The recorded script must replay
+    // to an identical event stream.
+    const live = new Battle(squadOf("a"), squadOf("b"), seed, {
+      firstTurn: "coinFlip",
+      manualReplacement: 0
+    });
+    const script: import("../services/battleEngine").ScriptedAction[] = [];
+    while (!live.finished && live.turn < MAX_TURNS) {
+      if (live.needsReplacement(0)) {
+        const idx = live.sideState(0).findIndex((u, i) => !u.fainted && i !== live.activeIndex(0));
+        script.push({ type: "choose", unitIndex: idx });
+        live.chooseReplacement(0, idx);
+        continue;
+      }
+      const side = live.currentSide;
+      if (side === "A") {
+        script.push({ type: "move", moveIndex: 0 });
+        live.act(0, { type: "move", moveIndex: 0 });
+      } else {
+        live.act(1, Battle.defaultPolicy(live, 1));
+      }
+    }
+    const replayed = scriptedBattle(script);
+    expect(replayed.outcome.ok).toBe(true);
+    if (replayed.outcome.ok) {
+      expect(replayed.battle.events).toEqual(live.events);
+      expect(replayed.outcome.result.winner).toBe(live.winner);
+    }
+  });
+
+  it("rejects an illegal move index", () => {
+    const { outcome } = scriptedBattle([{ type: "move", moveIndex: 7 }]);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toContain("illegal action");
+  });
+
+  it("rejects a script that stops early", () => {
+    const { outcome } = scriptedBattle([{ type: "move", moveIndex: 0 }]);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toContain("expected");
+  });
+
+  it("requires a choose entry when the player's monster faints", () => {
+    // A1 is paper-thin: it dies on the first hit it takes. Side B hits hard
+    // enough that the faint is guaranteed whenever B acts.
+    const fragile = [
+      unit("a0", { baseHealth: 1, baseAttack: 1 }),
+      unit("a1"), unit("a2")
+    ];
+    const strong = squadOf("b", 3, { baseAttack: 500 });
+
+    // Find a seed where B moves first so the faint happens on B's turn.
+    let chosen = 1n;
+    for (let s = 1n; s < 40n; s++) {
+      const probe = new Battle(fragile, strong, s, { firstTurn: "coinFlip" });
+      if (probe.currentSide === 1) { chosen = s; break; }
+    }
+
+    const battle = new Battle(fragile, strong, chosen, { firstTurn: "coinFlip", manualReplacement: 0 });
+    battle.act(1, { type: "move", moveIndex: 0 }); // B's turn: a0 faints
+    expect(battle.needsReplacement(0)).toBe(true);
+
+    const noChoose = battle.runScripted([{ type: "move", moveIndex: 0 }]);
+    // runScripted starts fresh state-wise? No — it continues on this battle.
+    expect(noChoose.ok).toBe(false);
+  });
+
+  it("choose picks the player's replacement and stays deterministic", () => {
+    const fragile = [unit("a0", { baseHealth: 1, baseAttack: 1 }), unit("a1"), unit("a2")];
+    const strong = squadOf("b", 3, { baseAttack: 500 });
+    let chosen = 1n;
+    for (let s = 1n; s < 40n; s++) {
+      const probe = new Battle(fragile, strong, s, { firstTurn: "coinFlip" });
+      if (probe.currentSide === 1) { chosen = s; break; }
+    }
+    const battle = new Battle(fragile, strong, chosen, { firstTurn: "coinFlip", manualReplacement: 0 });
+    battle.act(1, { type: "move", moveIndex: 0 });
+    const outcome = battle.runScripted([{ type: "choose", unitIndex: 2 }]);
+    expect(battle.activeIndex(0)).toBe(2);
+    // Continuation fails only because the script ends — the choose applied.
+    expect(outcome.ok).toBe(false);
+  });
+});

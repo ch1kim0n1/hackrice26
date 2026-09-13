@@ -2,7 +2,7 @@ import { Router } from "express";
 import { createHash, randomBytes, randomUUID } from "crypto";
 import { sampleCharacters } from "../data/sampleCharacters";
 import { RARITY_ORDER, RARITY_TIERS } from "../data/lootTable";
-import { BattleState, Character, Rarity } from "../types";
+import { Character, Rarity } from "../types";
 import { requirePlayerId, PlayerRequest } from "../middleware/player";
 import { rateLimitByPlayer } from "../middleware/security";
 import {
@@ -21,8 +21,10 @@ import { BattleEventIn } from "../db/repositories/battleRepo";
 import { attacksFor } from "../data/attacks";
 import { fusionTierAsStar } from "../game/power";
 import {
+  Battle,
   BattleUnitSpec,
   MoveSpec,
+  ScriptedAction,
   effectiveStat,
   simulateBattle
 } from "../services/battleEngine";
@@ -36,6 +38,7 @@ import {
   RankId
 } from "../game/rr";
 import { ROSTER, rosterCharacter } from "../data/roster";
+import { battleCommitSchema } from "../schemas/gameSchemas";
 import { enqueueMirror } from "../services/mirrorQueue";
 import {
   DUNGEON_BOSS_EVERY,
@@ -474,6 +477,113 @@ function simPower(units: SimUnit[]): number {
   );
 }
 
+// ===== Interactive matches (begin / commit) =================================
+//
+// Spec §4 battles are player-driven. The flow is two-phase so the server
+// stays authoritative without a socket:
+//
+//   begin  — resolve the caller's squad to server truth, pick the opponent
+//            (SBMM / stored snapshot / bot), draw the seed, and park the
+//            whole locked matchup in battle_match. The response carries the
+//            full resolved specs both sides, so the client runs the same
+//            deterministic engine the server will.
+//   commit — the client submits the decisions it made (move/switch per own
+//            turn, choose for faint replacements). The server replays them
+//            through runScripted: every entry must be legal, the seed and
+//            squads are the parked ones, and the opponent is the engine's
+//            auto policy — so a client cannot fake an outcome, only choose
+//            its own line of play. The match row is single-use and expires.
+//
+// A commit that fails script validation still consumes the match: retrying
+// with a "fixed" script would let a client probe outcomes consequence-free.
+
+const MATCH_TTL_MS = 15 * 60_000;
+
+interface MatchRow {
+  id: string;
+  player_id: string;
+  mode: string;
+  own_squad: string;
+  opp_squad: string;
+  opponent_id: string | null;
+  is_bot: number;
+  meta: string | null;
+  seed: string;
+  consumed_at: string | null;
+  expires_at: string;
+}
+
+function parkMatch(
+  playerId: string,
+  mode: "ranked" | "friendly",
+  own: SimUnit[],
+  opp: SimUnit[],
+  extra: { opponentId?: string | null; isBot?: boolean; meta?: object } = {}
+): { matchId: string; seed: string } {
+  const matchId = randomUUID();
+  const seed = BigInt(`0x${randomBytes(8).toString("hex")}`).toString();
+  const expires = new Date(Date.now() + MATCH_TTL_MS).toISOString();
+  db.prepare(
+    `INSERT INTO battle_match
+       (id, player_id, mode, own_squad, opp_squad, opponent_id, is_bot, meta, seed, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    matchId, playerId, mode,
+    JSON.stringify(own), JSON.stringify(opp),
+    extra.opponentId ?? null, extra.isBot ? 1 : 0,
+    extra.meta ? JSON.stringify(extra.meta) : null,
+    seed, expires
+  );
+  // Cheap hygiene: drop rows that can never be committed again.
+  db.prepare(`DELETE FROM battle_match WHERE expires_at < ? OR consumed_at IS NOT NULL`)
+    .run(new Date(Date.now() - MATCH_TTL_MS).toISOString());
+  return { matchId, seed };
+}
+
+/**
+ * Atomically consume a pending match. Returns the row, or null when the id
+ * is unknown, belongs to another player/mode, already used, or expired —
+ * the UPDATE itself is the single-use guard, so a double-commit races
+ * safely.
+ */
+function takeMatch(playerId: string, matchId: string, mode: "ranked" | "friendly"): MatchRow | null {
+  const changed = db
+    .prepare(
+      `UPDATE battle_match SET consumed_at = datetime('now')
+       WHERE id = ? AND player_id = ? AND mode = ?
+         AND consumed_at IS NULL AND expires_at > datetime('now')`
+    )
+    .run(matchId, playerId, mode).changes;
+  if (!changed) return null;
+  return db.prepare(`SELECT * FROM battle_match WHERE id = ?`).get(matchId) as unknown as MatchRow;
+}
+
+/** Full resolved spec for the wire — the client builds its local engine
+ *  and its presentation from exactly what the server will replay. */
+function specDTO(u: SimUnit) {
+  return {
+    id: u.id,
+    name: u.name,
+    baseHealth: u.baseHealth,
+    baseAttack: u.baseAttack,
+    star: u.star ?? 1,
+    rarity: u.rarity ?? "common",
+    baseMana: u.baseMana,
+    moves: u.moves ?? attacksFor(u.characterKey ?? u.id, u.rarity ?? "common")
+  };
+}
+
+/** Replay a committed script against a parked match. */
+function replayMatch(row: MatchRow, actions: ScriptedAction[]) {
+  const own = JSON.parse(row.own_squad) as SimUnit[];
+  const opp = JSON.parse(row.opp_squad) as SimUnit[];
+  const battle = new Battle(own.map(specFor), opp.map(specFor), BigInt(row.seed), {
+    firstTurn: "coinFlip",
+    manualReplacement: 0
+  });
+  return battle.runScripted(actions);
+}
+
 // POST /battle/simulate { yourSquad, opponentSquad, seed? } -- deterministic,
 // server-authoritative resolution. Seed = HMAC(matchId) in production;
 // body seed accepted for demo.
@@ -538,7 +648,7 @@ battleRouter.post("/simulate", rateLimitByPlayer({ windowMs: 60_000, max: 60, ke
   recordBattle(req.playerId!, "friendly", youWon ? "win" : "loss", {
     opponent: "custom",
     squad: yourUnits.map((u) => ({ id: u.id, name: u.name })),
-    detail: { rounds: result.rounds }
+    detail: { rounds: result.rounds, events: result.events }
   });
 
   res.json({
@@ -557,68 +667,131 @@ battleRouter.post("/simulate", rateLimitByPlayer({ windowMs: 60_000, max: 60, ke
 // Fight another player's stored squad snapshot. Friendly battles land in
 // battle history for BOTH players but never move RR (spec §5/§6).
 
-// POST /battle/friendly { opponentId, squad }
-battleRouter.post("/friendly", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "friendly", message: "Too many friendly battles. Try again later." }), (req: PlayerRequest, res) => {
-  const { opponentId, squad } = req.body as {
-    opponentId?: string;
-    squad?: SquadUnitIn[];
-  };
+interface FriendlySetup {
+  yourUnits: SimUnit[];
+  oppUnits: SimUnit[];
+}
+
+/** Shared validation+resolution for the friendly endpoints. */
+function setupFriendly(playerId: string, opponentId: unknown, squad: unknown): FriendlySetup | { status: number; body: object } {
   if (typeof opponentId !== "string" || opponentId.length < 1 || opponentId.length > 64) {
-    return res.status(400).json({ error: "opponentId must be a string of 1-64 characters" });
+    return { status: 400, body: { error: "opponentId must be a string of 1-64 characters" } };
   }
-  if (opponentId === req.playerId) {
-    return res.status(400).json({ error: "You cannot battle yourself." });
+  if (opponentId === playerId) {
+    return { status: 400, body: { error: "You cannot battle yourself." } };
   }
   if (!Array.isArray(squad) || squad.length !== DUNGEON_TEAM_SIZE) {
-    return res.status(400).json({ error: "squad must contain exactly 3 units" });
+    return { status: 400, body: { error: "squad must contain exactly 3 units" } };
   }
   const yourError = squadError("yourSquad", squad);
-  if (yourError) return res.status(400).json({ error: yourError });
+  if (yourError) return { status: 400, body: { error: yourError } };
 
   const oppUnits = loadSquadSnapshot(opponentId);
   if (!oppUnits) {
-    return res.status(404).json({ error: { code: "NO_SNAPSHOT", message: "That player has no battle squad yet." } });
+    return { status: 404, body: { error: { code: "NO_SNAPSHOT", message: "That player has no battle squad yet." } } };
   }
 
-  const yourTrusted = resolveOwnSquad(req.playerId!, squad);
-  if ("error" in yourTrusted) return res.status(400).json({ error: yourTrusted.error });
-  saveSquadSnapshot(req.playerId!, yourTrusted);
-  const yourUnits = yourTrusted.map(trustedToSim);
+  const yourTrusted = resolveOwnSquad(playerId, squad);
+  if ("error" in yourTrusted) return { status: 400, body: { error: yourTrusted.error } };
+  saveSquadSnapshot(playerId, yourTrusted);
+  return { yourUnits: yourTrusted.map(trustedToSim), oppUnits };
+}
 
-  const seed = BigInt(`0x${randomBytes(8).toString("hex")}`);
-  const result = simulate(yourUnits, oppUnits, seed);
+/** Record + mirror a resolved friendly result. No RR moves, ever. */
+function applyFriendlyOutcome(playerId: string, opponentId: string, seed: string, result: { winner: string; rounds: number; events: object[]; faintedA: string[] }, yourUnits: SimUnit[], oppUnits: SimUnit[]): void {
   const youWon = result.winner === "A";
-
-  markFainted(req.playerId!, result.faintedA);
-  recordBattle(req.playerId!, "friendly", youWon ? "win" : "loss", {
+  markFainted(playerId, result.faintedA);
+  recordBattle(playerId, "friendly", youWon ? "win" : "loss", {
     opponent: opponentId,
     squad: yourUnits.map((u) => ({ id: u.id, name: u.name })),
-    detail: { rounds: result.rounds }
+    detail: { rounds: result.rounds, events: result.events }
   });
   // The defender's history is complete too — a friendly defense is a result.
   recordBattle(opponentId, "friendly", youWon ? "loss" : "win", {
-    opponent: req.playerId!,
+    opponent: playerId,
     squad: oppUnits.map((u) => ({ id: u.id, name: u.name })),
-    detail: { rounds: result.rounds, defended: true }
+    detail: { rounds: result.rounds, events: result.events, defended: true }
   });
 
   // Best-effort mirror into TigerData: relational battle + event/metric hypertables.
   if (hasDatabaseUrl()) {
     // Keyed on the pairing plus the moment it resolved: a retried request
     // must not mirror the same fight twice, but a rematch is a new battle.
-    enqueueMirror("friend_battle", `${req.playerId!}:${opponentId}:${seed}`, {
-      challengerId: req.playerId!,
+    enqueueMirror("friend_battle", `${playerId}:${opponentId}:${seed}`, {
+      challengerId: playerId,
       defenderId: opponentId,
       winnerSide: youWon ? 0 : 1,
       rounds: result.rounds,
       events: result.events as BattleEventIn[],
     });
   }
+}
+
+// POST /battle/friendly { opponentId, squad } — legacy auto-resolve.
+battleRouter.post("/friendly", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "friendly", message: "Too many friendly battles. Try again later." }), (req: PlayerRequest, res) => {
+  const { opponentId, squad } = req.body as { opponentId?: string; squad?: SquadUnitIn[] };
+  const setup = setupFriendly(req.playerId!, opponentId, squad);
+  if ("status" in setup) return res.status(setup.status).json(setup.body);
+
+  const seed = BigInt(`0x${randomBytes(8).toString("hex")}`);
+  const result = simulate(setup.yourUnits, setup.oppUnits, seed);
+  applyFriendlyOutcome(req.playerId!, opponentId as string, seed.toString(), result, setup.yourUnits, setup.oppUnits);
 
   res.json({
     ...result,
     opponentId,
-    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity }))
+    opponentSquad: setup.oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity, baseHealth: u.baseHealth, baseAttack: u.baseAttack, baseMana: u.baseMana }))
+  });
+});
+
+// POST /battle/friendly/begin { opponentId, squad } — park an interactive
+// friendly against a stored snapshot; returns resolved specs + the seed.
+battleRouter.post("/friendly/begin", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "friendly", message: "Too many friendly battles. Try again later." }), (req: PlayerRequest, res) => {
+  const { opponentId, squad } = req.body as { opponentId?: string; squad?: SquadUnitIn[] };
+  const setup = setupFriendly(req.playerId!, opponentId, squad);
+  if ("status" in setup) return res.status(setup.status).json(setup.body);
+
+  const { matchId, seed } = parkMatch(req.playerId!, "friendly", setup.yourUnits, setup.oppUnits, {
+    opponentId: opponentId as string
+  });
+  res.json({
+    matchId,
+    seed,
+    opponentId,
+    yourSquad: setup.yourUnits.map(specDTO),
+    opponentSquad: setup.oppUnits.map(specDTO)
+  });
+});
+
+// POST /battle/friendly/commit { matchId, actions } — replay the script.
+battleRouter.post("/friendly/commit", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "friendly", message: "Too many friendly battles. Try again later." }), (req: PlayerRequest, res) => {
+  const parsed = battleCommitSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "invalid body" });
+
+  const row = takeMatch(req.playerId!, parsed.data.matchId, "friendly");
+  if (!row) return res.status(410).json({ error: { code: "MATCH_GONE", message: "Match is unknown, already resolved, or expired." } });
+
+  const replay = replayMatch(row, parsed.data.actions);
+  if (!replay.ok) return res.status(400).json({ error: { code: "ILLEGAL_SCRIPT", message: replay.error } });
+  const result = replay.result;
+
+  const oppUnits = JSON.parse(row.opp_squad) as SimUnit[];
+  const yourUnits = JSON.parse(row.own_squad) as SimUnit[];
+  applyFriendlyOutcome(req.playerId!, row.opponent_id!, row.seed, {
+    winner: result.winner, rounds: result.turns, events: result.events,
+    faintedA: result.faintedA
+  }, yourUnits, oppUnits);
+
+  res.json({
+    winner: result.winner,
+    rounds: result.turns,
+    events: result.events,
+    hpLeftA: result.hpFractionsA,
+    hpLeftB: result.hpFractionsB,
+    faintedA: result.faintedA,
+    faintedB: result.faintedB,
+    opponentId: row.opponent_id,
+    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity, baseHealth: u.baseHealth, baseAttack: u.baseAttack, baseMana: u.baseMana }))
   });
 });
 
@@ -693,7 +866,7 @@ function dungeonFloor(floor: number, runSeed: string): { units: SimUnit[]; boss:
  *  unit at 0 HP stays out for the rest of the run (run-scoped faints). */
 export function runDungeonFloors(party: SimUnit[], runSeed: string) {
   const hp = party.map(() => 1);
-  const feed: { floor: number; boss: boolean; won: boolean; rounds: number; enemies: string[]; reward: number }[] = [];
+  const feed: { floor: number; boss: boolean; won: boolean; rounds: number; enemies: string[]; events: object[]; reward: number }[] = [];
   let floorsCleared = 0;
 
   for (let floor = 1; floor <= DUNGEON_SAFETY_CAP; floor++) {
@@ -708,7 +881,7 @@ export function runDungeonFloors(party: SimUnit[], runSeed: string) {
     );
     sim.hpLeftA.forEach((f, j) => { hp[aliveIdx[j]] = f; });
     const won = sim.winner === "A";
-    feed.push({ floor, boss, won, rounds: sim.rounds, enemies: enemies.map((e) => e.name), reward: won ? dungeonFloorReward(floor) : 0 });
+    feed.push({ floor, boss, won, rounds: sim.rounds, enemies: enemies.map((e) => e.name), events: sim.events, reward: won ? dungeonFloorReward(floor) : 0 });
     if (won) floorsCleared = floor; else break;
   }
   return { floorsCleared, feed, completed: floorsCleared >= DUNGEON_SAFETY_CAP };
@@ -755,7 +928,7 @@ battleRouter.post("/dungeon/run", rateLimitByPlayer({ windowMs: 60_000, max: 10,
   recordBattle(req.playerId!, "dungeon", floorsCleared > 0 ? "win" : "loss", {
     opponent: "dungeon",
     squad: party.map((u) => ({ id: u.id, name: u.name })),
-    detail: { floorsCleared, bestFloor, coinsEarned }
+    detail: { floorsCleared, bestFloor, coinsEarned, feed }
   });
 
   if (hasDatabaseUrl()) {
@@ -831,32 +1004,46 @@ function teamPower(units: SimUnit[]): number {
   );
 }
 
-// POST /battle/ranked { squad } -- matchmake via SBMM and fight. Exactly 3.
-battleRouter.post("/ranked", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "ranked", message: "Too many ranked battles. Try again later." }), (req: PlayerRequest, res) => {
-  const { squad } = req.body as { squad?: SquadUnitIn[] };
+interface RankedSetup {
+  yourUnits: SimUnit[];
+  yourTrusted: TrustedUnit[];
+  opponentId: string | null;
+  oppUnits: SimUnit[];
+  opponentRR: number;
+  isBot: boolean;
+  bestScore: number;
+  myRR: number;
+  myRank: RankId;
+}
+
+/** Validate + resolve the caller's squad and matchmake an opponent (SBMM). */
+function setupRanked(playerId: string, squad: unknown): RankedSetup | { status: number; body: object } {
   if (!Array.isArray(squad) || squad.length !== DUNGEON_TEAM_SIZE) {
-    return res.status(400).json({ error: "squad must contain exactly 3 units" });
+    return { status: 400, body: { error: "squad must contain exactly 3 units" } };
   }
   const err = squadError("squad", squad);
-  if (err) return res.status(400).json({ error: err });
+  if (err) return { status: 400, body: { error: err } };
 
-  const yourTrusted = resolveOwnSquad(req.playerId!, squad);
-  if ("error" in yourTrusted) return res.status(400).json({ error: yourTrusted.error });
+  const yourTrusted = resolveOwnSquad(playerId, squad);
+  if ("error" in yourTrusted) return { status: 400, body: { error: yourTrusted.error } };
   const yourUnits = yourTrusted.map(trustedToSim);
 
   // Fainted monsters cannot be fielded (spec §4).
-  const fainted = new Set(faintedIds(req.playerId!));
+  const fainted = new Set(faintedIds(playerId));
   const downed = yourUnits.filter((u) => fainted.has(u.id));
   if (downed.length) {
-    return res.status(409).json({
-      error: {
-        code: "MONSTER_FAINTED",
-        message: `Fainted monsters cannot fight until daily reset or a nutrition task revives them: ${downed.map((u) => u.name).join(", ")}`
+    return {
+      status: 409,
+      body: {
+        error: {
+          code: "MONSTER_FAINTED",
+          message: `Fainted monsters cannot fight until daily reset or a nutrition task revives them: ${downed.map((u) => u.name).join(", ")}`
+        }
       }
-    });
+    };
   }
 
-  const profile = getOrCreate(req.playerId!);
+  const profile = getOrCreate(playerId);
   const myRR = profile.rr ?? 0;
   const myRank = rankForRR(myRR);
 
@@ -865,7 +1052,7 @@ battleRouter.post("/ranked", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyP
   // the stored client claims.
   const candidates = db
     .prepare(`SELECT player_id FROM friend_squad WHERE player_id != ? ORDER BY updated_at DESC LIMIT 50`)
-    .all(req.playerId!) as { player_id: string }[];
+    .all(playerId) as { player_id: string }[];
   const myPower = teamPower(yourUnits);
   let opponentId: string | null = null;
   let opponentUnits: SimUnit[] | null = null;
@@ -889,43 +1076,65 @@ battleRouter.post("/ranked", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyP
   const isBot = opponentUnits === null;
   const oppUnits: SimUnit[] = opponentUnits ?? botSquadForRank(myRank);
   if (isBot) opponentRR = myRR;
-  saveSquadSnapshot(req.playerId!, yourTrusted);
+  saveSquadSnapshot(playerId, yourTrusted);
 
-  const seed = BigInt(`0x${randomBytes(8).toString("hex")}`);
-  const result = simulate(yourUnits, oppUnits, seed);
+  return { yourUnits, yourTrusted, opponentId, oppUnits, opponentRR, isBot, bestScore, myRR, myRank };
+}
+
+interface RankedResultShape {
+  winner: string;
+  rounds: number;
+  events: object[];
+  faintedA: string[];
+}
+
+/** Apply a resolved ranked result: RR, faints, case reward, history, mirror. */
+function applyRankedOutcome(playerId: string, setup: RankedSetup, seed: string, result: RankedResultShape) {
   const youWon = result.winner === "A";
 
   // RR: win +20 / loss −15, adjusted by clamp(round(ΔRR/25), ±5).
-  const ranked = applyRankedResult(myRR, opponentRR, youWon);
-  const updated = applyRankedToProfile(req.playerId!, ranked, youWon);
-  markFainted(req.playerId!, result.faintedA);
+  const ranked = applyRankedResult(setup.myRR, setup.opponentRR, youWon);
+  const updated = applyRankedToProfile(playerId, ranked, youWon);
+  markFainted(playerId, result.faintedA);
 
   // A ranked win rolls a Case off the player's rank table (spec §5); it
   // waits on pending_case until opened — losses pay RR only.
   let caseReward: { rarity: string } | null = null;
   if (youWon) {
-    const v = roll(`ranked:${req.playerId!}`, "case", 0, Number(seed & 0xffffffffn));
+    const v = roll(`ranked:${playerId}`, "case", 0, Number(BigInt(seed) & 0xffffffffn));
     const rarity = rollRankedCaseRarity(ranked.rankBefore, v);
-    const pending = grantCase(req.playerId!, rarity, `ranked:${ranked.rankBefore}`);
+    const pending = grantCase(playerId, rarity, `ranked:${ranked.rankBefore}`);
     caseReward = { rarity: pending.rarity };
   }
 
-  recordBattle(req.playerId!, "ranked", youWon ? "win" : "loss", {
-    opponent: isBot ? "bot" : opponentId ?? "bot",
+  recordBattle(playerId, "ranked", youWon ? "win" : "loss", {
+    opponent: setup.isBot ? "bot" : setup.opponentId ?? "bot",
     rrDelta: ranked.delta,
-    squad: yourUnits.map((u) => ({ id: u.id, name: u.name })),
-    detail: { rounds: result.rounds, matchScore: isBot ? null : bestScore, case: caseReward?.rarity ?? null }
+    squad: setup.yourUnits.map((u) => ({ id: u.id, name: u.name })),
+    detail: { rounds: result.rounds, events: result.events, matchScore: setup.isBot ? null : setup.bestScore, case: caseReward?.rarity ?? null }
   });
-  if (!isBot && opponentId) {
-    recordBattle(opponentId, "ranked", youWon ? "loss" : "win", {
-      opponent: req.playerId!,
-      squad: oppUnits.map((u) => ({ id: u.id, name: u.name })),
-      detail: { rounds: result.rounds, defended: true }
+  if (!setup.isBot && setup.opponentId) {
+    recordBattle(setup.opponentId, "ranked", youWon ? "loss" : "win", {
+      opponent: playerId,
+      squad: setup.oppUnits.map((u) => ({ id: u.id, name: u.name })),
+      detail: { rounds: result.rounds, events: result.events, defended: true }
     });
   }
 
-  res.json({
-    ...result,
+  // Mirror ranked PvP the same way friendly battles land — bots have no
+  // defender row to attach, so only real pairings go to TigerData.
+  if (hasDatabaseUrl() && !setup.isBot && setup.opponentId) {
+    enqueueMirror("friend_battle", `ranked:${playerId}:${setup.opponentId}:${seed}`, {
+      challengerId: playerId,
+      defenderId: setup.opponentId,
+      winnerSide: youWon ? 0 : 1,
+      rounds: result.rounds,
+      mode: "ranked",
+      events: result.events as BattleEventIn[]
+    });
+  }
+
+  return {
     rank: {
       rr: ranked.rr,
       delta: ranked.delta,
@@ -937,26 +1146,94 @@ battleRouter.post("/ranked", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyP
         rankedLosses: updated.rankedLosses ?? 0
       }
     },
-    caseReward,
-    opponent: isBot ? { bot: true } : { bot: false, playerId: opponentId },
-    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity })),
-    movesets: yourUnits.map((u) => ({ id: u.id, moves: u.moves ?? attacksFor(u.characterKey ?? u.id, u.rarity ?? "common") }))
+    caseReward
+  };
+}
+
+// POST /battle/ranked { squad } -- matchmake via SBMM and fight. Exactly 3.
+// Legacy auto-resolve: kept for older clients; new clients use begin/commit.
+battleRouter.post("/ranked", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "ranked", message: "Too many ranked battles. Try again later." }), (req: PlayerRequest, res) => {
+  const { squad } = req.body as { squad?: SquadUnitIn[] };
+  const setup = setupRanked(req.playerId!, squad);
+  if ("status" in setup) return res.status(setup.status).json(setup.body);
+
+  const seed = BigInt(`0x${randomBytes(8).toString("hex")}`);
+  const result = simulate(setup.yourUnits, setup.oppUnits, seed);
+  const outcome = applyRankedOutcome(req.playerId!, setup, seed.toString(), {
+    winner: result.winner, rounds: result.rounds, events: result.events, faintedA: result.faintedA
+  });
+
+  res.json({
+    ...result,
+    ...outcome,
+    opponent: setup.isBot ? { bot: true } : { bot: false, playerId: setup.opponentId },
+    opponentSquad: setup.oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity, baseHealth: u.baseHealth, baseAttack: u.baseAttack, baseMana: u.baseMana })),
+    movesets: setup.yourUnits.map((u) => ({ id: u.id, moves: u.moves ?? attacksFor(u.characterKey ?? u.id, u.rarity ?? "common") }))
   });
 });
 
-// GET /battle/:userId -- current battle state against a matchmade opponent.
-battleRouter.get("/:userId", (_req, res) => {
-  const state: BattleState = {
-    yourSquad: sampleCharacters.slice(0, 3),
-    opponentSquad: sampleCharacters.slice(3, 6),
-    fatigued: false,
-    turn: "you",
-    moves: [
-      { name: "Protein Punch", description: "+12 ATK" },
-      { name: "Fiber Whirl", description: "+8 DEF" },
-      { name: "Vitamin Beam", description: "Heal 10%" },
-      { name: "Hydro Splash", description: "Cleanse debuffs" }
-    ]
+// POST /battle/ranked/begin { squad } — matchmake + park an interactive
+// ranked match; the response carries the locked specs and the seed.
+battleRouter.post("/ranked/begin", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "ranked", message: "Too many ranked battles. Try again later." }), (req: PlayerRequest, res) => {
+  const { squad } = req.body as { squad?: SquadUnitIn[] };
+  const setup = setupRanked(req.playerId!, squad);
+  if ("status" in setup) return res.status(setup.status).json(setup.body);
+
+  const { matchId, seed } = parkMatch(req.playerId!, "ranked", setup.yourUnits, setup.oppUnits, {
+    opponentId: setup.opponentId,
+    isBot: setup.isBot,
+    meta: { opponentRR: setup.opponentRR, bestScore: setup.bestScore, myRR: setup.myRR, myRank: setup.myRank }
+  });
+  res.json({
+    matchId,
+    seed,
+    opponent: setup.isBot ? { bot: true } : { bot: false, playerId: setup.opponentId },
+    yourSquad: setup.yourUnits.map(specDTO),
+    opponentSquad: setup.oppUnits.map(specDTO)
+  });
+});
+
+// POST /battle/ranked/commit { matchId, actions } — replay the player's
+// script; the result is whatever the rules produce, never what was claimed.
+battleRouter.post("/ranked/commit", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "ranked", message: "Too many ranked battles. Try again later." }), (req: PlayerRequest, res) => {
+  const parsed = battleCommitSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: parsed.error.issues[0]?.message ?? "invalid body" });
+
+  const row = takeMatch(req.playerId!, parsed.data.matchId, "ranked");
+  if (!row) return res.status(410).json({ error: { code: "MATCH_GONE", message: "Match is unknown, already resolved, or expired." } });
+
+  const replay = replayMatch(row, parsed.data.actions);
+  if (!replay.ok) return res.status(400).json({ error: { code: "ILLEGAL_SCRIPT", message: replay.error } });
+  const result = replay.result;
+
+  const meta = row.meta ? (JSON.parse(row.meta) as { opponentRR: number; bestScore: number; myRR: number; myRank: RankId }) : null;
+  const yourUnits = JSON.parse(row.own_squad) as SimUnit[];
+  const oppUnits = JSON.parse(row.opp_squad) as SimUnit[];
+  const setup: RankedSetup = {
+    yourUnits,
+    yourTrusted: [],
+    opponentId: row.opponent_id,
+    oppUnits,
+    opponentRR: meta?.opponentRR ?? 0,
+    isBot: row.is_bot === 1,
+    bestScore: meta?.bestScore ?? 0,
+    myRR: meta?.myRR ?? 0,
+    myRank: meta?.myRank ?? "iron"
   };
-  res.json({ state });
+  const outcome = applyRankedOutcome(req.playerId!, setup, row.seed, {
+    winner: result.winner, rounds: result.turns, events: result.events, faintedA: result.faintedA
+  });
+
+  res.json({
+    winner: result.winner,
+    rounds: result.turns,
+    events: result.events,
+    hpLeftA: result.hpFractionsA,
+    hpLeftB: result.hpFractionsB,
+    faintedA: result.faintedA,
+    faintedB: result.faintedB,
+    ...outcome,
+    opponent: setup.isBot ? { bot: true } : { bot: false, playerId: setup.opponentId },
+    opponentSquad: oppUnits.map((u) => ({ id: u.id, name: u.name, star: u.star, rarity: u.rarity, baseHealth: u.baseHealth, baseAttack: u.baseAttack, baseMana: u.baseMana }))
+  });
 });

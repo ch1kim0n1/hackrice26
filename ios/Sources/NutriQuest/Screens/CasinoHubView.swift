@@ -9,8 +9,8 @@ struct CasinoHubView: View {
     @ObservedObject var gameState: GameState
 
     @Environment(\.nqAccent) private var accent
-    /// QA hook, matching RootTabView's `-uiTab`: `-uiSection battle` lands on
-    /// the far half of the switch, so a screenshot can reach it without a tap.
+    /// QA hook, matching RootTabView's `-uiTab`: `-uiSection casino|cases|battle`
+    /// lands directly on that pane, so a screenshot can reach it without a tap.
     @State private var section: CasinoSection = {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-uiSection"), args.count > i + 1 else { return .casino }
@@ -32,10 +32,11 @@ struct CasinoHubView: View {
     }
     @Namespace private var switcher
 
-    /// The two halves of this tab.
+    /// The three panes of this tab: the house games, the player's granted
+    /// Cases (sell/history/promo live there too), and the battle modes.
     enum CasinoSection: String, CaseIterable, Identifiable {
         case casino
-        case shop
+        case cases
         case battle
 
         var id: String { rawValue }
@@ -43,7 +44,7 @@ struct CasinoHubView: View {
         var title: String {
             switch self {
             case .casino: return "Casino"
-            case .shop: return "Shop"
+            case .cases: return "Cases"
             case .battle: return "Battle"
             }
         }
@@ -51,7 +52,7 @@ struct CasinoHubView: View {
         var icon: NQIcon {
             switch self {
             case .casino: return .cauldron
-            case .shop: return .crown
+            case .cases: return .crown
             case .battle: return .battle
             }
         }
@@ -76,7 +77,7 @@ struct CasinoHubView: View {
             switch section {
             case .casino:
                 gamesFloor
-            case .shop:
+            case .cases:
                 CrateOpeningView(gameState: gameState, accentContext: accent, embedded: true, onDismiss: {})
             case .battle:
                 BattleHubView(gameState: gameState)

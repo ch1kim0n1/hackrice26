@@ -79,6 +79,9 @@ export interface StoredDrop extends Omit<LootDrop, "rolls"> {
    * escrow. A locked monster cannot be sold, gambled or fused. null is free.
    */
   lockedBy?: string | null;
+  /** The open consumed a Cookbook Boost — the rarity was rolled on the ×1.15
+   *  Rare+ table, not the book's published odds. Verification needs this. */
+  boosted?: boolean;
 }
 
 /** What record() hands back: the stored drop plus whether it bypassed a full

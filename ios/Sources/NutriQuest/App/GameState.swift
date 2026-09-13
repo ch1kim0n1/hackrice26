@@ -609,12 +609,6 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// Resolves a battle on the backend (POST /battle/simulate) and maps the
-    /// server's authoritative event stream into a BattleReplay for animation.
-    ///
-    /// The local BattleEngine is never used to decide the outcome — the server
-    /// result is the source of truth. Returns nil (and sets `backendError`)
-    /// when the backend is unreachable instead of silently resolving locally.
     /// The squad payload sent to the server: identity + progression only.
     /// Combat stats and authored moves resolve server-side from the catalog,
     /// so a stale local snapshot can never skew a match.
@@ -622,50 +616,92 @@ final class GameState: ObservableObject {
         BattleSquadMember(id: c.id, name: c.name, rarity: c.rarity.rawValue, star: c.starLevel)
     }
 
-    /// A deterministic seed derived from the matchup, so the same squads
-    /// replay identically on rewatch. Sent as a decimal string — JSON can't
-    /// carry a full UInt64.
-    private func battleSeed(for yourSquad: [Character], versus opponentSquad: [Character], salt: String = "") -> UInt64 {
-        let seedString = (yourSquad + opponentSquad).map(\.id).joined() + "|" + salt
-        return seedString.utf8.reduce(UInt64(31)) { ($0 &+ UInt64($1) &+ 31) &* 0x100000001b3 }
+    /// The three monsters a mode fields automatically: first three unlocked,
+    /// non-fainted cards. Fainted monsters are excluded up front so ranked
+    /// and dungeon don't bounce off the server's 409.
+    var battleReadySquad: [Character] {
+        Array(collection
+            .filter { !$0.isLocked && !faintedIds.contains($0.id) }
+            .prefix(3))
     }
 
-    @discardableResult
-    func resolveBattle(yourSquad: [Character], opponentSquad: [Character], chosenMove: String? = nil) async -> BattleReplay? {
-        let seed = battleSeed(for: yourSquad, versus: opponentSquad, salt: chosenMove ?? "")
+    /// Everything a ranked match changed, for the result card.
+    struct RankedOutcome {
+        let replay: BattleReplay
+        /// The snapshot squad the server matched against — real or bot.
+        let opponentSquad: [Character]
+        /// True when SBMM found no human and a rank-calibrated bot played.
+        let isBot: Bool
+        let rrDelta: Int
+        let rr: Int
+        let rankLabel: String
+        let promoted: Bool
+        /// Rarity of the rank-odds Case a win granted, if any.
+        let caseRarity: String?
+    }
 
+    /// A parked interactive match — everything the local engine needs to
+    /// play the exact fight the server will replay on commit.
+    struct InteractiveMatch {
+        enum Kind { case ranked, friendly }
+        let kind: Kind
+        let matchId: String
+        /// Server-drawn seed — decimal string on the wire.
+        let seed: UInt64
+        /// Locked specs, in squad order. Side 0 is always the player.
+        let yourSpecs: [BattleUnitSpec]
+        let opponentSpecs: [BattleUnitSpec]
+        /// Display models for the opponent's units (art + rarity).
+        let opponentCharacters: [Character]
+        /// True when SBMM fell back to a rank-calibrated bot.
+        let isBot: Bool
+    }
+
+    /// POST /battle/ranked/begin — matchmake + park. Returns nil on error
+    /// (fainted squad → backendError carries the server's message).
+    func beginRankedBattle(squad: [Character]) async -> InteractiveMatch? {
+        guard squad.count == 3 else {
+            backendError = "You need 3 healthy monsters for ranked — scan more food or wait for faints to recover."
+            return nil
+        }
         do {
-            let result = try await api.simulateBattle(BattleSimulateRequest(
-                yourSquad: yourSquad.map(squadMember),
-                opponentSquad: opponentSquad.map(squadMember),
-                seed: String(seed)
-            ))
-            let replay = try BattleReplayMapper.replay(from: result)
-            lastReplay = replay
+            let begin = try await api.beginRanked(squad: squad.map(squadMember))
+            guard let seed = UInt64(begin.seed) else {
+                backendError = "Bad match seed from server."
+                return nil
+            }
             backendError = nil
-            return replay
+            return InteractiveMatch(
+                kind: .ranked,
+                matchId: begin.matchId,
+                seed: seed,
+                yourSpecs: begin.yourSquad.map(\.spec),
+                opponentSpecs: begin.opponentSquad.map(\.spec),
+                opponentCharacters: begin.opponentSquad.map(displayCharacter(for:)),
+                isBot: begin.opponent?.bot ?? false
+            )
         } catch {
             backendError = error.localizedDescription
             return nil
         }
     }
 
-    /// Friendly battle against a friend's stored squad snapshot. The server
-    /// resolves and records it in both players' battle history — no RR moves.
-    /// Returns the replay plus the snapshot squad so the caller can animate it.
-    func challengeFriend(opponentId: String) async -> (replay: BattleReplay, opponentSquad: [Character])? {
-        let yourChars = Array(collection.filter { !$0.isLocked }.prefix(3))
-        guard yourChars.count == 3 else { return nil }
-
+    /// POST /battle/ranked/commit — the script of decisions the player made.
+    /// The server replays it deterministically; the returned outcome is the
+    /// authoritative one (RR, Case, faints all applied server-side).
+    @discardableResult
+    func commitRankedBattle(_ match: InteractiveMatch, actions: [BattleActionDTO]) async -> RankedOutcome? {
         do {
-            let result = try await api.challengeFriend(opponentId: opponentId, squad: yourChars.map(squadMember))
-            // Snapshot units become displayable characters for the replay.
+            let result = try await api.commitRanked(matchId: match.matchId, actions: actions)
             let opponentChars = result.opponentSquad.map { m in
                 Character(
                     id: m.id,
                     name: m.name,
                     colorHex: "#9C978F",
                     rarity: Rarity(rawValue: m.rarity) ?? .common,
+                    baseHealth: Double(m.baseHealth ?? 100),
+                    baseAttack: Double(m.baseAttack ?? 50),
+                    baseMana: m.baseMana.map(Double.init),
                     starLevel: m.star
                 )
             }
@@ -677,6 +713,209 @@ final class GameState: ObservableObject {
                 )
             )
             lastReplay = replay
+            rank = RankBlockDTO(
+                rr: result.rank.rr,
+                rank: result.rank.rank,
+                rankLabel: result.rank.rankLabel,
+                rrToNextRank: nil
+            )
+            record = RecordDTO(
+                rankedWins: result.rank.record.rankedWins,
+                rankedLosses: result.rank.record.rankedLosses,
+                winRate: result.rank.record.rankedWins + result.rank.record.rankedLosses > 0
+                    ? Double(result.rank.record.rankedWins) / Double(result.rank.record.rankedWins + result.rank.record.rankedLosses)
+                    : 0
+            )
+            faintedIds.formUnion(result.faintedA)
+            if result.caseReward != nil { _ = await refreshPendingCases() }
+            await loadProfile()
+            backendError = nil
+            checkAchievements()
+            return RankedOutcome(
+                replay: replay,
+                opponentSquad: opponentChars,
+                isBot: result.opponent.bot,
+                rrDelta: result.rank.delta,
+                rr: result.rank.rr,
+                rankLabel: result.rank.rankLabel,
+                promoted: result.rank.promoted,
+                caseRarity: result.caseReward?.rarity
+            )
+        } catch {
+            backendError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// POST /battle/friendly/begin — park an interactive fight against a
+    /// friend's stored snapshot.
+    func beginFriendlyBattle(opponentId: String, squad: [Character]) async -> InteractiveMatch? {
+        guard squad.count == 3 else {
+            backendError = "You need 3 healthy monsters for a friendly — scan more food or wait for faints to recover."
+            return nil
+        }
+        do {
+            let begin = try await api.beginFriendly(opponentId: opponentId, squad: squad.map(squadMember))
+            guard let seed = UInt64(begin.seed) else {
+                backendError = "Bad match seed from server."
+                return nil
+            }
+            backendError = nil
+            return InteractiveMatch(
+                kind: .friendly,
+                matchId: begin.matchId,
+                seed: seed,
+                yourSpecs: begin.yourSquad.map(\.spec),
+                opponentSpecs: begin.opponentSquad.map(\.spec),
+                opponentCharacters: begin.opponentSquad.map(displayCharacter(for:)),
+                isBot: false
+            )
+        } catch {
+            backendError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// POST /battle/friendly/commit — submit the friendly script.
+    @discardableResult
+    func commitFriendlyBattle(_ match: InteractiveMatch, actions: [BattleActionDTO]) async -> BattleReplay? {
+        do {
+            let result = try await api.commitFriendly(matchId: match.matchId, actions: actions)
+            let replay = try BattleReplayMapper.replay(
+                from: ServerBattleResult(
+                    winner: result.winner, rounds: result.rounds, events: result.events,
+                    hpLeftA: result.hpLeftA, hpLeftB: result.hpLeftB,
+                    faintedA: result.faintedA, faintedB: result.faintedB
+                )
+            )
+            lastReplay = replay
+            faintedIds.formUnion(result.faintedA)
+            backendError = nil
+            return replay
+        } catch {
+            backendError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// A resolved spec DTO → a display Character (art resolves off the id).
+    private func displayCharacter(for dto: BattleUnitSpecDTO) -> Character {
+        Character(
+            id: dto.id,
+            name: dto.name,
+            colorHex: "#9C978F",
+            rarity: Rarity(rawValue: dto.rarity) ?? .common,
+            baseHealth: dto.baseHealth,
+            baseAttack: dto.baseAttack,
+            baseMana: dto.baseMana,
+            starLevel: dto.star
+        )
+    }
+
+    /// POST /battle/ranked — the real ladder fight. The server picks the
+    /// opponent (SBMM over stored squads, bot fallback), resolves the match,
+    /// applies RR and rolls a Case on a win. The replay animates locally.
+    /// `squad` is the player's three in lead order — BattleView's pre-battle
+    /// bench tap can reorder them.
+    @discardableResult
+    func playRanked(squad: [Character]) async -> RankedOutcome? {
+        let yourChars = squad
+        guard yourChars.count == 3 else {
+            backendError = "You need 3 healthy monsters for ranked — scan more food or wait for faints to recover."
+            return nil
+        }
+        do {
+            let result = try await api.playRanked(squad: yourChars.map(squadMember))
+            let opponentChars = result.opponentSquad.map { m in
+                Character(
+                    id: m.id,
+                    name: m.name,
+                    colorHex: "#9C978F",
+                    rarity: Rarity(rawValue: m.rarity) ?? .common,
+                    baseHealth: Double(m.baseHealth ?? 100),
+                    baseAttack: Double(m.baseAttack ?? 50),
+                    baseMana: m.baseMana.map(Double.init),
+                    starLevel: m.star
+                )
+            }
+            let replay = try BattleReplayMapper.replay(
+                from: ServerBattleResult(
+                    winner: result.winner, rounds: result.rounds, events: result.events,
+                    hpLeftA: result.hpLeftA, hpLeftB: result.hpLeftB,
+                    faintedA: result.faintedA, faintedB: result.faintedB
+                )
+            )
+            lastReplay = replay
+            rank = RankBlockDTO(
+                rr: result.rank.rr,
+                rank: result.rank.rank,
+                rankLabel: result.rank.rankLabel,
+                rrToNextRank: nil
+            )
+            record = RecordDTO(
+                rankedWins: result.rank.record.rankedWins,
+                rankedLosses: result.rank.record.rankedLosses,
+                winRate: result.rank.record.rankedWins + result.rank.record.rankedLosses > 0
+                    ? Double(result.rank.record.rankedWins) / Double(result.rank.record.rankedWins + result.rank.record.rankedLosses)
+                    : 0
+            )
+            faintedIds.formUnion(result.faintedA)
+            if result.caseReward != nil { _ = await refreshPendingCases() }
+            // Pick up rrToNextRank and any faint-revival side effects the
+            // profile payload carries, so Profile reads fresh immediately.
+            await loadProfile()
+            backendError = nil
+            checkAchievements()
+            return RankedOutcome(
+                replay: replay,
+                opponentSquad: opponentChars,
+                isBot: result.opponent.bot,
+                rrDelta: result.rank.delta,
+                rr: result.rank.rr,
+                rankLabel: result.rank.rankLabel,
+                promoted: result.rank.promoted,
+                caseRarity: result.caseReward?.rarity
+            )
+        } catch {
+            backendError = error.localizedDescription
+            return nil
+        }
+    }
+
+    /// Friendly battle against a friend's stored squad snapshot. The server
+    /// resolves and records it in both players' battle history — no RR moves.
+    /// Returns the replay plus the snapshot squad so the caller can animate it.
+    func challengeFriend(opponentId: String) async -> (replay: BattleReplay, opponentSquad: [Character])? {
+        let yourChars = battleReadySquad
+        guard yourChars.count == 3 else {
+            backendError = "You need 3 healthy monsters for a friendly — scan more food or wait for faints to recover."
+            return nil
+        }
+
+        do {
+            let result = try await api.challengeFriend(opponentId: opponentId, squad: yourChars.map(squadMember))
+            // Snapshot units become displayable characters for the replay.
+            let opponentChars = result.opponentSquad.map { m in
+                Character(
+                    id: m.id,
+                    name: m.name,
+                    colorHex: "#9C978F",
+                    rarity: Rarity(rawValue: m.rarity) ?? .common,
+                    baseHealth: Double(m.baseHealth ?? 100),
+                    baseAttack: Double(m.baseAttack ?? 50),
+                    baseMana: m.baseMana.map(Double.init),
+                    starLevel: m.star
+                )
+            }
+            let replay = try BattleReplayMapper.replay(
+                from: ServerBattleResult(
+                    winner: result.winner, rounds: result.rounds, events: result.events,
+                    hpLeftA: result.hpLeftA, hpLeftB: result.hpLeftB,
+                    faintedA: result.faintedA, faintedB: result.faintedB
+                )
+            )
+            lastReplay = replay
+            faintedIds.formUnion(result.faintedA)
             backendError = nil
             return (replay, opponentChars)
         } catch {
@@ -701,8 +940,11 @@ final class GameState: ObservableObject {
     /// Floors pay coins on clear and earnings survive a wipe.
     @discardableResult
     func runDungeon() async -> DungeonRunResponse? {
-        let squad = collection.filter { !$0.isLocked }.prefix(3).map(squadMember)
-        guard squad.count == 3 else { return nil }
+        let squad = battleReadySquad.map(squadMember)
+        guard squad.count == 3 else {
+            backendError = "You need 3 healthy monsters to descend — scan more food or wait for faints to recover."
+            return nil
+        }
         do {
             let run = try await api.runDungeon(squad: squad)
             lastDungeonRun = run
@@ -714,18 +956,6 @@ final class GameState: ObservableObject {
             backendError = error.localizedDescription
             return nil
         }
-    }
-
-    /// Local deterministic simulation. Kept for replaying/animating a result
-    /// the server already produced (same squads + seed = same replay) and for
-    /// practice mode; never used to decide a ranked outcome on its own.
-    func simulateLocally(yourSquad: [Character], opponentSquad: [Character]) -> BattleReplay {
-        let a = yourSquad.map { battleStats(for: $0) }
-        let b = opponentSquad.map { battleStats(for: $0) }
-        let seed = battleSeed(for: yourSquad, versus: opponentSquad)
-        let replay = BattleEngine.simulate(squadA: a, squadB: b, seed: seed)
-        lastReplay = replay
-        return replay
     }
 
     // MARK: - Collection (single source of truth)
@@ -872,6 +1102,7 @@ final class GameState: ObservableObject {
                     category: dailyTasks[i].category,
                     label: dailyTasks[i].label,
                     rrEligible: dailyTasks[i].rrEligible,
+                    watchOnly: dailyTasks[i].watchOnly,
                     done: true,
                     claimed: true
                 )
@@ -987,14 +1218,20 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// POST /lootbox/cookbooks/:id/open — paid in coins. Only the coin
-    /// balance comes back to sync; the mint itself is added by the caller.
+    /// POST /lootbox/cookbooks/:id/open — paid in coins. `useBoost` spends one
+    /// stored Cookbook Boost on the open (×1.15 Rare+ odds, spec §6); the
+    /// server only consumes it when the mint lands, so a failed open never
+    /// burns the boost. The response's `boostApplied` confirms the spend and
+    /// the local boost count follows it.
     @discardableResult
-    func openCookbook(cookbookID: String, clientSeed: String? = nil) async -> CrateOpenResponse? {
+    func openCookbook(cookbookID: String, clientSeed: String? = nil, useBoost: Bool = false) async -> CrateOpenResponse? {
         do {
-            let drop = try await api.openCookbook(id: cookbookID, clientSeed: clientSeed)
+            let drop = try await api.openCookbook(id: cookbookID, clientSeed: clientSeed, useBoost: useBoost)
             lastCrateDrop = drop
             if let balance = drop.coinBalance { coinBalance = balance }
+            if drop.boostApplied == true, let s = streak {
+                streak = StreakDTO(days: s.days, boosts: max(0, s.boosts - 1), nextBoostIn: s.nextBoostIn)
+            }
             backendError = nil
             return drop
         } catch {

@@ -11,9 +11,9 @@ struct DungeonView: View {
     @State private var running = false
 
     /// Spec §5: a dungeon run fields exactly three monsters — the player's
-    /// top three unlocked, same rule as ranked.
+    /// top three unlocked, non-fainted cards, same rule as ranked.
     private var partyPreview: [Character] {
-        Array(gameState.collection.filter { !$0.isLocked }.prefix(3))
+        gameState.battleReadySquad
     }
 
     var body: some View {

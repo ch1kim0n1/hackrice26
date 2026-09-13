@@ -31,10 +31,123 @@ struct HomeView: View {
                     .nqSlideUp(delay: 0.1)
                 activityRow
                     .nqSlideUp(delay: 0.15)
+                tasksCard
+                    .nqSlideUp(delay: 0.2)
             }
             .padding(NQTheme.spaceL)
         }
         .nqSceneBackground(GameArt.scene("home"))
+        .task { await gameState.refreshTasks() }
+    }
+
+    // MARK: - Section 4: daily tasks (spec §6)
+
+    /// Today's three server-verified tasks — one nutrition, one battle, one
+    /// flex. Each claim pays 250 coins; all three pay +500. Nutrition and
+    /// battle tasks also pay +5 task RR (capped +10/day, never promotes).
+    private var tasksCard: some View {
+        VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+            HStack {
+                Text("DAILY TASKS")
+                    .font(NQText.micro.font)
+                    .tracking(2)
+                    .foregroundStyle(NQTheme.gold)
+                Spacer(minLength: 0)
+                if let streak = gameState.streak {
+                    NQChip("\(streak.days)d streak", icon: .flame, tint: NQTheme.flame, filled: streak.days > 0)
+                    if streak.boosts > 0 {
+                        NQChip("\(streak.boosts) boost\(streak.boosts == 1 ? "" : "s")", icon: .sparkle, tint: NQTheme.gold, filled: true)
+                    }
+                }
+            }
+
+            if gameState.dailyTasks.isEmpty {
+                Text("Tasks load once the backend answers — pull to retry if it stays empty.")
+                    .font(NQText.captionS.font)
+                    .foregroundStyle(NQTheme.inkMuted)
+            } else {
+                ForEach(gameState.dailyTasks) { task in
+                    taskRow(task)
+                }
+            }
+
+            if !gameState.dailyTasks.isEmpty {
+                Text("All three claimed pays +500 bonus coins.")
+                    .font(NQText.micro.font)
+                    .foregroundStyle(NQTheme.inkFaint)
+            }
+        }
+        .nqPadding(.card)
+        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
+    }
+
+    private func taskRow(_ task: TaskDTO) -> some View {
+        HStack(spacing: NQTheme.spaceS) {
+            ZStack {
+                Circle()
+                    .fill(taskTint(task).opacity(0.16))
+                    .frame(width: 32, height: 32)
+                taskIcon(task)
+                    .frame(width: 15, height: 15)
+                    .foregroundStyle(taskTint(task))
+            }
+
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: NQTheme.spaceXS) {
+                    Text(task.label)
+                        .font(NQText.caption.font.weight(.semibold))
+                        .foregroundStyle(NQTheme.ink)
+                    if task.watchOnly == true {
+                        NQChip("Watch", tint: NQTheme.info, filled: false)
+                    }
+                    if task.rrEligible {
+                        NQChip("+5 RR", tint: NQTheme.gold, filled: false)
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+
+            if task.claimed {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(NQTheme.success)
+                    .accessibilityLabel("Claimed")
+            } else if task.done {
+                Button {
+                    NQHaptic.selection()
+                    Task { _ = await gameState.claimTask(task.id) }
+                } label: {
+                    Text("Claim +250")
+                        .font(NQText.captionS.font.weight(.heavy))
+                        .foregroundStyle(accent.accent.readableTextColor())
+                        .nqPadding(.badge)
+                        .background(Capsule().fill(accent.accent))
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Claims the task reward")
+            } else {
+                Text("Open")
+                    .font(NQText.captionS.font.weight(.bold))
+                    .foregroundStyle(NQTheme.inkFaint)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func taskTint(_ task: TaskDTO) -> Color {
+        switch task.category {
+        case "nutrition": return NQTheme.flame
+        case "battle": return NQTheme.info
+        default: return accent.accentDark
+        }
+    }
+
+    @ViewBuilder
+    private func taskIcon(_ task: TaskDTO) -> some View {
+        switch task.category {
+        case "nutrition": NQIcon.flame.view
+        case "battle": NQIcon.battle.view
+        default: NQIcon.sparkle.view
+        }
     }
 
     // MARK: - Section 1: week strip

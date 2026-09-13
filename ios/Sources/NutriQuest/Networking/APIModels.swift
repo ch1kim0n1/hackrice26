@@ -13,15 +13,7 @@ struct BattleSquadMember: Codable, Sendable {
     let star: Int
 }
 
-struct BattleSimulateRequest: Encodable {
-    let yourSquad: [BattleSquadMember]
-    let opponentSquad: [BattleSquadMember]
-    /// UInt64 seeds go over the wire as strings — JSON numbers above 2^53
-    /// don't survive every decoder intact.
-    let seed: String
-}
-
-/// Server response from `POST /battle/simulate` (schemas/battle-result.json).
+/// Shared battle-result shape (schemas/battle-result.json).
 /// Winner "A" = your squad. Events decode straight into BattleKit's
 /// `BattleEvent` — the wire shape is the engine's own event schema.
 struct ServerBattleResult: Decodable, Sendable {
@@ -41,17 +33,21 @@ struct ServerBattleResult: Decodable, Sendable {
 }
 
 /// One member of an opponent's stored squad snapshot, as echoed by
-/// /battle/friendly and /battle/ranked.
+/// /battle/friendly and /battle/ranked. The combat bases travel with it so
+/// the replay can draw real HP/mana bars instead of placeholder 100s.
 struct ResolvedSquadMember: Decodable, Sendable {
     let id: String
     let name: String
     let star: Int
     let rarity: String
+    let baseHealth: Int?
+    let baseAttack: Int?
+    let baseMana: Int?
 }
 
 /// POST /battle/friendly — result vs a friend's stored snapshot, with the
 /// snapshot echoed so the client can render the replay.
-struct AsyncChallengeResponse: Decodable, Sendable {
+struct FriendlyBattleResponse: Decodable, Sendable {
     let winner: String
     let rounds: Int
     let events: [BattleEvent]
@@ -61,6 +57,123 @@ struct AsyncChallengeResponse: Decodable, Sendable {
     let faintedB: [String]
     let opponentId: String
     let opponentSquad: [ResolvedSquadMember]
+}
+
+/// POST /battle/ranked — SBMM-resolved match: the authoritative result plus
+/// the RR movement, any rank-odds Case the win granted, and the opponent's
+/// snapshot squad for replay rendering.
+struct RankedBattleResponse: Decodable, Sendable {
+    let winner: String
+    let rounds: Int
+    let events: [BattleEvent]
+    let hpLeftA: [Double]
+    let hpLeftB: [Double]
+    let faintedA: [String]
+    let faintedB: [String]
+    let rank: RankResultDTO
+    /// Rank-odds Case granted by a win; nil on a loss.
+    let caseReward: CaseRewardDTO?
+    let opponent: RankedOpponentDTO
+    let opponentSquad: [ResolvedSquadMember]
+
+    var winnerSide: Int { winner == "A" ? 0 : 1 }
+}
+
+struct RankResultDTO: Decodable, Sendable {
+    let rr: Int
+    /// Signed RR movement this match applied (+ on win, − on loss).
+    let delta: Int
+    let rank: String
+    let rankLabel: String
+    let promoted: Bool
+    let record: RankedRecordDTO
+}
+
+struct RankedRecordDTO: Decodable, Sendable {
+    let rankedWins: Int
+    let rankedLosses: Int
+}
+
+struct CaseRewardDTO: Decodable, Sendable {
+    let rarity: String
+}
+
+struct RankedOpponentDTO: Decodable, Sendable {
+    /// True when the queue was empty and a rank-calibrated bot fought.
+    let bot: Bool
+    let playerId: String?
+}
+
+// MARK: - Interactive battles (begin / commit)
+//
+// Two-phase spec §4 flow: begin parks the server-resolved matchup and hands
+// back the seed + full specs so the client runs the identical deterministic
+// engine locally; commit submits the decisions the player made and the
+// server replays them — the outcome is what the rules produce.
+
+/// A fully resolved unit as `/battle/*/begin` returns it. `rarity` travels
+/// as the tier name; `moves` is the authored moveset the server will replay.
+struct BattleUnitSpecDTO: Decodable, Sendable {
+    let id: String
+    let name: String
+    let baseHealth: Double
+    let baseAttack: Double
+    let star: Int
+    let rarity: String
+    let baseMana: Double?
+    let moves: [BattleMoveSpec]
+
+    /// Engine-ready spec — identical values on both sides of the wire.
+    var spec: BattleUnitSpec {
+        BattleUnitSpec(
+            id: id, name: name, baseHealth: baseHealth, baseAttack: baseAttack,
+            rarity: (Rarity(rawValue: rarity) ?? .common).battleRarity,
+            star: star, moves: moves, baseMana: baseMana
+        )
+    }
+}
+
+/// POST /battle/ranked/begin and /battle/friendly/begin share this shape.
+struct BattleBeginResponse: Decodable, Sendable {
+    let matchId: String
+    /// Decimal string — JSON can't carry a full UInt64.
+    let seed: String
+    /// Ranked only: who the SBMM queue found.
+    let opponent: RankedOpponentDTO?
+    /// Friendly only: the snapshot owner.
+    let opponentId: String?
+    let yourSquad: [BattleUnitSpecDTO]
+    let opponentSquad: [BattleUnitSpecDTO]
+}
+
+/// One decision in the commit script — the discriminated-union shape
+/// `battleActionSchema` expects on the backend.
+enum BattleActionDTO: Encodable, Sendable {
+    /// Use moves[moveIndex] of the active unit (consumes the turn).
+    case move(Int)
+    /// Voluntary switch to squad slot (consumes the turn).
+    case switchTo(Int)
+    /// Free faint-replacement pick (no turn, no RNG draw).
+    case choose(Int)
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .move(let i):
+            try c.encode("move", forKey: .type)
+            try c.encode(i, forKey: .moveIndex)
+        case .switchTo(let i):
+            try c.encode("switch", forKey: .type)
+            try c.encode(i, forKey: .unitIndex)
+        case .choose(let i):
+            try c.encode("choose", forKey: .type)
+            try c.encode(i, forKey: .unitIndex)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, moveIndex, unitIndex
+    }
 }
 
 
@@ -158,6 +271,9 @@ struct TaskDTO: Decodable, Sendable, Identifiable {
     let label: String
     /// Whether claiming awards task RR (+5, capped +10/day, never promotes).
     let rrEligible: Bool
+    /// True on tasks that only exist when the player opted into watch data —
+    /// non-watch players never see them (the server substitutes instead).
+    let watchOnly: Bool?
     /// Server-verified completion flag.
     let done: Bool
     let claimed: Bool
@@ -322,6 +438,8 @@ struct CrateOpenResponse: Decodable, Sendable {
     let coinBalance: Int?
     /// True when the mint overflowed a full inventory into the mailbox.
     let overflowed: Bool?
+    /// True when a Cookbook Boost (×1.15 Rare+ odds) was consumed on this open.
+    let boostApplied: Bool?
 }
 
 struct CrateOddsDTO: Decodable, Sendable {

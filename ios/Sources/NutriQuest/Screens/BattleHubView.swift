@@ -2,29 +2,45 @@ import SwiftUI
 import NutriQuestUI
 import BattleKit
 
-/// Landing screen for the Battle tab — a hub, not a straight-into-combat
-/// screen. Fans out to the three things battling touches: fighting, loot,
-/// and bragging rights.
+/// Landing screen for battling — one card per spec mode: Ranked (RR ladder
+/// + SBMM + Case rewards), Friendly (another player's stored squad, no RR),
+/// Dungeon (endless floors for coins), Practice (local sparring), LAN, and
+/// the Leaderboard.
 struct BattleHubView: View {
     @ObservedObject var gameState: GameState
 
     @Environment(\.nqAccent) private var accent
     @State private var showLeaderboard = false
+    @State private var showFriendlyPrompt = false
+    @State private var friendlyOpponentId = ""
+    @State private var friendlyBusy = false
+    /// The resolved friendly, ready to push — navigation waits for the
+    /// server result so the replay arrives with its opponent squad.
+    @State private var friendlyReady: (replay: BattleReplay, opponentSquad: [Character], opponentId: String)?
 
     private var characters: [Character] { gameState.collection }
 
-    private var yourBattleSquad: [Character] {
-        Array(characters.filter { !$0.isLocked }.prefix(3))
-    }
+    private var yourBattleSquad: [Character] { gameState.battleReadySquad }
 
-    /// Never fight yourself. Prefer other unlocked characters; fall back to
-    /// the starter roster so a 3-character collection still has a rival.
-    private var opponentBattleSquad: [Character] {
+    /// Practice sparring partner: never your own lead three. Prefer other
+    /// unlocked characters; fall back to the starter roster so a small
+    /// collection still has a rival.
+    private var practiceOpponentSquad: [Character] {
         let yours = Set(yourBattleSquad.map(\.id))
         let others = characters.filter { !$0.isLocked && !yours.contains($0.id) }
         if others.count >= 3 { return Array(others.prefix(3)) }
         let fallback = SampleData.characters.filter { !$0.isLocked && !yours.contains($0.id) }
         return Array((others + fallback).prefix(3))
+    }
+
+    /// Rank row subtitle: current rank + RR, or the squad hint when the
+    /// player can't field three yet.
+    private var rankedSubtitle: String {
+        if yourBattleSquad.count < 3 { return "Needs 3 healthy monsters" }
+        if let rank = gameState.rank {
+            return "\(rank.rankLabel) · \(rank.rr) RR"
+        }
+        return "Climb the ladder — RR and Cases on the line"
     }
 
     var body: some View {
@@ -33,16 +49,46 @@ struct BattleHubView: View {
                 NavigationLink {
                     BattleView(
                         yourSquad: yourBattleSquad,
-                        opponentSquad: opponentBattleSquad,
-                        gameState: gameState
+                        opponentSquad: [],
+                        gameState: gameState,
+                        mode: .ranked
                     )
                 } label: {
                     hubCard(
-                        title: "Battle",
-                        subtitle: "Fight a rival squad, server-ruled",
-                        icon: .battle,
-                        tint: NQTheme.info,
-                        art: "battle-badge"
+                        title: "Ranked",
+                        subtitle: rankedSubtitle,
+                        icon: .trophy,
+                        tint: NQTheme.gold,
+                        art: "star-badge"
+                    )
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    NQHaptic.selection()
+                    friendlyOpponentId = ""
+                    showFriendlyPrompt = true
+                } label: {
+                    hubCard(
+                        title: "Friendly",
+                        subtitle: yourBattleSquad.count < 3
+                            ? "Needs 3 healthy monsters"
+                            : "Fight a friend's squad — no RR at stake",
+                        icon: .person,
+                        tint: NQTheme.info
+                    )
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink {
+                    DungeonView(gameState: gameState)
+                } label: {
+                    hubCard(
+                        title: "Dungeon",
+                        subtitle: "Endless floors · coins on every clear",
+                        icon: .cauldron,
+                        tint: NQTheme.flame,
+                        art: "dungeon-boss-door"
                     )
                 }
                 .buttonStyle(.plain)
@@ -50,7 +96,7 @@ struct BattleHubView: View {
                 NavigationLink {
                     BattleView(
                         yourSquad: yourBattleSquad,
-                        opponentSquad: opponentBattleSquad,
+                        opponentSquad: practiceOpponentSquad,
                         gameState: gameState,
                         mode: .practice
                     )
@@ -59,7 +105,7 @@ struct BattleHubView: View {
                         title: "Practice",
                         subtitle: "Turn-based sparring — pick every move",
                         icon: .leaf,
-                        tint: NQTheme.gold
+                        tint: NQTheme.success
                     )
                 }
                 .buttonStyle(.plain)
@@ -82,10 +128,9 @@ struct BattleHubView: View {
                 } label: {
                     hubCard(
                         title: "Leaderboard",
-                        subtitle: "See how you rank globally",
+                        subtitle: "RR · ranked wins · win rate",
                         icon: .trophy,
-                        tint: accent.accent,
-                        art: "star-badge"
+                        tint: accent.accent
                     )
                 }
                 .buttonStyle(.plain)
@@ -95,6 +140,50 @@ struct BattleHubView: View {
         .nqPageBackground()
         .sheet(isPresented: $showLeaderboard) {
             NavigationStack { LeaderboardView() }
+        }
+        .alert("Friendly battle", isPresented: $showFriendlyPrompt) {
+            TextField("Friend's player ID", text: $friendlyOpponentId)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+            Button("Cancel", role: .cancel) {}
+            Button("Battle") { startFriendly() }
+                .disabled(friendlyOpponentId.trimmingCharacters(in: .whitespaces).isEmpty)
+        } message: {
+            Text("They need to have fought at least once so their squad snapshot exists.")
+        }
+        .navigationDestination(isPresented: Binding(
+            get: { friendlyReady != nil },
+            set: { if !$0 { friendlyReady = nil } }
+        )) {
+            if let ready = friendlyReady {
+                BattleView(
+                    yourSquad: yourBattleSquad,
+                    opponentSquad: ready.opponentSquad,
+                    gameState: gameState,
+                    mode: .friendly(FriendlyBattleContext(replay: ready.replay, opponentId: ready.opponentId))
+                )
+            }
+        }
+        .overlay {
+            if friendlyBusy {
+                ProgressView()
+                    .tint(accent.accent)
+                    .scaleEffect(1.4)
+            }
+        }
+    }
+
+    /// Resolve the friendly first — the BattleView only appears once the
+    /// server has answered, so the screen can animate the real replay.
+    private func startFriendly() {
+        let opponentId = friendlyOpponentId.trimmingCharacters(in: .whitespaces)
+        guard !opponentId.isEmpty, !friendlyBusy else { return }
+        friendlyBusy = true
+        Task {
+            if let result = await gameState.challengeFriend(opponentId: opponentId) {
+                friendlyReady = (result.replay, result.opponentSquad, opponentId)
+            }
+            friendlyBusy = false
         }
     }
 

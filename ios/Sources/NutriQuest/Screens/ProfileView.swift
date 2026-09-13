@@ -45,6 +45,7 @@ struct ProfileView: View {
                         offlineNote
                     }
                     statChips.nqSlideUp(delay: 0.15)
+                    recentBattlesCard.nqSlideUp(delay: 0.18)
                     trophyCase.nqSlideUp(delay: 0.2)
                     settingsList.nqSlideUp(delay: 0.25)
                 }
@@ -54,6 +55,7 @@ struct ProfileView: View {
         .nqPageBackground()
         .navigationTitle("Profile")
         .navigationBarTitleDisplayMode(.inline)
+        .task { await gameState.refreshBattleHistory() }
         .fullScreenCover(isPresented: $showJourney) {
             JourneyView()
                 .environmentObject(gameState)
@@ -143,6 +145,85 @@ struct ProfileView: View {
         .nqSurface(.sticker)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label) rank, \(rr) rating points, \(wins) wins, \(losses) losses")
+    }
+
+    // MARK: - Recent battles (spec §6)
+
+    /// The last few recorded fights — result, mode, opponent and RR movement.
+    /// Ranked moves RR; friendly and dungeon don't.
+    private var recentBattlesCard: some View {
+        VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+            Text("Recent battles")
+                .font(NQText.microXS.font)
+                .tracking(0.4)
+                .foregroundStyle(NQTheme.inkMuted)
+                .padding(.leading, 4)
+
+            VStack(spacing: 0) {
+                if gameState.battleHistory.isEmpty {
+                    Text("No battles yet — ranked, friendly and dungeon fights land here.")
+                        .font(NQText.captionS.font)
+                        .foregroundStyle(NQTheme.inkMuted)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, NQTheme.spaceS)
+                } else {
+                    ForEach(gameState.battleHistory.prefix(5)) { entry in
+                        battleRow(entry)
+                        if entry.id != gameState.battleHistory.prefix(5).last?.id {
+                            Divider().overlay(NQTheme.hairline)
+                        }
+                    }
+                }
+            }
+            .nqPadding(.card)
+            .nqSurface(.sticker)
+        }
+    }
+
+    private func battleRow(_ entry: BattleHistoryEntry) -> some View {
+        let won = entry.result == "win"
+        return HStack(spacing: NQTheme.spaceS) {
+            ZStack {
+                Circle()
+                    .fill((won ? NQTheme.success : NQTheme.inkFaint).opacity(0.16))
+                    .frame(width: 30, height: 30)
+                (won ? NQIcon.trophy : NQIcon.shield).view
+                    .frame(width: 14, height: 14)
+                    .foregroundStyle(won ? NQTheme.success : NQTheme.inkMuted)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: NQTheme.spaceXS) {
+                    Text(won ? "Victory" : "Defeat")
+                        .font(NQText.caption.font.weight(.bold))
+                        .foregroundStyle(NQTheme.ink)
+                    Text(entry.mode.capitalized)
+                        .font(NQText.micro.font)
+                        .foregroundStyle(NQTheme.inkMuted)
+                }
+                Text(battleRowSubtitle(entry))
+                    .font(NQText.micro.font)
+                    .foregroundStyle(NQTheme.inkFaint)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if entry.rrDelta != 0 {
+                Text("\(entry.rrDelta > 0 ? "+" : "")\(entry.rrDelta) RR")
+                    .font(NQText.captionS.font.weight(.bold))
+                    .foregroundStyle(entry.rrDelta > 0 ? NQTheme.success : NQTheme.inkMuted)
+            }
+        }
+        .padding(.vertical, NQTheme.spaceXS + 2)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func battleRowSubtitle(_ entry: BattleHistoryEntry) -> String {
+        var parts: [String] = []
+        if let opponent = entry.opponent { parts.append("vs \(opponent)") }
+        if let rounds = entry.detail?.rounds { parts.append("\(rounds) turns") }
+        if let floors = entry.detail?.floorsCleared { parts.append("floor \(floors)") }
+        if let coins = entry.detail?.coinsEarned, coins > 0 { parts.append("+\(coins) coins") }
+        if let caseRarity = entry.detail?.caseReward { parts.append("\(caseRarity.capitalized) Case") }
+        return parts.isEmpty ? entry.at : parts.joined(separator: " · ")
     }
 
     @EnvironmentObject private var gameState: GameState

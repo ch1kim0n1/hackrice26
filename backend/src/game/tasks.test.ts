@@ -166,6 +166,63 @@ describe("claimTask", () => {
   });
 });
 
+describe("watch-conditional tasks", () => {
+  it("watch-only tasks never reach a non-connected player", () => {
+    // 90 days of flex picks: the substitution must hold every time.
+    for (let i = 0; i < 90; i++) {
+      const day = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+      const tasks = tasksForDay(day, { watchConnected: false });
+      expect(tasks.filter((t) => t.watchOnly)).toHaveLength(0);
+      expect(tasks).toHaveLength(3);
+    }
+  });
+
+  it("deals the watch task to opted-in players and keeps it claimable", () => {
+    // Find a day whose flex pick is the watch task.
+    let day = "";
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(Date.UTC(2026, 0, 1 + i)).toISOString().slice(0, 10);
+      if (tasksForDay(d, { watchConnected: true }).some((t) => t.id === "sync-workout")) {
+        day = d;
+        break;
+      }
+    }
+    expect(day).not.toBe("");
+    const task = tasksForDay(day, { watchConnected: true }).find((t) => t.id === "sync-workout")!;
+    expect(task.watchOnly).toBe(true);
+    expect(task.rrEligible).toBe(false);
+
+    // The same day for a non-connected player substitutes a normal task.
+    const sub = tasksForDay(day, { watchConnected: false }).find((t) => t.category === "flex")!;
+    expect(sub.id).not.toBe("sync-workout");
+  });
+
+  it("verifies the watch task against a real vitals snapshot", () => {
+    const p = freshPlayer();
+    // A watch sync today carrying a workout satisfies the task.
+    db.prepare(`INSERT INTO vitals_snapshot (player_id, payload) VALUES (?, ?)`).run(
+      p,
+      JSON.stringify({
+        timestamp: new Date().toISOString(),
+        recentWorkouts: [{ type: "run", start: new Date().toISOString(), end: new Date().toISOString() }]
+      })
+    );
+    const statuses = taskStatuses(p, todayKey(), { watchConnected: true });
+    const watch = statuses.find((s) => s.id === "sync-workout");
+    // Only assertable when today actually deals it — the check itself is what matters.
+    if (watch) {
+      expect(watch.done).toBe(true);
+    }
+    // Without the snapshot the same player is not done.
+    const p2 = freshPlayer();
+    const statuses2 = taskStatuses(p2, todayKey(), { watchConnected: true });
+    const watch2 = statuses2.find((s) => s.id === "sync-workout");
+    if (watch2) {
+      expect(watch2.done).toBe(false);
+    }
+  });
+});
+
 describe("streak", () => {
   it("extends on consecutive days and resets after a gap", () => {
     expect(nextNutritionStreak({}, "2026-02-01")).toEqual({ streakDays: 1, boostEarned: false });

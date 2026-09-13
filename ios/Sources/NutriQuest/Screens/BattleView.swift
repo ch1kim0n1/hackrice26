@@ -3,17 +3,27 @@ import BattleKit
 import NutriQuestUI
 
 /// What drives a battle screen:
-///  - `.ranked`   — POST /battle/simulate resolves authoritatively, then the
-///                  returned event stream animates turn by turn.
-///  - `.lan`      — the group host already resolved the match; the replay is
-///                  handed in verbatim.
+///  - `.ranked`   — POST /battle/ranked: the server picks the opponent via
+///                  SBMM (bot on an empty queue), resolves authoritatively,
+///                  applies the RR delta and grants a rank-odds Case on a win.
+///                  The returned event stream animates turn by turn.
+///  - `.lan`      — a server/friendly/LAN host already resolved the match;
+///                  the replay is handed in verbatim.
 ///  - `.practice` — a live local `Battle`: the player picks every action for
 ///                  their side (move buttons with accuracy/mana, voluntary
 ///                  switches), the rival runs the engine's auto policy.
 enum BattleMode {
     case ranked
     case lan(LANBattleContext)
+    /// A friendly already resolved server-side (POST /battle/friendly): the
+    /// replay animates verbatim — history entry, no RR.
+    case friendly(FriendlyBattleContext)
     case practice
+}
+
+struct FriendlyBattleContext {
+    let replay: BattleReplay
+    let opponentId: String
 }
 
 struct LANBattleContext {
@@ -42,6 +52,11 @@ struct BattleView: View {
     @State private var defeatTrigger = 0
     /// Pre-battle lead picker (ranked/practice): tap a bench unit to lead.
     @State private var orderedSquad: [Character] = []
+    /// Ranked picks the opponent server-side (SBMM); the echoed snapshot
+    /// squad lands here once the match resolves, replacing the placeholder.
+    @State private var serverOpponent: [Character]?
+    /// What the last ranked match did to the ladder — drives the result card.
+    @State private var rankedOutcome: GameState.RankedOutcome?
 
     /// Live engine handle — practice mode only.
     @State private var battle: Battle?
@@ -76,6 +91,11 @@ struct BattleView: View {
         return nil
     }
 
+    private var friendlyContext: FriendlyBattleContext? {
+        if case .friendly(let context) = mode { return context }
+        return nil
+    }
+
     private var isPractice: Bool {
         if case .practice = mode { return true }
         return false
@@ -83,6 +103,12 @@ struct BattleView: View {
 
     private var displayedSquad: [Character] {
         orderedSquad.isEmpty ? yourSquad : orderedSquad
+    }
+
+    /// The rival squad on screen: the `opponentSquad` argument, or — once a
+    /// ranked match resolves — the real squad the server matched against.
+    private var displayedOpponent: [Character] {
+        serverOpponent ?? opponentSquad
     }
 
     /// Engine side rendered at the bottom (yours). 0 for ranked/practice.
@@ -108,33 +134,33 @@ struct BattleView: View {
                     < (yourSquad.firstIndex { $0.id == lan.unitCharacterIDs[b] } ?? 0)
             }
             theirs.sort { a, b in
-                (opponentSquad.firstIndex { $0.id == lan.unitCharacterIDs[a] } ?? 0)
-                    < (opponentSquad.firstIndex { $0.id == lan.unitCharacterIDs[b] } ?? 0)
+                (displayedOpponent.firstIndex { $0.id == lan.unitCharacterIDs[a] } ?? 0)
+                    < (displayedOpponent.firstIndex { $0.id == lan.unitCharacterIDs[b] } ?? 0)
             }
             out[myEngineSide] = mine
             out[1 - myEngineSide] = theirs
             return out
         }
-        return [displayedSquad.map(\.id), opponentSquad.map(\.id)]
+        return [displayedSquad.map(\.id), displayedOpponent.map(\.id)]
     }
 
     /// Best-known snapshot per unit id — real specs where we have them.
     private var specByUnitID: [String: BattleUnitSpec] {
         if let lan = lanContext { return lan.unitSpecs }
         var map: [String: BattleUnitSpec] = [:]
-        for c in yourSquad + opponentSquad { map[c.id] = gameState.battleStats(for: c) }
+        for c in yourSquad + displayedOpponent { map[c.id] = gameState.battleStats(for: c) }
         return map
     }
 
     private func name(for unitID: String) -> String {
         let charID = lanContext?.unitCharacterIDs[unitID] ?? unitID
-        return (yourSquad + opponentSquad).first { $0.id == charID }?.name
+        return (yourSquad + displayedOpponent).first { $0.id == charID }?.name
             ?? specByUnitID[unitID]?.name ?? "???"
     }
 
     private func character(for unitID: String) -> Character? {
         let charID = lanContext?.unitCharacterIDs[unitID] ?? unitID
-        return (yourSquad + opponentSquad).first { $0.id == charID }
+        return (yourSquad + displayedOpponent).first { $0.id == charID }
     }
 
     /// Which engine side a unit fights for, or -1 if unknown.
@@ -169,6 +195,7 @@ struct BattleView: View {
     private var navigationTitle: String {
         switch mode {
         case .lan: return "LAN Battle"
+        case .friendly: return "Friendly Battle"
         case .practice: return "Practice Battle"
         case .ranked: return "Ranked Battle"
         }
@@ -244,8 +271,9 @@ struct BattleView: View {
     }
 
     private var opponentLabel: String {
-        guard let lanContext else { return "OPPONENT · RIVAL SQUAD" }
-        return "OPPONENT · \(lanContext.opponentName.uppercased())"
+        if let lanContext { return "OPPONENT · \(lanContext.opponentName.uppercased())" }
+        if case .friendly(let ctx) = mode { return "OPPONENT · \(ctx.opponentId.uppercased())" }
+        return "OPPONENT · RIVAL SQUAD"
     }
 
     /// One side of the arena: the active unit large, the bench behind it.
@@ -454,7 +482,10 @@ struct BattleView: View {
 
     private var primaryTitle: String {
         if running { return "Battling…" }
-        if lanContext != nil { return resultText == nil ? "Watch the battle" : "Battle over" }
+        // LAN and friendly arrive with the result already resolved.
+        if lanContext != nil || friendlyContext != nil {
+            return resultText == nil ? "Watch the battle" : "Battle over"
+        }
         return "Begin battle"
     }
 
@@ -585,19 +616,23 @@ struct BattleView: View {
         switch mode {
         case .lan(let context):
             Task { await animateReplay(context.replay) ; finish(context.replay) }
+        case .friendly(let context):
+            Task { await animateReplay(context.replay) ; finish(context.replay) }
         case .practice:
             startPractice()
         case .ranked:
             Task {
-                guard let replay = await gameState.resolveBattle(
-                    yourSquad: displayedSquad,
-                    opponentSquad: opponentSquad
-                ) else {
+                // The ladder fight: the server picks the opponent via SBMM,
+                // resolves authoritatively, applies RR and rolls a Case.
+                guard let outcome = await gameState.playRanked(squad: displayedSquad) else {
                     running = false
                     return
                 }
-                await animateReplay(replay)
-                finish(replay)
+                serverOpponent = outcome.opponentSquad
+                rankedOutcome = outcome
+                resetScene()
+                await animateReplay(outcome.replay)
+                finish(outcome.replay)
             }
         }
     }
@@ -626,9 +661,20 @@ struct BattleView: View {
 
     private func finish(_ replay: BattleReplay) {
         let won = replay.winnerSide == myEngineSide
-        resultText = won
+        var text = won
             ? "VICTORY · \(replay.turns) turns"
             : "DEFEAT · \(replay.turns) turns"
+        // Ranked reports what the ladder did: RR movement, promotion, and
+        // the rarity of the Case a win granted.
+        if let outcome = rankedOutcome {
+            let sign = outcome.rrDelta >= 0 ? "+" : ""
+            text += " · \(sign)\(outcome.rrDelta) RR"
+            if outcome.promoted { text += " · PROMOTED" }
+            if let caseRarity = outcome.caseRarity {
+                text += " · \(caseRarity.capitalized) Case"
+            }
+        }
+        resultText = text
         running = false
         if won {
             simulateTrigger += 1
@@ -643,7 +689,7 @@ struct BattleView: View {
 
     private func startPractice() {
         let specsA = displayedSquad.map { gameState.battleStats(for: $0) }
-        let specsB = opponentSquad.map { gameState.battleStats(for: $0) }
+        let specsB = displayedOpponent.map { gameState.battleStats(for: $0) }
         let seed = displayedSquad.reduce(UInt64(1469598103934665603)) { acc, c in
             c.id.utf8.reduce(acc) { ($0 ^ UInt64($1)) &* 1099511628211 }
         }
@@ -898,7 +944,7 @@ struct BattleView: View {
                 .font(NQText.captionS.font.weight(.heavy))
                 .foregroundStyle(NQTheme.battleInkMuted)
             HStack(spacing: NQTheme.spaceS) {
-                ForEach(opponentSquad.prefix(3)) { c in
+                ForEach(displayedOpponent.prefix(3)) { c in
                     CharacterArtwork(character: c, expression: resultText?.hasPrefix("VICTORY") == true ? .hurt : .proud, hurt: resultText?.hasPrefix("VICTORY") == true)
                         .frame(width: 56, height: 72)
                 }

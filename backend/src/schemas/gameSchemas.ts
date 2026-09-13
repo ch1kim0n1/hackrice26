@@ -62,6 +62,28 @@ export const rankedBattleSchema = z.object({
   opponentId: uuid.optional()
 });
 
+/**
+ * Interactive battle commit (spec §4): the player drove the fight locally
+ * against the seed/squads the begin endpoint parked, then submits the decisions
+ * they made. The server replays them deterministically — every entry is
+ * validated against the engine's legal-action set, so a fabricated script
+ * can never mint an outcome the rules wouldn't produce.
+ *
+ *   move   — use moves[moveIndex] of the active unit (consumes the turn)
+ *   switch — voluntary switch to squad[unitIndex] (consumes the turn)
+ *   choose — free faint-replacement pick (no turn, no RNG draw)
+ */
+export const battleActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("move"), moveIndex: z.number().int().min(0).max(7) }),
+  z.object({ type: z.literal("switch"), unitIndex: z.number().int().min(0).max(2) }),
+  z.object({ type: z.literal("choose"), unitIndex: z.number().int().min(0).max(2) })
+]);
+
+export const battleCommitSchema = z.object({
+  matchId: z.string().min(8).max(64),
+  actions: z.array(battleActionSchema).max(250)
+});
+
 export const arenaCreateSchema = z.object({
   opponentId: uuid,
   squad: z.array(uuid).length(3),
@@ -75,7 +97,10 @@ export const capsuleOpenSchema = z.object({
 
 /** Shared by cookbook opens and case opens: the player's commit-reveal entropy. */
 export const clientSeedBodySchema = z.object({
-  clientSeed: z.string().min(6).max(64).optional()
+  clientSeed: z.string().min(6).max(64).optional(),
+  /** Spend a stored Cookbook Boost on this open (spec §6) — Rare+ odds ×1.15,
+   *  renormalized. Ignored on fixed-rarity Case opens. */
+  useBoost: z.boolean().optional()
 });
 
 /** POST /lootbox/mailbox/claim — which overflow drops to move into inventory. */
@@ -83,12 +108,15 @@ export const mailboxClaimSchema = z.object({
   dropIds: z.array(z.string().min(1).max(64)).min(1).max(500)
 });
 
-/** POST /lootbox/verify — recompute a past cookbook open. */
+/** POST /lootbox/verify — recompute a past cookbook open. `boosted` must
+ *  match the stored drop — a boosted open used the ×1.15 Rare+ table, so
+ *  verifying it against published odds would not reproduce the rarity. */
 export const verifyOpenSchema = z.object({
   bookId: z.string().min(1).max(64),
   serverSeed: z.string().min(1),
   clientSeed: z.string().min(1),
-  nonce: z.number().int().min(0)
+  nonce: z.number().int().min(0),
+  boosted: z.boolean().optional()
 });
 
 /**

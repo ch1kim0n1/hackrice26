@@ -162,7 +162,22 @@ export interface BattleOptions {
   /** Fractions of effective HP each unit starts with (dungeon carry-over). */
   carryHPA?: number[];
   carryHPB?: number[];
+  /** Side whose faint-replacements are NOT auto-picked: the driver must call
+   *  chooseReplacement() for it (interactive play — the player picks their
+   *  next monster). Draws nothing, so the event stream stays deterministic
+   *  either way; only the chosen index differs. */
+  manualReplacement?: SideIndex;
 }
+
+/**
+ * One decision in a submitted action script — what the interactive client
+ * tells the server it did. `move`/`switch` consume a turn; `choose` is the
+ * free faint-replacement pick (manualReplacement side only).
+ */
+export type ScriptedAction =
+  | { type: "move"; moveIndex: number }
+  | { type: "switch"; unitIndex: number }
+  | { type: "choose"; unitIndex: number };
 
 export interface BattleResult {
   winner: SideId;
@@ -265,11 +280,13 @@ export class Battle {
   private rng: () => number;
   private first: SideIndex;
   private maxTurns: number;
+  private manualReplacement: SideIndex | null;
   readonly events: object[] = [];
 
   constructor(squadA: BattleUnitSpec[], squadB: BattleUnitSpec[], seed: bigint, opts?: BattleOptions) {
     this.rng = makeRng(seed);
     this.maxTurns = opts?.maxTurns ?? MAX_TURNS;
+    this.manualReplacement = opts?.manualReplacement ?? null;
 
     // Draw 0 — the first-mover coin flip (PvP). PvE callers pass firstTurn
     // explicitly and no draw is consumed.
@@ -420,7 +437,12 @@ export class Battle {
   act(side: SideIndex, action: BattleAction): void {
     if (this.state.finished) return;
     if (sideForTurn(this.first, this.state.turn) !== side) return;
-    if (this.needsReplacement(side)) this.autoReplace(side);
+    if (this.needsReplacement(side)) {
+      // A manual-replacement side picks its own next monster — the driver
+      // must chooseReplacement() before acting again. No turn consumed.
+      if (side === this.manualReplacement) return;
+      this.autoReplace(side);
+    }
 
     const turn = ++this.state.turn;
     const slot = this.activeSlot(side);
@@ -448,7 +470,7 @@ export class Battle {
       // Burned out on its own turn start: the side loses this action but the
       // replacement is still free.
       this.events.push({ event: "faint", unit: slot.spec.id });
-      this.autoReplace(side);
+      if (side !== this.manualReplacement) this.autoReplace(side);
       this.finishTurn(turn);
       return;
     }
@@ -556,7 +578,8 @@ export class Battle {
 
     if (defender.hp <= 0) {
       this.events.push({ event: "faint", unit: defender.spec.id });
-      this.autoReplace((1 - side) as SideIndex);
+      const defSide = (1 - side) as SideIndex;
+      if (defSide !== this.manualReplacement) this.autoReplace(defSide);
     }
 
     this.finishTurn(turn);
@@ -654,16 +677,9 @@ export class Battle {
     policyA?: (battle: Battle, side: SideIndex) => BattleAction,
     policyB?: (battle: Battle, side: SideIndex) => BattleAction
   ): BattleResult {
-    const auto = (battle: Battle, side: SideIndex): BattleAction => {
-      const usable = battle
-        .legalActions(side)
-        .filter((a): a is { type: "move"; moveIndex: number } => a.type === "move");
-      const pick = usable[Math.floor(battle.draw() * usable.length)] ?? usable[0];
-      return pick ?? { type: "move", moveIndex: 0 };
-    };
     const policies: ((b: Battle, s: SideIndex) => BattleAction)[] = [
-      policyA ?? auto,
-      policyB ?? auto
+      policyA ?? Battle.defaultPolicy,
+      policyB ?? Battle.defaultPolicy
     ];
 
     while (!this.state.finished && this.state.turn < this.maxTurns) {
@@ -671,7 +687,73 @@ export class Battle {
       this.act(side, policies[side](this, side));
     }
     if (!this.state.finished) this.resolveTurnLimit();
+    return this.resultSnapshot();
+  }
 
+  /** The shared default policy: uniform pick among legal move/special
+   *  actions (one RNG draw); never switches voluntarily. */
+  static defaultPolicy(battle: Battle, side: SideIndex): BattleAction {
+    const usable = battle
+      .legalActions(side)
+      .filter((a): a is { type: "move"; moveIndex: number } => a.type === "move");
+    const pick = usable[Math.floor(battle.draw() * usable.length)] ?? usable[0];
+    return pick ?? { type: "move", moveIndex: 0 };
+  }
+
+  /**
+   * Server-authoritative interactive replay: side A's decisions come from
+   * the submitted script, side B runs the default policy. Every scripted
+   * action is validated against the legal set — an illegal or missing entry
+   * rejects the script rather than silently substituting, because a fall-
+   * back would diverge from what the player's client displayed.
+   *
+   * Deterministic: same squads + seed + script → same result, and the
+   * returned event stream is exactly what an honest client saw locally.
+   */
+  runScripted(scriptA: ScriptedAction[]): { ok: true; result: BattleResult } | { ok: false; error: string } {
+    let cursor = 0;
+    while (!this.state.finished && this.state.turn < this.maxTurns) {
+      // A fainted active on the manual side is replaced by a script `choose`
+      // entry — free, draws nothing, consumes no turn.
+      if (this.needsReplacement(0)) {
+        const entry = scriptA[cursor++];
+        if (!entry || entry.type !== "choose") {
+          return { ok: false, error: `script[${cursor - 1}]: expected a replacement choice` };
+        }
+        const squad = this.state.sides[0];
+        if (!squad[entry.unitIndex] || squad[entry.unitIndex].hp <= 0 || entry.unitIndex === this.state.active[0]) {
+          return { ok: false, error: `script[${cursor - 1}]: illegal replacement ${entry.unitIndex}` };
+        }
+        this.chooseReplacement(0, entry.unitIndex);
+        continue;
+      }
+
+      const side = sideForTurn(this.first, this.state.turn);
+      if (side === 0) {
+        const entry = scriptA[cursor++];
+        if (!entry || entry.type === "choose") {
+          return { ok: false, error: `script[${cursor - 1}]: expected a move or switch` };
+        }
+        const action: BattleAction =
+          entry.type === "move"
+            ? { type: "move", moveIndex: entry.moveIndex }
+            : { type: "switch", unitIndex: entry.unitIndex };
+        if (!this.legalActions(0).some((l) => sameAction(l, action))) {
+          return { ok: false, error: `script[${cursor - 1}]: illegal action` };
+        }
+        this.act(0, action);
+      } else {
+        this.act(1, Battle.defaultPolicy(this, 1));
+      }
+    }
+    if (cursor < scriptA.length) {
+      return { ok: false, error: "script has trailing actions after the battle ended" };
+    }
+    if (!this.state.finished) this.resolveTurnLimit();
+    return { ok: true, result: this.resultSnapshot() };
+  }
+
+  private resultSnapshot(): BattleResult {
     const fractions = (side: SideIndex) =>
       this.state.sides[side].map((s) => Math.max(0, s.hp) / s.maxHP);
     const fainted = (side: SideIndex) =>

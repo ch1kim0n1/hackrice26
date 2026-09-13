@@ -63,10 +63,16 @@ public final class Battle {
         public var maxTurns: Int
         /// Fractions of effective HP each unit starts with (dungeon carry-over).
         public var carryHP: [[Double]?]
-        public init(firstTurn: FirstTurn = .coinFlip, maxTurns: Int = Battle.maxTurns, carryHP: [[Double]?] = [nil, nil]) {
+        /// Side whose faint-replacements are NOT auto-picked — the driver
+        /// calls chooseReplacement() itself (interactive play: the player
+        /// picks their next monster). Draws nothing; the TS port mirrors
+        /// this as `manualReplacement`, so scripted replays stay identical.
+        public var manualReplacement: Int?
+        public init(firstTurn: FirstTurn = .coinFlip, maxTurns: Int = Battle.maxTurns, carryHP: [[Double]?] = [nil, nil], manualReplacement: Int? = nil) {
             self.firstTurn = firstTurn
             self.maxTurns = maxTurns
             self.carryHP = carryHP
+            self.manualReplacement = manualReplacement
         }
     }
 
@@ -91,6 +97,7 @@ public final class Battle {
     private var rng: SeededRNG
     private let first: Int
     private let maxTurns: Int
+    private let manualReplacement: Int?
 
     /// Timed statuses that expire on the afflicted side's turn start —
     /// same iteration order as TIMED_STATUSES in the TS port.
@@ -101,6 +108,7 @@ public final class Battle {
     public init(squadA: [BattleUnitSpec], squadB: [BattleUnitSpec], seed: UInt64, options: Options = Options()) {
         rng = SeededRNG(seed: seed)
         maxTurns = options.maxTurns
+        manualReplacement = options.manualReplacement
 
         // Draw 0 — the first-mover coin flip (PvP). PvE callers pass .side
         // and no draw is consumed.
@@ -223,7 +231,12 @@ public final class Battle {
     public func act(_ side: Int, action: BattleAction) {
         guard !finished else { return }
         guard (first + turn) % 2 == side else { return }
-        if needsReplacement(side) { autoReplace(side) }
+        if needsReplacement(side) {
+            // A manual-replacement side picks its own next monster — the
+            // driver must chooseReplacement() before acting again.
+            if side == manualReplacement { return }
+            autoReplace(side)
+        }
 
         turn += 1
         guard var slot = activeSlot(side), slot.hp > 0 else { return }
@@ -249,7 +262,7 @@ public final class Battle {
             // Burned out on its own turn start: the side loses this action
             // but the replacement is still free.
             events.append(.faint(unit: slot.spec.id))
-            autoReplace(side)
+            if side != manualReplacement { autoReplace(side) }
             finishTurn(turn)
             return
         }
@@ -337,7 +350,7 @@ public final class Battle {
 
         if sides[defSide][defIndex].hp <= 0 {
             events.append(.faint(unit: sides[defSide][defIndex].spec.id))
-            autoReplace(defSide)
+            if defSide != manualReplacement { autoReplace(defSide) }
         }
 
         finishTurn(turn)
