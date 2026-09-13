@@ -70,7 +70,7 @@ public struct NQUIDemoView: View {
 
                     NQSectionHeader("Empty state")
                     NQCard {
-                        NQEmptyState(message: "Your squad is empty — let's fix that!")
+                        NQEmptyState(message: "Your squad is empty: let's fix that!")
                     }
                 }
                 .padding(NQTheme.spaceL)
@@ -106,8 +106,8 @@ private struct FlowChips: View {
 #Preview("Neutral mode") {
     NQScreen(tab: .constant(.home)) {
         VStack {
-            NQBanner("No characters yet — scan food to summon your first one")
-            NQEmptyState(message: "Your squad is empty — let's fix that!")
+            NQBanner("No characters yet: scan food to summon your first one")
+            NQEmptyState(message: "Your squad is empty: let's fix that!")
         }
         .padding()
     }

@@ -91,7 +91,6 @@ struct SquadPickerView: View {
                     CharacterArtwork(character: character)
                         .frame(width: 80, height: 104)
                 ),
-                shiny: character.isShiny
             )
             .overlay(alignment: .topLeading) {
                 if let position {

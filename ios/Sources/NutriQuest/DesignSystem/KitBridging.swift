@@ -84,10 +84,20 @@ struct CharacterArtwork: View {
     var expression: ChibiExpression = .happy
     /// Battle KO / hit pose when a hurt sprite exists.
     var hurt: Bool = false
+    /// Per-rarity variant art (epic/legendary/mythic) when the file ships —
+    /// falls through to the base sprite when it doesn't.
+    var rarity: NQRarity? = nil
 
     var body: some View {
         let cartoon = GameArt.sprite(id: character.baseID, hurt: hurt)
+        let effectiveRarity = rarity ?? character.rarity.kitRarity
+        let variant = hurt ? nil : GameArt.spriteVariant(id: character.baseID, rarity: effectiveRarity)
         if character.isLocked, let image = NQAsset.uiImage("unknown-characters") {
+            Image(uiImage: image)
+                .resizable()
+                .scaledToFit()
+                .accessibilityHidden(true)
+        } else if let variant, let image = NQAsset.uiImage(variant) {
             Image(uiImage: image)
                 .resizable()
                 .scaledToFit()
@@ -119,17 +129,13 @@ struct CharacterArtwork: View {
             }
             .accessibilityHidden(true)
         } else {
-            // No hand-drawn asset: build the creature procedurally. A dish
-            // character carries a food group, which shapes its build and adds
-            // a motif so a salad and a steak aren't the same silhouette in
-            // two colours. Barcode/sample characters pass nil and render
-            // exactly as before.
+            // No hand-drawn asset: build the creature procedurally. Pose
+            // falls back to the deterministic name hash — every catalog
+            // character gets a stable, distinct silhouette.
             ChibiCharacterView(
                 color: character.kitColor,
                 statType: character.statType.kitStatType,
-                expression: expression,
-                pose: ChibiPose.forFoodGroup(character.foodGroup, name: character.name),
-                motif: ChibiMotif.forFoodGroup(character.foodGroup)
+                expression: expression
             )
         }
     }

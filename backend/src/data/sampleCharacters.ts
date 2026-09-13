@@ -1,10 +1,24 @@
-import { Character } from "../types";
+// The starter six — a brand-new player's opening roster, minted as real
+// owned drops on first attach (lootboxState.seedStarterRoster).
+//
+// These are instances of the master catalog, not bespoke designs: permanent
+// catalog ids, catalog movesets, instance rarities. Six commons-to-rare
+// spread across the stat envelope so a starter team can fight immediately.
 
-export const sampleCharacters: Character[] = [
-  { id: "broccoli-bud", name: "Broccoli Bud", colorHex: "#5FCB82", rarity: "common", statType: "fiber", isLocked: false },
-  { id: "sushi-sam", name: "Sushi Sam", colorHex: "#56B8F5", rarity: "rare", statType: "protein", isLocked: false },
-  { id: "berry-belle", name: "Berry Belle", colorHex: "#F78FB3", rarity: "epic", statType: "vitamin", isLocked: false },
-  { id: "citrus-chip", name: "Citrus Chip", colorHex: "#FFB86B", rarity: "common", statType: "vitamin", isLocked: false },
-  { id: "grape-gus", name: "Grape Gus", colorHex: "#B892FF", rarity: "legendary", statType: "hydration", isLocked: false },
-  { id: "sprout-wisp", name: "Sprout Wisp", colorHex: "#8FE3A0", rarity: "common", statType: "fiber", isLocked: false }
+import { Character, Rarity } from "../types";
+import { asCharacter, rosterCharacter } from "./roster";
+
+const STARTERS: [characterId: string, rarity: Rarity][] = [
+  ["broccoli-bud", "common"],
+  ["bean-sprout", "common"],
+  ["carrot-cadet", "common"],
+  ["water-droplet", "common"],
+  ["spinach-scout", "uncommon"],
+  ["almond-knight", "rare"]
 ];
+
+export const sampleCharacters: Character[] = STARTERS.map(([id, rarity]) => {
+  const entry = rosterCharacter(id);
+  if (!entry) throw new Error(`starter '${id}' is not in the catalog`);
+  return asCharacter(entry, rarity);
+});

@@ -130,7 +130,7 @@ describe("spinning", () => {
   it("spends the monster whichever colour wins", async () => {
     const { spin } = await import("./portalWheelState");
     const { stateFor } = await import("./lootboxState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `wheel_spend_${Date.now()}`;
     const session = stateFor(playerId);
@@ -140,17 +140,14 @@ describe("spinning", () => {
     // Blue is 2/16, so 24 spins on blue sees both outcomes with overwhelming
     // probability while exercising the same code path for each.
     for (let i = 0; i < 24; i++) {
-      const monster = session.record({
+      const monster = session.record(testDrop({
         crateId: "starter-crate",
-        character: CHARACTERS["salmon-striker"],
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
+        character: testCharacter("common", "salmon-striker"),
         value: 20_000,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+        rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
         fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
         openedAt: new Date().toISOString()
-      });
+      })).drop;
 
       const resolved = spin(playerId, monster.id, "blue");
       expect(session.inventory.map((d) => d.id)).not.toContain(monster.id);
@@ -180,23 +177,20 @@ describe("spinning", () => {
     const { colorAtSection } = await import("./portalWheelEngine");
     const { TOTAL_SECTIONS } = await import("../data/portalWheel");
     const { stateFor } = await import("./lootboxState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `wheel_section_${Date.now()}`;
     const session = stateFor(playerId);
 
     for (let i = 0; i < 20; i++) {
-      const monster = session.record({
+      const monster = session.record(testDrop({
         crateId: "starter-crate",
-        character: CHARACTERS["broccoli-bud"],
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
+        character: testCharacter("common", "broccoli-bud"),
         value: 600,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+        rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
         fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
         openedAt: new Date().toISOString()
-      });
+      })).drop;
       const resolved = spin(playerId, monster.id, "green");
 
       // The section is what the client stops the pointer on, so it has to be a
@@ -225,21 +219,18 @@ describe("spinning", () => {
   it("survives a restart: the spin is history the moment it resolves", async () => {
     const { recentSpins, spin } = await import("./portalWheelState");
     const { stateFor } = await import("./lootboxState");
-    const { CHARACTERS } = await import("../data/lootTable");
+    const { testDrop, testCharacter } = await import("../testkit");
 
     const playerId = `wheel_history_${Date.now()}`;
     const session = stateFor(playerId);
-    const monster = session.record({
+    const monster = session.record(testDrop({
       crateId: "starter-crate",
-      character: CHARACTERS["salmon-striker"],
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
+      character: testCharacter("common", "salmon-striker"),
       value: 20_000,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
+      rolls: { rarity: 0.1, character: 0.1, mintSegment: 0, mintPosition: 0.1 },
       fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 1 },
       openedAt: new Date().toISOString()
-    });
+    })).drop;
 
     const resolved = spin(playerId, monster.id, "yellow");
     const stored = recentSpins(playerId, 5).find((entry) => entry.spinId === resolved.spinId);

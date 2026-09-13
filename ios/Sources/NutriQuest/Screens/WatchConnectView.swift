@@ -9,6 +9,7 @@ struct WatchConnectView: View {
     /// Links the watch so Profile can show Connected, then loads real vitals
     /// (dashes if the watch app has not synced yet — never fake numbers).
     @State private var localStep: WatchConnectStep?
+    @State private var failureReason: String?
     @State private var pulse = false
     @Environment(\.nqAccent) private var accent
     @Environment(\.dismiss) private var dismiss
@@ -100,13 +101,17 @@ struct WatchConnectView: View {
         )
     }
 
+    private var healthAvailable: Bool { HealthSyncService.shared.isHealthDataAvailable }
+
     private var promptBody: some View {
         VStack(spacing: NQTheme.spaceS) {
-            Text("Connect your watch")
+            Text(healthAvailable ? "Connect your watch" : "Health data unavailable")
                 .font(NQText.displayL.font)
                 .foregroundStyle(NQTheme.ink)
                 .multilineTextAlignment(.center)
-            Text("Sync steps, heart rate & workouts automatically to boost your daily stats.")
+            Text(healthAvailable
+                 ? "Sync steps, heart rate & workouts from Apple Health to boost your daily stats."
+                 : "This device can't read Apple Health. Connect from an iPhone paired with your Apple Watch.")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.inkMuted)
                 .multilineTextAlignment(.center)
@@ -119,7 +124,7 @@ struct WatchConnectView: View {
             Text("Pulling your latest activity…")
                 .font(NQText.displayL.font)
                 .foregroundStyle(NQTheme.ink)
-            Text("We pull today's steps, exercise, and stand hours from your last watch sync.")
+            Text("Allow access in the Health sheet, then we read today's steps, exercise, and stand hours from your last watch sync.")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.inkMuted)
                 .multilineTextAlignment(.center)
@@ -152,7 +157,7 @@ struct WatchConnectView: View {
                 .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .soft)
             }
             if gameState.vitalsActivity?.stepsToday == nil {
-                Text("Waiting for the first watch sync. Pair the NutriQuest watch app, then come back.")
+                Text("No activity yet today. Wear your watch, then tap Sync now.")
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.inkMuted)
                     .multilineTextAlignment(.center)
@@ -161,14 +166,19 @@ struct WatchConnectView: View {
         .transition(NQTransition.summon)
     }
 
-    /// Visual error state — the networking engineer hooks the failure path
-    /// into `WatchConnectStep.failed` without touching UI.
+    /// Reached when Health data is unavailable, the permission sheet failed,
+    /// or the upload to the backend failed — `failureReason` carries which.
     private var failedBody: some View {
         VStack(spacing: NQTheme.spaceS) {
             Text("Couldn't connect")
                 .font(NQText.displayL.font)
                 .foregroundStyle(NQTheme.ink)
-            Text("Your watch wasn't found. Make sure Bluetooth is on and the watch is unlocked, then try again.")
+            Text(failureReason ?? "Something went wrong reading Apple Health.")
+                .font(NQText.captionS.font)
+                .foregroundStyle(NQTheme.inkMuted)
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+            Text("You can also allow access in Settings › Health › Data Access & Devices › NutriQuest.")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.inkMuted)
                 .multilineTextAlignment(.center)
@@ -181,8 +191,10 @@ struct WatchConnectView: View {
         switch currentStep {
         case .prompt:
             VStack(spacing: NQTheme.spaceM) {
-                NQButton("Connect Apple Watch", icon: .watch) {
-                    beginConnect()
+                if healthAvailable {
+                    NQButton("Connect Apple Watch", icon: .watch) {
+                        beginConnect()
+                    }
                 }
                 Button("Maybe Later") { dismiss() }
                     .font(NQText.captionS.font.weight(.bold))
@@ -193,33 +205,49 @@ struct WatchConnectView: View {
                 .font(NQText.captionS.font.weight(.bold))
                 .foregroundStyle(NQTheme.inkMuted)
         case .connected:
-            NQButton("Done") { dismiss() }
+            VStack(spacing: NQTheme.spaceM) {
+                NQButton("Done") { dismiss() }
+                Button(gameState.isSyncingHealth ? "Syncing…" : "Sync now") {
+                    Task { await gameState.syncHealthIfLinked(force: true) }
+                }
+                .font(NQText.captionS.font.weight(.bold))
+                .foregroundStyle(NQTheme.inkMuted)
+                .disabled(gameState.isSyncingHealth)
+            }
         case .failed:
             NQButton("Try Again", icon: .watch) { beginConnect() }
         }
     }
 
+    /// Real connect: Health permission sheet (first time) → read today's
+    /// snapshot → POST /vitals → mark linked. Cancel only hides the spinner;
+    /// a completed sync still lands so Profile shows Connected.
     private func beginConnect() {
         localStep = .searching
+        failureReason = nil
         Task {
-            await gameState.refreshVitals()
-            try? await Task.sleep(nanoseconds: 800_000_000)
-            gameState.setWatchLinked(true)
-            localStep = .connected
-            NQHaptic.success()
+            do {
+                try await gameState.connectAppleWatch()
+                localStep = .connected
+                NQHaptic.success()
+            } catch {
+                failureReason = error.localizedDescription
+                localStep = .failed
+                NQHaptic.error()
+            }
         }
     }
 
     private var stepsLabel: String {
-        gameState.vitalsActivity?.stepsToday.map { $0.formatted() } ?? "—"
+        gameState.vitalsActivity?.stepsToday.map { $0.formatted() } ?? "-"
     }
 
     private var exerciseLabel: String {
-        gameState.vitalsActivity?.exerciseMinutesToday.map { "\($0)m" } ?? "—"
+        gameState.vitalsActivity?.exerciseMinutesToday.map { "\($0)m" } ?? "-"
     }
 
     private var standLabel: String {
-        gameState.vitalsActivity?.standHoursToday.map { "\($0)h" } ?? "—"
+        gameState.vitalsActivity?.standHoursToday.map { "\($0)h" } ?? "-"
     }
 
     private func sampleStat(icon: NQIcon, tint: Color, value: String, label: String) -> some View {

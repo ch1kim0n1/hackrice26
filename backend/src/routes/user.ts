@@ -3,22 +3,26 @@ import { UserProfile, Character, LootDrop } from "../types";
 import { PlayerRequest, requirePlayerId } from "../middleware/player";
 import { db } from "../db";
 import { stateFor } from "../services/lootboxState";
-import { vitalsStoreFor } from "../vitals/vitalsStore";
+import { MAX_SNAPSHOTS, vitalsStoreFor } from "../vitals/vitalsStore";
+import { activityByDay } from "../vitals/activityCalendar";
 import { rateLimitByPlayer } from "../middleware/security";
-import { CHARACTERS, RARITY_TIERS, CHARACTER_FLAVOR, CRATES } from "../data/lootTable";
-import { questStatuses, claimQuest, todayKey } from "../game/quests";
+import { RARITY_TIERS } from "../data/lootTable";
+import {
+  claimTask,
+  faintedIds,
+  nextNutritionStreak,
+  taskStatuses,
+  todayKey,
+  TaskContext
+} from "../game/tasks";
 import { hasDatabaseUrl } from "../db/pg";
-import { openCrate, advancePity } from "../services/lootboxEngine";
-import { characterPayload } from "./lootbox";
-import { RankTier, tierForPoints, pointsToNextTier } from "../game/rankTiers";
-import { awardCapped, RP_PER_QUEST } from "../game/rankPoints";
-import { rollSeason, seasonNumber } from "../game/rankSeason";
-import { isFatigued } from "../game/fatigue";
+import { rankForRR, rrToNextRank, RANK_LABELS, RankId } from "../game/rr";
 import { bmi, bmiBand } from "../game/targets";
 import { goalProfileFor } from "../game/goals";
 import { Activity, Goal, Sex, bodyVitals } from "../vitals/bodyMetrics";
 import { enqueueMirror } from "../services/mirrorQueue";
 import { profileUpsertSchema } from "../schemas/gameSchemas";
+import { STREAK_BOOST_EVERY } from "../game/spec";
 
 export const userRouter = Router();
 userRouter.use(requirePlayerId);
@@ -28,26 +32,27 @@ userRouter.use(requirePlayerId);
  * which must match). Persisted to SQLite so profiles survive restarts
  * (issue #23).
  *
- * Response shapes are unchanged from the original hardcoded version:
- * GET returns { profile: UserProfile } — additive fields only.
+ * Spec §5/§6: progression is RR + battle history + tasks + streak. There is
+ * no XP, no levels, no consistency ladder, no seasons, no fatigue, and no
+ * comeback crate — those columns/fields from earlier builds are inert.
  */
 
 interface PlayerProfile extends UserProfile {
   createdAt: string;
   updatedAt: string;
-  /** Consistency ladder (#82/#83): points + derived tier, server-managed. */
-  rankPoints?: number;
-  rankTier?: RankTier;
-  /** UTC day + amount already earned — the award cap's bookkeeping (#83). */
-  rankDay?: string;
-  rankEarnedToday?: number;
-  /** Last season number this profile was reconciled against (rankSeason.ts).
-   *  Never null after creation; awardRankPoints rolls it forward lazily. */
-  rankSeason?: number;
-  /** Ranked-loss squad fatigue (#67): set to a future ISO timestamp on a
-   *  ranked loss, cleared early by claiming any daily quest. Null/absent
-   *  means not fatigued. */
-  squadFatigueUntil?: string | null;
+  /** Ranked Rating (spec §5). Server-managed; never below 0. */
+  rr?: number;
+  /** Ranked record — leaderboard tiebreakers (RR → wins → win rate). */
+  rankedWins?: number;
+  rankedLosses?: number;
+  /** Task-RR bookkeeping: UTC day + amount already applied (cap +10). */
+  taskRRDay?: string;
+  taskRRToday?: number;
+  /** Nutrition streak (spec §6): consecutive days with ≥1 eligible action. */
+  nutritionStreakDays?: number;
+  lastNutritionDay?: string;
+  /** Unspent Cookbook Boosts — every 5 streak days earns one. */
+  cookbookBoosts?: number;
   /** Body metrics, client-writable (#88): feed BMI/BMR goals (#89/#90). */
   weightKg?: number;
   heightCm?: number;
@@ -58,107 +63,109 @@ interface PlayerProfile extends UserProfile {
   sex?: Sex;
   activity?: Activity;
   goal?: Goal;
+  /** User-editable dashboard targets (spec §7 home dashboard). */
+  calorieTarget?: number;
+  proteinTargetG?: number;
+  carbsTargetG?: number;
+  fatTargetG?: number;
+  /** Explicit watch-data opt-in (spec §7 consent). */
+  watchOptIn?: boolean;
 }
 
-// ===== XP / progression =====
-//
-// Total-lifetime-xp model: each level costs more than the last, so early
-// levels come fast and later ones stretch. Level n costs
-// `XP_BASE + XP_STEP * (n - 1)` points. xp() on the profile is lifetime
-// total; level and into-level progress are always derived, never stored,
-// so the two can never drift apart.
-const XP_BASE = 100;
-const XP_STEP = 50;
+export type { PlayerProfile };
 
-export function xpForLevel(level: number): number {
-  return XP_BASE + XP_STEP * (level - 1);
-}
+// ===== Battle history (spec §6) ============================================
 
-export function xpProgression(totalXp: number): {
-  level: number; xp: number; xpIntoLevel: number; xpForLevel: number; progress: number;
-} {
-  let level = 1;
-  let remaining = Math.max(0, totalXp);
-  while (remaining >= xpForLevel(level)) {
-    remaining -= xpForLevel(level);
-    level += 1;
+export type BattleMode = "ranked" | "friendly" | "dungeon";
+
+/**
+ * Append one completed battle. Ranked results carry their RR delta; friendly
+ * battles are recorded with rrDelta 0 — history is complete, not selective.
+ */
+export function recordBattle(
+  playerId: string,
+  mode: BattleMode,
+  result: "win" | "loss",
+  opts: {
+    opponent?: string;
+    rrDelta?: number;
+    squad: { id: string; name: string }[];
+    detail?: object;
   }
-  return { level, xp: totalXp, xpIntoLevel: remaining, xpForLevel: xpForLevel(level), progress: remaining / xpForLevel(level) };
-}
-
-/** Award XP and persist the derived level. Centralized so every route
- *  grants through one funnel — XP sources stay tunable in one place. */
-export function awardXP(playerId: string, amount: number, reason: string): void {
-  const profile = getOrCreate(playerId);
-  profile.xp = (profile.xp ?? 0) + Math.max(0, amount);
-  const prog = xpProgression(profile.xp);
-  const leveled = prog.level > profile.level;
-  profile.level = prog.level;
-  profile.updatedAt = new Date().toISOString();
-  saveProfile(playerId, profile);
-  if (leveled) {
-    console.log(`[xp] ${playerId} reached level ${prog.level} via ${reason}`);
-  }
-}
-
-/** Award consistency rank points, capped per UTC day (#83). Centralized like
- *  awardXP — every award path goes through here so the cap holds. Returns
- *  the applied delta and tier change for the caller to surface. */
-export function awardRankPoints(playerId: string, amount: number, reason: string) {
-  const profile = getOrCreate(playerId);
-
-  // Season rollover (#67, rankSeason.ts) happens before the new delta so a
-  // reward reflects the tier held going into the boundary, not one diluted
-  // by the event that triggered this call.
-  const priorSeason = profile.rankSeason ?? null;
-  const rollover = rollSeason(priorSeason, profile.rankPoints ?? 0, Date.now());
-  if (rollover.season !== priorSeason) {
-    profile.rankPoints = rollover.rankPoints;
-    profile.rankTier = tierForPoints(rollover.rankPoints);
-    profile.rankSeason = rollover.season;
-    if (rollover.reward > 0) {
-      stateFor(playerId).grantKeys(rollover.reward);
-      console.log(`[rank] ${playerId} season closed at ${rollover.tierAtClose}: +${rollover.reward} keys`);
-    }
-  }
-
-  const today = todayKey();
-  // New day resets the earned counter; points themselves never reset daily.
-  const earnedToday = profile.rankDay === today ? (profile.rankEarnedToday ?? 0) : 0;
-  const { state, earnedToday: earned, change } = awardCapped(
-    { rankPoints: profile.rankPoints ?? 0, rankTier: profile.rankTier ?? "bronze" },
-    earnedToday,
-    amount
+): void {
+  db.prepare(
+    `INSERT INTO battle_history (player_id, mode, result, opponent, rr_delta, squad, detail)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    playerId,
+    mode,
+    result,
+    opts.opponent ?? null,
+    opts.rrDelta ?? 0,
+    JSON.stringify(opts.squad.slice(0, 3)),
+    opts.detail ? JSON.stringify(opts.detail) : null
   );
-  const applied = state.rankPoints - (profile.rankPoints ?? 0);
-  profile.rankPoints = state.rankPoints;
-  profile.rankTier = state.rankTier;
-  profile.rankDay = today;
-  profile.rankEarnedToday = earned;
-  profile.updatedAt = new Date().toISOString();
-  saveProfile(playerId, profile);
-  if (change.direction !== "none") {
-    console.log(`[rank] ${playerId} ${change.direction}: ${change.from} -> ${change.to} via ${reason}`);
-  }
-  return { applied, earnedToday: earned, state, change, season: profile.rankSeason };
 }
 
-/** Public rank block for responses — badge + progress bar inputs. */
-function rankBlock(profile: PlayerProfile) {
-  const points = profile.rankPoints ?? 0;
+/** Apply a ranked outcome to the profile: RR delta + record counters. */
+export function applyRankedToProfile(
+  playerId: string,
+  result: { delta: number; rr: number },
+  won: boolean
+): PlayerProfile {
+  const profile = getOrCreate(playerId);
+  profile.rr = result.rr;
+  profile.rankedWins = (profile.rankedWins ?? 0) + (won ? 1 : 0);
+  profile.rankedLosses = (profile.rankedLosses ?? 0) + (won ? 0 : 1);
+  if (won) profile.battlesWon = (profile.battlesWon ?? 0) + 1;
+  profile.updatedAt = new Date().toISOString();
+  saveProfile(playerId, profile);
+  return profile;
+}
+
+// ===== Nutrition streak / Cookbook Boosts (spec §6) ========================
+
+/**
+ * Count one eligible nutrition action for today (called from the scan and
+ * meal-log paths as well as nutrition-task claims). Idempotent within a day.
+ */
+export function recordNutritionAction(playerId: string): { streakDays: number; boostEarned: boolean; boosts: number } {
+  const profile = getOrCreate(playerId);
+  const day = todayKey();
+  const { streakDays, boostEarned } = nextNutritionStreak(profile, day);
+  if (profile.lastNutritionDay !== day) {
+    profile.nutritionStreakDays = streakDays;
+    profile.lastNutritionDay = day;
+    if (boostEarned) profile.cookbookBoosts = (profile.cookbookBoosts ?? 0) + 1;
+    profile.updatedAt = new Date().toISOString();
+    saveProfile(playerId, profile);
+  }
   return {
-    points,
-    tier: tierForPoints(points),
-    pointsToNextTier: pointsToNextTier(points),
-    season: profile.rankSeason ?? seasonNumber(Date.now())
+    streakDays: profile.nutritionStreakDays ?? 0,
+    boostEarned,
+    boosts: profile.cookbookBoosts ?? 0
   };
 }
 
-/** Public fatigue block — whether ranked battles are currently blocked. */
-export function fatigueBlock(profile: PlayerProfile) {
-  const until = profile.squadFatigueUntil ?? null;
-  return { fatigued: isFatigued(until, Date.now()), until };
+/**
+ * Spend one stored Cookbook Boost (consumed by the cookbook-open path — the
+ * open renormalizes Rare+ weights ×1.15). Returns false when none are held.
+ * The spend is atomic with the caller's transaction when invoked inside one.
+ */
+export function consumeCookbookBoost(playerId: string): boolean {
+  const profile = getOrCreate(playerId);
+  if ((profile.cookbookBoosts ?? 0) < 1) return false;
+  profile.cookbookBoosts = (profile.cookbookBoosts ?? 0) - 1;
+  profile.updatedAt = new Date().toISOString();
+  saveProfile(playerId, profile);
+  return true;
 }
+
+export function cookbookBoosts(playerId: string): number {
+  return getOrCreate(playerId).cookbookBoosts ?? 0;
+}
+
+// ===== Profile CRUD =========================================================
 
 function defaultProfile(playerId: string): PlayerProfile {
   return {
@@ -170,10 +177,11 @@ function defaultProfile(playerId: string): PlayerProfile {
     battlesWon: 0,
     activeCharacterId: null,
     colorMode: "none",
-    rankPoints: 0,
-    rankTier: "bronze",
-    rankSeason: seasonNumber(Date.now()),
-    squadFatigueUntil: null,
+    rr: 0,
+    rankedWins: 0,
+    rankedLosses: 0,
+    cookbookBoosts: 0,
+    nutritionStreakDays: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
@@ -198,6 +206,18 @@ export function saveProfile(playerId: string, profile: PlayerProfile): void {
   ).run(JSON.stringify(profile), profile.updatedAt, playerId);
 }
 
+/** Public rank block — RR + derived rank + progress to the next floor. */
+export function rankBlock(profile: PlayerProfile) {
+  const rr = profile.rr ?? 0;
+  const rank = rankForRR(rr);
+  return {
+    rr,
+    rank,
+    rankLabel: RANK_LABELS[rank],
+    rrToNextRank: rrToNextRank(rr)
+  };
+}
+
 const COLOR_MODES = ["active", "bestUnselected", "none"] as const;
 
 /** :id must match the caller's X-Player-Id -- otherwise one player could
@@ -213,140 +233,134 @@ function requireOwnId(req: PlayerRequest, res: Response): boolean {
   return true;
 }
 
-/** GET /user/leaderboard?sort=wins|rank -- global ranking, "wins" (battles
- *  won) by default, "rank" for the consistency ladder (points + tier).
- *  Registered before /:id so "leaderboard" is not swallowed by the :id
- *  param. Read-only and privacy-safe: exposes display name + competitive
- *  stats only. Every entry carries rank fields regardless of sort mode so a
- *  wins-sorted view can still show a tier badge. */
+/** GET /user/leaderboard — spec §6 ordering: RR desc, then ranked wins,
+ *  then win rate. Registered before /:id so "leaderboard" is not swallowed
+ *  by the :id param. Read-only and privacy-safe. */
 userRouter.get("/leaderboard", (req: PlayerRequest, res) => {
-  const sort = req.query.sort === "rank" ? "rank" : "wins";
   const rows = db
     .prepare(`SELECT player_id, payload FROM user_profile`)
     .all() as { player_id: string; payload: string }[];
   const entries = rows
     .map((r) => JSON.parse(r.payload) as PlayerProfile)
-    .map((p) => ({
-      id: p.id,
-      displayName: p.displayName,
-      level: p.level,
-      battlesWon: p.battlesWon,
-      streakDays: p.streakDays,
-      rankPoints: p.rankPoints ?? 0,
-      rankTier: tierForPoints(p.rankPoints ?? 0),
-      isYou: p.id === req.playerId
-    }))
-    .sort(
-      sort === "rank"
-        ? (a, b) => b.rankPoints - a.rankPoints || b.battlesWon - a.battlesWon
-        : (a, b) => b.battlesWon - a.battlesWon || b.level - a.level
-    )
+    .map((p) => {
+      const wins = p.rankedWins ?? 0;
+      const losses = p.rankedLosses ?? 0;
+      const games = wins + losses;
+      return {
+        id: p.id,
+        displayName: p.displayName,
+        rr: p.rr ?? 0,
+        rank: rankForRR(p.rr ?? 0),
+        rankLabel: RANK_LABELS[rankForRR(p.rr ?? 0)],
+        rankedWins: wins,
+        rankedLosses: losses,
+        winRate: games > 0 ? wins / games : 0,
+        isYou: p.id === req.playerId
+      };
+    })
+    .sort((a, b) => b.rr - a.rr || b.rankedWins - a.rankedWins || b.winRate - a.winRate)
     .slice(0, 50)
-    .map((e, i) => ({ rank: i + 1, ...e }));
-  res.json({ entries, sort });
+    .map((e, i) => ({ ...e, rank: i + 1 }));
+  res.json({ entries });
 });
 
-/** GET /user/quests/today -- the day's three quests with server-verified
- *  progress. Registered before /:id so "quests" is not swallowed by it. */
-userRouter.get("/quests/today", (req: PlayerRequest, res) => {
-  res.json({ day: todayKey(), quests: questStatuses(req.playerId!) });
+// ===== Daily tasks (spec §6) ===============================================
+
+function taskContext(profile: PlayerProfile): TaskContext {
+  return {
+    proteinTargetG: profile.proteinTargetG,
+    watchConnected: profile.watchOptIn === true
+  };
+}
+
+/** GET /user/tasks/today — the day's three tasks with verified progress. */
+userRouter.get("/tasks/today", (req: PlayerRequest, res) => {
+  const profile = getOrCreate(req.playerId!);
+  res.json({ day: todayKey(), tasks: taskStatuses(req.playerId!, todayKey(), taskContext(profile)) });
 });
 
-/** POST /user/quests/:questId/claim -- verified completion -> key reward.
- *  One claim per (player, day, quest); double-claims 409. */
-userRouter.post("/quests/:questId/claim", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "quest", message: "Too many quest claims." }), (req: PlayerRequest, res) => {
+/** POST /user/tasks/:taskId/claim — verified completion -> 250 coins
+ *  (+500 when it completes the trio). One claim per (player, day, task). */
+userRouter.post("/tasks/:taskId/claim", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "task", message: "Too many task claims." }), (req: PlayerRequest, res) => {
   try {
-    const result = claimQuest(req.playerId!, req.params.questId);
-    // Consistency ladder: a claimed quest is verified healthy-day progress.
-    const rank = awardRankPoints(req.playerId!, RP_PER_QUEST, `quest:${req.params.questId}`);
-    // Recovery quest (#67): any verified daily quest clears ranked-loss
-    // fatigue early, same as the design doc's "balanced meal" recovery path.
     const profile = getOrCreate(req.playerId!);
-    if (profile.squadFatigueUntil) {
-      profile.squadFatigueUntil = null;
+    const { result, profilePatch } = claimTask(
+      req.playerId!,
+      req.params.taskId,
+      { ...profile, rr: profile.rr ?? 0 },
+      todayKey(),
+      taskContext(profile)
+    );
+    if (Object.keys(profilePatch).length) {
+      Object.assign(profile, profilePatch);
       profile.updatedAt = new Date().toISOString();
       saveProfile(req.playerId!, profile);
     }
     if (hasDatabaseUrl()) {
-      // One claim per quest per day, so quest+day is the event's own identity.
-      const claimDay = new Date().toISOString().slice(0, 10);
       enqueueMirror(
         "gameplay_event",
-        `quest_claim:${req.playerId!}:${req.params.questId}:${claimDay}`,
-        {
-          playerId: req.playerId!,
-          type: "quest_claim",
-          detail: { questId: req.params.questId },
-        }
+        `task_claim:${req.playerId!}:${req.params.taskId}:${todayKey()}`,
+        { playerId: req.playerId!, type: "task_claim", detail: { taskId: req.params.taskId } }
       );
     }
-    res.json({ ...result, rank, fatigue: fatigueBlock(profile) });
-  } catch (err: any) {
+    res.json(result);
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     const status: Record<string, number> = {
-      QUEST_NOT_TODAY: 404,
-      QUEST_INCOMPLETE: 409,
-      QUEST_ALREADY_CLAIMED: 409
+      TASK_NOT_TODAY: 404,
+      TASK_INCOMPLETE: 409,
+      TASK_ALREADY_CLAIMED: 409
     };
-    res.status(status[err.message] ?? 400).json({ error: { code: err.message, message: err.message } });
+    res.status(status[message] ?? 400).json({ error: { code: message, message } });
   }
 });
 
-// --- Comeback crate ---------------------------------------------------------
-//
-// A player gone >3 days gets one free starter-crate pull on return. The
-// profile GET is the session heartbeat: eligibility is decided BEFORE the
-// touch updates last_seen_at, and a pending flag is persisted so the later
-// claim request cannot lose the moment to the touch that created it.
-
-const COMEBACK_GAP_MS = 3 * 24 * 60 * 60 * 1000;
-
-interface SeenRow {
-  last_seen_at: string;
-  comeback_pending_at: string | null;
-  comeback_claimed_at: string | null;
-}
-
-/** Touch the player and report whether a comeback crate is pending. */
-function touchSeen(playerId: string): { eligible: boolean; daysAway: number } {
-  const now = new Date();
-  const row = db
-    .prepare(`SELECT last_seen_at, comeback_pending_at, comeback_claimed_at FROM player_seen WHERE player_id = ?`)
-    .get(playerId) as SeenRow | undefined;
-
-  if (!row) {
-    db.prepare(`INSERT INTO player_seen (player_id, last_seen_at) VALUES (?, ?)`).run(playerId, now.toISOString());
-    return { eligible: false, daysAway: 0 };
-  }
-
-  const daysAway = (now.getTime() - new Date(row.last_seen_at).getTime()) / 86_400_000;
-  let pending = row.comeback_pending_at !== null;
-
-  // Long absence and no pending crate -> arm one. A pending crate survives
-  // subsequent touches until claimed.
-  if (now.getTime() - new Date(row.last_seen_at).getTime() >= COMEBACK_GAP_MS && !pending) {
-    db.prepare(`UPDATE player_seen SET comeback_pending_at = ? WHERE player_id = ?`)
-      .run(now.toISOString(), playerId);
-    pending = true;
-  }
-
-  db.prepare(`UPDATE player_seen SET last_seen_at = ? WHERE player_id = ?`)
-    .run(now.toISOString(), playerId);
-  return { eligible: pending, daysAway: Math.floor(daysAway) };
-}
-
-/** GET /user/:id -- profile plus the accent-color rule inputs. Creates the
- *  profile on first access with per-player defaults (no more shared hardcoded
- *  "Trainer Arca" for every id). */
+/** GET /user/:id -- profile plus rank, streak, faint and task state. Creates
+ *  the profile on first access with per-player defaults. */
 userRouter.get("/:id", (req: PlayerRequest, res) => {
   if (!requireOwnId(req, res)) return;
   const profile = getOrCreate(req.playerId!);
-  const comeback = touchSeen(req.playerId!);
+  const wins = profile.rankedWins ?? 0;
+  const losses = profile.rankedLosses ?? 0;
+  const games = wins + losses;
   res.json({
     profile,
-    progression: xpProgression(profile.xp ?? 0),
-    comeback,
     rank: rankBlock(profile),
-    fatigue: fatigueBlock(profile)
+    record: { rankedWins: wins, rankedLosses: losses, winRate: games > 0 ? wins / games : 0 },
+    streak: {
+      days: profile.nutritionStreakDays ?? 0,
+      boosts: profile.cookbookBoosts ?? 0,
+      nextBoostIn: STREAK_BOOST_EVERY - ((profile.nutritionStreakDays ?? 0) % STREAK_BOOST_EVERY)
+    },
+    fainted: faintedIds(req.playerId!),
+    tasks: taskStatuses(req.playerId!, todayKey(), taskContext(profile))
+  });
+});
+
+/** GET /user/:id/history — completed battles, newest first (spec §6). */
+userRouter.get("/:id/history", (req: PlayerRequest, res) => {
+  if (!requireOwnId(req, res)) return;
+  const limit = Math.max(1, Math.min(Number(req.query.limit ?? 25) || 25, 100));
+  const rows = db
+    .prepare(
+      `SELECT seq, mode, result, opponent, rr_delta, squad, detail, created_at
+       FROM battle_history WHERE player_id = ? ORDER BY seq DESC LIMIT ?`
+    )
+    .all(req.playerId!, limit) as {
+    seq: number; mode: BattleMode; result: "win" | "loss"; opponent: string | null;
+    rr_delta: number; squad: string; detail: string | null; created_at: string;
+  }[];
+  res.json({
+    battles: rows.map((r) => ({
+      id: r.seq,
+      mode: r.mode,
+      result: r.result,
+      opponent: r.opponent,
+      rrDelta: r.rr_delta,
+      squad: JSON.parse(r.squad) as { id: string; name: string }[],
+      detail: r.detail ? (JSON.parse(r.detail) as object) : null,
+      at: r.created_at
+    }))
   });
 });
 
@@ -384,70 +398,36 @@ userRouter.get("/:id/vitals", (req: PlayerRequest, res) => {
   );
 });
 
-/** POST /user/comeback/claim -- spend the pending welcome-back crate.
- *  A free starter-crate pull: no key spend, same commit-reveal fairness as
- *  a paid open. 409 when nothing is pending. */
-userRouter.post("/comeback/claim", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "comeback", message: "Too many comeback claims." }), (req: PlayerRequest, res) => {
-  const playerId = req.playerId!;
+/** GET /user/:id/nutrition/today — spec §7 home dashboard: today's logged
+ *  kcal/protein/carbs/fat against the player's editable targets. */
+userRouter.get("/:id/nutrition/today", (req: PlayerRequest, res) => {
+  if (!requireOwnId(req, res)) return;
+  const profile = getOrCreate(req.playerId!);
   const row = db
-    .prepare(`SELECT comeback_pending_at FROM player_seen WHERE player_id = ?`)
-    .get(playerId) as { comeback_pending_at: string | null } | undefined;
-
-  if (!row?.comeback_pending_at) {
-    return res.status(409).json({ error: { code: "NO_COMEBACK", message: "No welcome-back crate is pending." } });
-  }
-
-  const crate = CRATES["starter-crate"];
-  const session = stateFor(playerId);
-  const pair = session.current;
-  const nonce = session.consumeNonce();
-  // Rank-scaled odds apply to the free pull too (#86).
-  const outcome = openCrate(crate, pair.serverSeed, pair.clientSeed, nonce, {
-    sinceEpic: session.sinceEpic,
-    sinceLegendary: session.sinceLegendary
-  }, tierForPoints(getOrCreate(playerId).rankPoints ?? 0));
-
-  const next = advancePity(
-    { sinceEpic: session.sinceEpic, sinceLegendary: session.sinceLegendary },
-    outcome.character.rarity
-  );
-  session.sinceEpic = next.sinceEpic;
-  session.sinceLegendary = next.sinceLegendary;
-
-  db.prepare(`UPDATE player_seen SET comeback_pending_at = NULL, comeback_claimed_at = datetime('now') WHERE player_id = ?`)
-    .run(playerId);
-
-  const drop = {
-    crateId: crate.id,
-    character: outcome.character,
-    // Every monster instance carries its mastery, so the planned fusion
-    // system is never handed an inventory where half the rows have no
-    // stars at all. A fresh pull is always 1 star.
-    stars: 1,
-    power: outcome.power,
-    powerLabel: outcome.powerLabel,
-    shiny: outcome.shiny,
-    value: outcome.value,
-    rolls: outcome.rolls,
-    pityForced: outcome.pityForced,
-    fairness: session.fairnessFor(pair, nonce),
-    openedAt: outcome.openedAt
-  };
-  session.record(drop);
-
+    .prepare(
+      `SELECT COALESCE(SUM(calories), 0) AS calories,
+              COALESCE(SUM(protein_g), 0) AS proteinG,
+              COALESCE(SUM(carbs_g), 0) AS carbsG,
+              COALESCE(SUM(fat_g), 0) AS fatG
+       FROM meal_log
+       WHERE player_id = ? AND removed = 0 AND date(logged_at) = date('now')`
+    )
+    .get(req.playerId!) as { calories: number; proteinG: number; carbsG: number; fatG: number };
   res.json({
-    ...drop,
-    character: characterPayload(outcome.character.id),
-    reel: outcome.reel.map((c) => characterPayload(c)),
-    reelWinnerIndex: outcome.reelWinnerIndex,
-    keysRemaining: session.keys
+    day: todayKey(),
+    logged: row,
+    targets: {
+      calories: profile.calorieTarget ?? null,
+      proteinG: profile.proteinTargetG ?? null,
+      carbsG: profile.carbsTargetG ?? null,
+      fatG: profile.fatTargetG ?? null
+    }
   });
 });
 
 /** PUT /user/:id -- partial update. Additive route; GET shape untouched.
- *  Only whitelisted client-writable fields accepted: displayName,
- *  activeCharacterId, colorMode. Server-managed fields (level, streakDays,
- *  battlesWon) are rejected to prevent self-ranking abuse. */
+ *  Only whitelisted client-writable fields accepted. Server-managed fields
+ *  (rr, wins, streaks, boosts) are rejected to prevent self-ranking abuse. */
 userRouter.put("/:id", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix: "user", message: "Too many profile updates. Try again later." }), (req: PlayerRequest, res) => {
   if (!requireOwnId(req, res)) return;
   const profile = getOrCreate(req.playerId!);
@@ -459,7 +439,11 @@ userRouter.put("/:id", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix:
   const errors: string[] = [];
 
   // Server-managed progression fields: client cannot self-rank.
-  const serverManaged = ["level", "xp", "streakDays", "battlesWon", "rankPoints", "rankTier", "rankDay", "rankEarnedToday", "rankSeason", "squadFatigueUntil"] as const;
+  const serverManaged = [
+    "level", "xp", "streakDays", "battlesWon",
+    "rr", "rankedWins", "rankedLosses", "taskRRDay", "taskRRToday",
+    "nutritionStreakDays", "lastNutritionDay", "cookbookBoosts"
+  ] as const;
   for (const key of serverManaged) {
     if (fields[key] !== undefined) {
       errors.push(`${key} is server-managed and cannot be set by the client`);
@@ -516,6 +500,16 @@ userRouter.put("/:id", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix:
       errors.push("goal must be one of: cut, maintain, bulk");
     }
   }
+  for (const key of ["calorieTarget", "proteinTargetG", "carbsTargetG", "fatTargetG"] as const) {
+    if (fields[key] !== undefined) {
+      if (!Number.isFinite(fields[key]) || (fields[key] as number) < 0 || (fields[key] as number) > 100_000) {
+        errors.push(`${key} must be a number between 0 and 100000`);
+      }
+    }
+  }
+  if (fields.watchOptIn !== undefined && typeof fields.watchOptIn !== "boolean") {
+    errors.push("watchOptIn must be a boolean");
+  }
 
   if (errors.length > 0) {
     return res.status(400).json({ error: { code: "VALIDATION", message: errors.join("; ") } });
@@ -535,6 +529,10 @@ userRouter.put("/:id", rateLimitByPlayer({ windowMs: 60_000, max: 20, keyPrefix:
   if (fields.sex !== undefined) profile.sex = fields.sex as Sex;
   if (fields.activity !== undefined) profile.activity = fields.activity as Activity;
   if (fields.goal !== undefined) profile.goal = fields.goal as Goal;
+  for (const key of ["calorieTarget", "proteinTargetG", "carbsTargetG", "fatTargetG"] as const) {
+    if (fields[key] !== undefined) profile[key] = fields[key] as number;
+  }
+  if (fields.watchOptIn !== undefined) profile.watchOptIn = fields.watchOptIn as boolean;
   profile.updatedAt = new Date().toISOString();
   saveProfile(req.playerId!, profile);
 
@@ -589,26 +587,23 @@ userRouter.patch(
   }
 );
 
-// GET /user/:id/journey — entertainment/engagement dashboard.
-// Aggregates everything we know about this player: scans, crate pulls,
-// collection distribution, vitals history, and wins. Returned in a shape
-// the iOS JourneyView can chart directly.
+// GET /user/:id/journey — engagement dashboard. Aggregates scans, drops,
+// collection distribution, vitals history and wins into a shape the iOS
+// JourneyView can chart directly.
 
-function lootCharacterPayload(id: string) {
-  const character = CHARACTERS[id];
+function lootCharacterPayload(character: Character) {
   const tier = RARITY_TIERS[character.rarity];
   return {
     ...character,
     rarityLabel: tier.label,
-    rarityColorHex: tier.colorHex,
-    flavor: CHARACTER_FLAVOR[id] ?? ""
+    rarityColorHex: tier.colorHex
   };
 }
 
 function loadScannedCharacters(playerId: string): Character[] {
   return (db
     .prepare(`SELECT payload FROM scan_character WHERE player_id = ?`)
-    .all(playerId) as any[])
+    .all(playerId) as { payload: string }[])
     .map((r) => JSON.parse(r.payload) as Character);
 }
 
@@ -624,7 +619,7 @@ function scansByDay(playerId: string): { date: string; count: number }[] {
     .all(playerId) as { date: string; count: number }[];
 }
 
-function cratesByDay(playerId: string): { date: string; count: number }[] {
+function dropsByDay(playerId: string): { date: string; count: number }[] {
   const rows = db
     .prepare(`SELECT payload FROM lootbox_drop WHERE player_id = ?`)
     .all(playerId) as { payload: string }[];
@@ -648,16 +643,14 @@ function buildJourney(playerId: string, profile: PlayerProfile) {
   const unique = [...new Map(allCharacters.map((c) => [c.id, c])).values()];
 
   const byRarity = new Map<string, number>();
-  const byElement = new Map<string, number>();
   for (const c of unique) {
     byRarity.set(c.rarity, (byRarity.get(c.rarity) ?? 0) + 1);
-    byElement.set(c.statType, (byElement.get(c.statType) ?? 0) + 1);
   }
 
   const vitals = vitalsStoreFor(playerId).recent(30).map((s) => ({
     date: s.receivedAt.slice(0, 10),
-    steps: s.snapshot.stepsToday ?? null,
-    activeCalories: s.snapshot.activeCaloriesToday ?? null,
+    steps: s.snapshot.stepsToday == null ? null : Math.round(s.snapshot.stepsToday),
+    activeCalories: s.snapshot.activeCaloriesToday == null ? null : Math.round(s.snapshot.activeCaloriesToday),
     heartRate: s.snapshot.heartRateBpm ?? null
   }));
 
@@ -665,33 +658,33 @@ function buildJourney(playerId: string, profile: PlayerProfile) {
     profile,
     summary: {
       totalScans: scanned.length,
-      totalCrateOpens: drops.length,
+      totalDrops: drops.length,
       totalCharacters: unique.length,
-      currentKeys: session.keys,
       totalLootValue: drops.reduce((sum, d) => sum + d.value, 0),
       totalVitalsSnapshots: vitalsStoreFor(playerId).count
     },
     collection: {
-      byRarity: [...byRarity.entries()].map(([rarity, count]) => ({ rarity, count })).sort((a, b) => b.count - a.count),
-      byElement: [...byElement.entries()].map(([element, count]) => ({ element, count })).sort((a, b) => b.count - a.count)
+      byRarity: [...byRarity.entries()].map(([rarity, count]) => ({ rarity, count })).sort((a, b) => b.count - a.count)
     },
     timeline: {
       scansByDay: scansByDay(playerId),
-      cratesByDay: cratesByDay(playerId)
+      dropsByDay: dropsByDay(playerId)
     },
     recentDrops: drops
       .slice(-6)
       .reverse()
       .map((d) => ({
+        id: d.id,
         crateId: d.crateId,
-        character: lootCharacterPayload(d.character.id),
-        power: d.power,
-        powerLabel: d.powerLabel,
-        shiny: d.shiny,
+        character: lootCharacterPayload(d.character),
         value: d.value,
+        stars: d.stars ?? 1,
         openedAt: d.openedAt
       })),
-    vitals
+    vitals,
+    activity: {
+      byDay: activityByDay(vitalsStoreFor(playerId).recent(MAX_SNAPSHOTS))
+    }
   };
 }
 

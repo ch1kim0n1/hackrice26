@@ -24,7 +24,9 @@ targets:
       - path: Resources/Fonts
         type: folder
         buildPhase: resources
-      - path: ../game-assets
+      # Shared art folder lives in backend/ so the Railway service root ships
+      # it; the app still bundles the same PNGs as folder resources.
+      - path: ../backend/game-assets
         type: folder
         buildPhase: resources
         excludes:
@@ -34,6 +36,13 @@ targets:
         products:
           - BattleKit
           - NutriQuestUI
+    entitlements:
+      path: Support/NutriQuest.entitlements
+      properties:
+        # Read-only HealthKit (steps, energy, heart rate, rings, workouts) —
+        # the main app is the producer for POST /vitals. Never writes.
+        com.apple.developer.healthkit: true
+        com.apple.developer.healthkit.access: []
     info:
       path: Support/Info.plist
       properties:
@@ -41,12 +50,15 @@ targets:
         # TestFlight/release builds, e.g. https://<railway-app>.up.railway.app
         # (APIClient also reads this key at runtime as the compiled-in default;
         # AppConfig.backendBaseURL can still override it via UserDefaults).
-        BackendBaseURL: https://main-production-3bbd.up.railway.app
+        BackendBaseURL: https://backend-production-3ade.up.railway.app
+        # The signup human-gate web app, served by the backend itself.
+        HumanGateURL: https://backend-production-3ade.up.railway.app/gate/
         UIAppFonts:
           - Fonts/Baloo2.ttf
           - Fonts/Quicksand.ttf
         NSCameraUsageDescription: NutriQuest scans food barcodes and meal photos to summon characters.
         NSPhotoLibraryUsageDescription: NutriQuest can use a meal photo from your library when the camera isn't available.
+        NSHealthShareUsageDescription: NutriQuest reads your steps, heart rate, activity rings and workouts from Apple Watch to boost your daily stats.
         NSAppTransportSecurity:
           # Railway deployment is HTTPS, no exception needed. Kept for anyone
           # switching BackendBaseURL back to a local http://localhost dev server.
@@ -68,6 +80,7 @@ targets:
         INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_NSCameraUsageDescription: NutriQuest scans food barcodes and meal photos to summon characters.
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: NutriQuest can use a meal photo from your library when the camera isn't available.
+        INFOPLIST_KEY_NSHealthShareUsageDescription: NutriQuest reads your steps, heart rate, activity rings and workouts from Apple Watch to boost your daily stats.
         INFOPLIST_KEY_NSLocalNetworkUsageDescription: NutriQuest finds friends on the same Wi-Fi so you can battle nearby.
         TARGETED_DEVICE_FAMILY: 1
         SWIFT_VERSION: "5.9"

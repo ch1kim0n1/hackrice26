@@ -1,29 +1,34 @@
 import Foundation
 @testable import NutriQuest
+@testable import BattleKit
 
 // Swift's stdlib also has a `Character`; name the app model explicitly.
 typealias AppCharacter = NutriQuest.Character
 
 enum LANFixtures {
-    static func unit(_ id: String, name: String = "Unit", power: Double = 50, element: String = "protein") -> LANUnit {
+    static let fixtureMoves: [BattleMoveSpec] = [
+        BattleMoveSpec(id: "strike", name: "Strike", kind: .standard, power: 3.5, accuracy: 95, manaCost: 0)
+    ]
+
+    static func unit(_ id: String, name: String = "Unit", health: Double = 100, attack: Double = 50) -> LANUnit {
         LANUnit(
-            character: AppCharacter(id: id, name: name, colorHex: "#5FCB82", rarity: .common, statType: .protein),
-            element: element,
+            character: AppCharacter(id: id, name: name, colorHex: "#5FCB82", rarity: .common),
             rarity: "common",
-            fusionTier: 0,
-            power: power,
-            guardStat: 50,
-            vitality: 50,
-            tempo: 50
+            star: 1,
+            baseHealth: health,
+            baseAttack: attack,
+            baseMana: nil,
+            moves: fixtureMoves
         )
     }
 
     /// Three distinct units: "<prefix>1", "<prefix>2", "<prefix>3".
-    static func squad(_ prefix: String = "c", power: Double = 50, multiplier: Double = 1.0) -> LANSquad {
-        LANSquad(
-            units: [unit("\(prefix)1", power: power), unit("\(prefix)2", power: power), unit("\(prefix)3", power: power)],
-            partyMultiplier: multiplier
-        )
+    static func squad(_ prefix: String = "c", health: Double = 100, attack: Double = 50) -> LANSquad {
+        LANSquad(units: [
+            unit("\(prefix)1", health: health, attack: attack),
+            unit("\(prefix)2", health: health, attack: attack),
+            unit("\(prefix)3", health: health, attack: attack)
+        ])
     }
 
     static func bytes(_ squad: LANSquad) -> Data {

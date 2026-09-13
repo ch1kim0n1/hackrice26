@@ -56,32 +56,30 @@ function offProduct(name: string) {
 }
 
 describe("state survives a restart", () => {
-  it("keeps lootbox keys and inventory", async () => {
+  it("keeps the inventory, mailbox and granted cases", async () => {
     const first = await restart();
+    const { testDrop, testCharacter } = await import("../testkit");
     const session = first.lootbox.stateFor(PLAYER);
-    session.grantKeys(30);
-    expect(session.keys).toBe(55); // 25 starting + 30 granted
-    session.record({
-      crateId: "starter-crate",
-      character: { id: "water-droplet", name: "Water Droplet", colorHex: "#7CC5E8", rarity: "common", statType: "hydration", isLocked: false },
-      power: 33.3,
-      powerLabel: "Feeble",
-      shiny: false,
-      value: 9,
-      rolls: { rarity: 1, character: 2, power: 3, shiny: 4 },
-      fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 },
-      openedAt: new Date().toISOString()
-    });
+    session.record(
+      testDrop({
+        crateId: "test",
+        character: testCharacter("common", "water-droplet"),
+        fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 0 }
+      })
+    );
+    first.lootbox.grantCase(PLAYER, "rare", "ranked_win");
 
     const second = await restart();
     const rehydrated = second.lootbox.stateFor(PLAYER);
-    expect(rehydrated.keys).toBe(55);
     // Every fresh player also owns the starter roster now (crateId
     // "starter-roster", seeded once on first attach — lootboxState.ts) —
     // filter to just what this test itself recorded.
-    const own = rehydrated.inventory.filter((d) => d.crateId === "starter-crate");
+    const own = rehydrated.inventory.filter((d) => d.crateId === "test");
     expect(own).toHaveLength(1);
     expect(own[0].character.id).toBe("water-droplet");
+    expect(own[0].baseMintValue).toBeGreaterThan(0);
+    expect(second.lootbox.pendingCases(PLAYER)).toHaveLength(1);
+    expect(second.lootbox.pendingCases(PLAYER)[0].rarity).toBe("rare");
   });
 
   it("keeps scan collections and the one-barcode rule", async () => {
@@ -105,7 +103,7 @@ describe("state survives a restart", () => {
     const port2 = (server2.address() as { port: number }).port;
 
     const collection = (await (await fetch(`http://127.0.0.1:${port2}/scan/collection/${PLAYER}`, { headers })).json()) as { characters: { id: string }[] };
-    expect(collection.characters.map((c: { id: string }) => c.id)).toContain("scan-3017620422003");
+    expect(collection.characters.length).toBeGreaterThan(0); // barcode minted a roster character
 
     // The one-barcode rule also survives: same barcode is a duplicate now.
     const rescan = await fetch(`http://127.0.0.1:${port2}/scan`, { method: "POST", headers, body: JSON.stringify({ barcode: "3017620422003" }) });

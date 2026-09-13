@@ -209,9 +209,7 @@ struct CauldronCrashView: View {
                         id: monster.character.id,
                         name: monster.character.name,
                         colorHex: monster.character.colorHex,
-                        rarity: rarity,
-                        statType: StatType(rawValue: monster.character.statType) ?? .fiber,
-                        isShiny: monster.shiny
+                        rarity: rarity
                     )
                 )
                 .frame(width: 64, height: 64)
@@ -225,7 +223,7 @@ struct CauldronCrashView: View {
                     .foregroundStyle(rarity.badgeText)
                     .nqPadding(.badge)
                     .background(rarity.badgeBackground)
-                    .clipShape(Capsule())
+                    .clipShape(NQTicketShape())
                 Text("\(monster.netWorth.formatted()) NW")
                     .font(NQText.caption.font.weight(.bold))
                     .foregroundStyle(NQTheme.inkMuted)
@@ -274,7 +272,7 @@ struct CauldronCrashView: View {
                         .foregroundStyle(rarity.badgeText)
                         .nqPadding(.chip)
                         .background(rarity.badgeBackground)
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                 }
             }
 
@@ -316,7 +314,7 @@ struct CauldronCrashView: View {
                     .foregroundStyle(bracket(for: liveNetWorth).badgeText)
                     .nqPadding(.chip)
                     .background(bracket(for: liveNetWorth).badgeBackground)
-                    .clipShape(Capsule())
+                    .clipShape(NQTicketShape())
             }
 
             CauldronVesselView(
@@ -339,7 +337,7 @@ struct CauldronCrashView: View {
                     .foregroundStyle(NQTheme.inkMuted)
                     .nqPadding(.chip)
                     .background(NQTheme.surface)
-                    .clipShape(Capsule())
+                    .clipShape(NQTicketShape())
                 }
             }
             .accessibilityElement(children: .combine)
@@ -375,7 +373,7 @@ struct CauldronCrashView: View {
             .foregroundStyle(NQTheme.background)
             .nqPadding(.banner)
             .background(NQTheme.gold)
-            .clipShape(Capsule())
+            .clipShape(NQTicketShape())
             .nqElevation(.card)
             .accessibilityAddTraits(.isStaticText)
     }
@@ -569,7 +567,7 @@ struct CauldronCrashView: View {
                     .foregroundStyle(NQTheme.inkFaint)
                     .nqPadding(.chip)
                     .background(NQTheme.surface)
-                    .clipShape(Capsule())
+                    .clipShape(NQTicketShape())
                     .strikethrough(true, color: NQTheme.warning)
                 }
             }
@@ -669,9 +667,7 @@ struct CauldronResultView: View {
                     id: reward.character.id,
                     name: reward.character.name,
                     colorHex: reward.character.colorHex,
-                    rarity: rarity,
-                    statType: StatType(rawValue: reward.character.statType) ?? .fiber,
-                    isShiny: reward.shiny
+                    rarity: rarity
                 )
             )
             .frame(width: 140, height: 140)
@@ -682,7 +678,7 @@ struct CauldronResultView: View {
                 .foregroundStyle(rarity.badgeText)
                 .nqPadding(.chip)
                 .background(rarity.badgeBackground)
-                .clipShape(Capsule())
+                .clipShape(NQTicketShape())
 
             Text(reward.character.name)
                 .font(NQText.displayL.font)

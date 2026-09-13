@@ -19,14 +19,69 @@ export const scanSchema = z.object({
   barcode: z.string().min(4).max(64).regex(/^[0-9A-Za-z_-]+$/)
 });
 
+// --- Meal log (spec §1: barcode / photo / manual intake) ---------------------
+//
+// The dashboard contract is kcal/protein/carbs/fat; the wider nutrient fields
+// are optional provenance. A manual entry is a log, never a mint — nothing
+// here can create a monster.
+
+const mealNutrient = z.number().min(0).max(10_000);
+
+export const manualMealSchema = z.object({
+  name: z.string().min(1).max(120),
+  calories: mealNutrient,
+  proteinG: mealNutrient,
+  carbsG: mealNutrient,
+  fatG: mealNutrient,
+  fiberG: mealNutrient.optional(),
+  sugarG: mealNutrient.optional(),
+  sodiumMg: mealNutrient.optional(),
+  satFatG: mealNutrient.optional()
+});
+
+export const mealEditSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    calories: mealNutrient.optional(),
+    proteinG: mealNutrient.optional(),
+    carbsG: mealNutrient.optional(),
+    fatG: mealNutrient.optional()
+  })
+  .refine((e) => Object.values(e).some((v) => v !== undefined), {
+    message: "at least one field to edit is required"
+  });
+
 export const fusionSchema = z.object({
-  consumedIds: z.array(uuid).length(5)
+  // Spec §2: fusion consumes exactly 3 copies.
+  consumedIds: z.array(uuid).length(3)
 });
 
 export const rankedBattleSchema = z.object({
   // client sends only character IDs; the backend rebuilds squads from the DB
   squad: z.array(uuid).length(3),
   opponentId: uuid.optional()
+});
+
+/**
+ * Interactive battle commit (spec §4): the player drove the fight locally
+ * against the seed/squads the begin endpoint parked, then submits the decisions
+ * they made. The server replays them deterministically — every entry is
+ * validated against the engine's legal-action set, so a fabricated script
+ * can never mint an outcome the rules wouldn't produce.
+ *
+ *   move   — use moves[moveIndex] of the active unit (consumes the turn)
+ *   switch — voluntary switch to squad[unitIndex] (consumes the turn)
+ *   choose — free faint-replacement pick (no turn, no RNG draw)
+ */
+export const battleActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("move"), moveIndex: z.number().int().min(0).max(7) }),
+  z.object({ type: z.literal("switch"), unitIndex: z.number().int().min(0).max(2) }),
+  z.object({ type: z.literal("choose"), unitIndex: z.number().int().min(0).max(2) })
+]);
+
+export const battleCommitSchema = z.object({
+  matchId: z.string().min(8).max(64),
+  actions: z.array(battleActionSchema).max(250)
 });
 
 export const arenaCreateSchema = z.object({
@@ -38,6 +93,30 @@ export const arenaCreateSchema = z.object({
 export const capsuleOpenSchema = z.object({
   // optional idempotency key; the backend generates one if absent
   openId: z.string().min(8).max(64).optional()
+});
+
+/** Shared by cookbook opens and case opens: the player's commit-reveal entropy. */
+export const clientSeedBodySchema = z.object({
+  clientSeed: z.string().min(6).max(64).optional(),
+  /** Spend a stored Cookbook Boost on this open (spec §6) — Rare+ odds ×1.15,
+   *  renormalized. Ignored on fixed-rarity Case opens. */
+  useBoost: z.boolean().optional()
+});
+
+/** POST /lootbox/mailbox/claim — which overflow drops to move into inventory. */
+export const mailboxClaimSchema = z.object({
+  dropIds: z.array(z.string().min(1).max(64)).min(1).max(500)
+});
+
+/** POST /lootbox/verify — recompute a past cookbook open. `boosted` must
+ *  match the stored drop — a boosted open used the ×1.15 Rare+ table, so
+ *  verifying it against published odds would not reproduce the rarity. */
+export const verifyOpenSchema = z.object({
+  bookId: z.string().min(1).max(64),
+  serverSeed: z.string().min(1),
+  clientSeed: z.string().min(1),
+  nonce: z.number().int().min(0),
+  boosted: z.boolean().optional()
 });
 
 /**

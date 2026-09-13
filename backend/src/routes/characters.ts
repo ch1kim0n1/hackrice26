@@ -2,7 +2,6 @@ import { Router } from "express";
 import { existsSync } from "fs";
 import { join } from "path";
 import { sampleCharacters } from "../data/sampleCharacters";
-import { CHARACTERS } from "../data/lootTable";
 import { ROSTER, rosterCharacter } from "../data/roster";
 import { spriteRelPath } from "../data/characterArt";
 import { characterArtURL } from "../services/artPrompt";
@@ -26,8 +25,9 @@ charactersRouter.get("/", (_req, res) => {
 
 // ===== Pokédex catalog (issue #95) ==========================================
 
-/** Directory holding the pre-generated base art (per-rarity variants are #98). */
-const ART_DIR = join(__dirname, "..", "..", "..", "game-assets");
+/** Directory holding the pre-generated base art (per-rarity variants are
+ *  #98). Inside backend/ so the Railway deploy (root dir = backend/) ships it. */
+const ART_DIR = join(__dirname, "..", "..", "game-assets");
 
 /** Resolve the art file for (character, rarity) — issue #99. Prefers a
  *  per-rarity variant (`<imageKey>-<rarity>.png`), falls back to the base
@@ -56,19 +56,26 @@ export function imageFor(characterId: string, rarity: Rarity): {
   return { imageKey, file: null, variant: "generated", url: `/characters/${characterId}/art` };
 }
 
-// GET /characters/catalog -- the 14 authored MVP characters, Pokédex-style.
+// GET /characters/catalog -- the 14 authored characters, Pokédex-style.
+// The catalog entry is the spec's master record: permanent id, display name,
+// baseHealth/baseAttack/baseMana, the 3 authored standard moves + the Mana
+// Special (full move objects so clients never join against a second table),
+// art reference and lore. No element, no stat blob, no intrinsic rarity —
+// rarity is rolled per instance at mint.
 charactersRouter.get("/catalog", (_req, res) => {
   res.json({
     catalog: ROSTER.map((c) => ({
       id: c.id,
       name: c.name,
-      rarity: c.rarity,
-      element: c.element,
       colorHex: c.colorHex,
       tagline: c.tagline,
       bio: c.bio,
-      baseStats: c.baseStats,
-      image: imageFor(c.id, c.rarity)
+      baseHealth: c.baseHealth,
+      baseAttack: c.baseAttack,
+      baseMana: c.baseMana,
+      moves: c.moves,
+      special: c.special,
+      image: imageFor(c.id, "common")
     }))
   });
 });
@@ -88,7 +95,9 @@ charactersRouter.get("/coins", requirePlayerId, (req: PlayerRequest, res) => {
 charactersRouter.get("/:id/image", (req, res) => {
   const entry = rosterCharacter(req.params.id);
   if (!entry) return res.status(404).json({ error: "Character not found" });
-  const rarity = (typeof req.query.rarity === "string" ? req.query.rarity : entry.rarity) as Rarity;
+  // Catalog entries have no intrinsic rarity; the query picks the art
+  // variant, defaulting to the base (common) sprite.
+  const rarity = (typeof req.query.rarity === "string" ? req.query.rarity : "common") as Rarity;
   res.json({ characterId: entry.id, rarity, image: imageFor(entry.id, rarity) });
 });
 
@@ -96,29 +105,27 @@ charactersRouter.get("/:id/image", (req, res) => {
 // dynamic (scanned-food) characters. Redirects to the image service; the
 // client keeps its procedural chibi as the loading/offline fallback.
 charactersRouter.get("/art", rateLimitByPlayer({ windowMs: 60_000, max: 30, keyPrefix: "art", message: "Art requests too frequent." }), (req, res) => {
-  const { name, color, type, rarity } = req.query as Record<string, string | undefined>;
+  const { name, color, rarity } = req.query as Record<string, string | undefined>;
   if (typeof name !== "string" || name.length === 0 || name.length > 60) {
     return res.status(400).json({ error: "name is required (max 60 chars)" });
   }
   const safe = {
     name: name.slice(0, 60),
     colorHex: typeof color === "string" && /^#[0-9a-fA-F]{6}$/.test(color) ? color : "#9AA4B2",
-    rarity: typeof rarity === "string" ? rarity : "common",
-    statType: typeof type === "string" ? type : "fiber"
+    rarity: typeof rarity === "string" ? rarity : "common"
   };
   res.redirect(characterArtURL(safe, name.toLowerCase()));
 });
 
-// GET /characters/:id/art -- generated art for a roster character.
+// GET /characters/:id/art -- generated art for a catalog or owned character.
 charactersRouter.get("/:id/art", rateLimitByPlayer({ windowMs: 60_000, max: 30, keyPrefix: "art", message: "Art requests too frequent." }), (req, res) => {
-  const c = CHARACTERS[req.params.id] ?? sampleCharacters.find((s) => s.id === req.params.id);
+  const c = rosterCharacter(req.params.id) ?? sampleCharacters.find((s) => s.id === req.params.id);
   if (!c) return res.status(404).json({ error: "Character not found" });
   const input = {
     name: c.name,
     colorHex: c.colorHex,
-    rarity: c.rarity,
-    statType: c.statType,
-    flavor: "flavor" in c ? (c as { flavor?: string }).flavor : undefined
+    rarity: "rarity" in c && typeof c.rarity === "string" ? c.rarity : "common",
+    flavor: c.tagline
   };
   res.redirect(characterArtURL(input, c.id));
 });
@@ -194,8 +201,14 @@ charactersRouter.post("/merge", requirePlayerId, rateLimitByPlayer({ windowMs: 6
     }
     res.json({
       ...result,
-      // `to.power` previews the merged unit's scaled combat power (#131).
-      to: { ...result.to, power: Math.round(scaledStat(result.to.power, result.to.rarity as Rarity, result.to.star)) }
+      // `to.attack` previews the fused unit's EffectiveAttack — base Attack x
+      // rarity x star multipliers (spec §2/§4).
+      to: {
+        ...result.to,
+        attack: Math.round(
+          scaledStat(result.merged.character.baseAttack, result.to.rarity as Rarity, result.to.star)
+        )
+      }
     });
   } catch (err) {
     return mutationFailure(res, err);

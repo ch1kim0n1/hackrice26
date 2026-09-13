@@ -1,8 +1,8 @@
 import { db } from "../db";
-import { Crate, Fairness, LootDrop } from "../types";
-import { CHARACTERS, CRATES, RARITY_TIERS, CHARACTER_FLAVOR } from "../data/lootTable";
-import * as engine from "./lootboxEngine";
-import { stateFor } from "./lootboxState";
+import { Rarity } from "../types";
+import { RARITY_ORDER } from "../data/lootTable";
+import { PendingCase, grantCase } from "./lootboxState";
+import { coinBalance, recordCoinsInTransaction } from "./coins";
 
 export interface PromoCode {
   code: string;
@@ -14,40 +14,14 @@ export interface PromoCode {
 
 export interface PromoRewardResult {
   reward: string;
-  keys: number;
-  /** Only present when the reward is a free crate open. */
-  drop?: CrateOpenResult;
-}
-
-export interface CrateOpenResult {
-  crateId: string;
-  character: Record<string, unknown>;
-  power: number;
-  powerLabel: string;
-  shiny: boolean;
-  value: number;
-  rolls: LootDrop["rolls"];
-  fairness: Fairness;
-  openedAt: string;
-  reel: Record<string, unknown>[];
-  reelWinnerIndex: number;
+  /** Present when the reward granted coins. */
+  coinBalance?: number;
+  /** Present when the reward granted a Case of a fixed rarity. */
+  case?: PendingCase;
 }
 
 const CODE_PATTERN = /^[A-Z0-9]{4,16}$/;
-const REWARD_PATTERN = /^(keys:\d{1,4}|crate:[a-z0-9-]+)$/;
-
-/** Character plus presentational bits shared with the lootbox routes. */
-function characterPayload(id: string) {
-  const global = CHARACTERS[id];
-  if (!global) return { id, name: id, colorHex: "#888888", rarity: "common" as const, statType: "protein" as const, isLocked: false, rarityLabel: "Common", rarityColorHex: "#888888", flavor: "" };
-  const tier = RARITY_TIERS[global.rarity];
-  return {
-    ...global,
-    rarityLabel: tier.label,
-    rarityColorHex: tier.colorHex,
-    flavor: CHARACTER_FLAVOR[id] ?? ""
-  };
-}
+const REWARD_PATTERN = /^(coins:\d{1,7}|case:[a-z]+)$/;
 
 export function createPromo(
   code: string,
@@ -57,7 +31,13 @@ export function createPromo(
   if (!CODE_PATTERN.test(code)) {
     throw new Error("INVALID_PROMO_CODE_FORMAT");
   }
-  if (!REWARD_PATTERN.test(reward)) {
+  const parsed = REWARD_PATTERN.test(reward) ? parseReward(reward) : null;
+  if (!parsed) {
+    throw new Error("INVALID_PROMO_REWARD");
+  }
+  // Validate the reward's referent at creation time: a promo for a Case of a
+  // rarity that does not exist should fail here, not at redemption.
+  if (parsed.type === "case" && !RARITY_ORDER.includes(parsed.rarity)) {
     throw new Error("INVALID_PROMO_REWARD");
   }
   db.prepare(
@@ -82,11 +62,11 @@ export function deletePromo(code: string): void {
   db.prepare(`DELETE FROM promo_code WHERE code = ?`).run(code);
 }
 
-function parseReward(reward: string): { type: "keys"; amount: number } | { type: "crate"; crateId: string } {
-  const keysMatch = reward.match(/^keys:(\d+)$/);
-  if (keysMatch) return { type: "keys", amount: Number(keysMatch[1]) };
-  const crateMatch = reward.match(/^crate:([a-z0-9-]+)$/);
-  if (crateMatch) return { type: "crate", crateId: crateMatch[1] };
+function parseReward(reward: string): { type: "coins"; amount: number } | { type: "case"; rarity: Rarity } {
+  const coinsMatch = reward.match(/^coins:(\d+)$/);
+  if (coinsMatch) return { type: "coins", amount: Number(coinsMatch[1]) };
+  const caseMatch = reward.match(/^case:([a-z]+)$/);
+  if (caseMatch) return { type: "case", rarity: caseMatch[1] as Rarity };
   throw new Error("INVALID_PROMO_REWARD");
 }
 
@@ -105,13 +85,17 @@ export function redeemPromo(playerId: string, code: string): PromoRewardResult {
     .get(playerId, code);
   if (already) throw new Error("PROMO_ALREADY_REDEEMED");
 
-  // Validate the reward BEFORE consuming a use: a promo pointing at a deleted
-  // crate must fail without burning the player's one redemption.
+  // Validate the reward BEFORE consuming a use: a promo pointing at something
+  // invalid must fail without burning the player's one redemption.
   const parsed = parseReward(promo.reward);
-  const crate = parsed.type === "crate" ? CRATES[parsed.crateId] : undefined;
-  if (parsed.type === "crate" && !crate) throw new Error("PROMO_CRATE_NOT_FOUND");
+  if (parsed.type === "case" && !RARITY_ORDER.includes(parsed.rarity)) {
+    throw new Error("INVALID_PROMO_REWARD");
+  }
 
-  db.exec("BEGIN");
+  // Redemption and the reward are one transaction: a crash between "marked
+  // redeemed" and "reward granted" can no longer spend the redemption and
+  // deliver nothing.
+  db.exec("BEGIN IMMEDIATE");
   try {
     const update = db
       .prepare(
@@ -124,52 +108,22 @@ export function redeemPromo(playerId: string, code: string): PromoRewardResult {
       throw new Error("PROMO_FULLY_REDEEMED");
     }
     db.prepare(`INSERT INTO promo_redeem (player_id, code) VALUES (?, ?)`).run(playerId, code);
+
+    let result: PromoRewardResult;
+    if (parsed.type === "coins") {
+      recordCoinsInTransaction(playerId, parsed.amount, "grant", `promo:${code}`);
+      result = { reward: promo.reward, coinBalance: coinBalance(playerId) };
+    } else {
+      result = { reward: promo.reward, case: grantCase(playerId, parsed.rarity, `promo:${code}`) };
+    }
     db.exec("COMMIT");
+    return result;
   } catch (err) {
-    db.exec("ROLLBACK");
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // A failed BEGIN leaves nothing to roll back.
+    }
     throw err;
   }
-
-  const state = stateFor(playerId);
-
-  if (parsed.type === "keys") {
-    const keys = state.grantKeys(parsed.amount);
-    return { reward: promo.reward, keys };
-  }
-
-  // crate is guaranteed non-null here — keys rewards returned above, and a
-  // missing crate already threw before the redemption was consumed.
-  if (!crate) throw new Error("PROMO_CRATE_NOT_FOUND");
-  const pair = state.current;
-  const nonce = state.consumeNonce();
-  const outcome = engine.openCrate(crate, pair.serverSeed, pair.clientSeed, nonce);
-
-  const drop: LootDrop = {
-    crateId: crate.id,
-    character: outcome.character,
-    // Every monster instance carries its mastery, so the planned fusion
-    // system is never handed an inventory where half the rows have no
-    // stars at all. A fresh pull is always 1 star.
-    stars: 1,
-    power: outcome.power,
-    powerLabel: outcome.powerLabel,
-    shiny: outcome.shiny,
-    value: outcome.value,
-    rolls: outcome.rolls,
-    fairness: state.fairnessFor(pair, nonce),
-    openedAt: outcome.openedAt
-  };
-  state.record(drop);
-
-  return {
-    reward: promo.reward,
-    keys: state.keys,
-    drop: {
-      ...drop,
-      character: characterPayload(outcome.character.id),
-      reel: outcome.reel.map(characterPayload),
-      reelWinnerIndex: outcome.reelWinnerIndex
-    }
-  };
 }
-

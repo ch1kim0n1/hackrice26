@@ -1,111 +1,181 @@
 import Foundation
+import BattleKit
 
 // MARK: - Battle (POST /battle/simulate)
 
-/// Squad member payload the battle route expects:
-/// `{ id, name, statType, rarity }`.
-///
-/// `rarity` was previously omitted, so the server scaled every unit as common
-/// and a Legendary fought identically to a Common. Since the server is
-/// authoritative for outcomes (docs/BATTLE-SYSTEM.md §5), that silently
-/// discarded rarity from combat entirely.
+/// Squad member payload the battle route expects: `{ id, name, rarity?, star? }`.
+/// The server resolves combat stats and authored moves from its own catalog —
+/// the client only identifies which instances it's fielding (final-dev-doc §4).
 struct BattleSquadMember: Codable, Sendable {
     let id: String
     let name: String
-    let statType: String
     let rarity: String
+    let star: Int
 }
 
-struct BattleSimulateRequest: Encodable {
-    let yourSquad: [BattleSquadMember]
-    let opponentSquad: [BattleSquadMember]
-    let seed: UInt64
-}
-
-/// One event from the server's authoritative replay. Mirrors the objects
-/// emitted by backend/src/routes/battle.ts `simulate()`.
-enum ServerBattleEvent: Decodable, Sendable {
-    case battleStart(seed: UInt64)
-    case roundStart(round: Int)
-    case attack(attackerID: String, defenderID: String, damage: Int, crit: Bool, move: String?, typeMod: Double?)
-    case miss(attackerID: String, defenderID: String?)
-    case faint(unitID: String)
-    case roundEnd(round: Int)
-    case victory(winnerSide: Int, rounds: Int)
-
-    private enum Keys: String, CodingKey {
-        case event, seed, round, attacker, defender, damage, crit, unit, winner, rounds, move, typeMod
-    }
-
-    init(from decoder: Decoder) throws {
-        let c = try decoder.container(keyedBy: Keys.self)
-        switch try c.decode(String.self, forKey: .event) {
-        case "battleStart":
-            let seedString = try c.decode(String.self, forKey: .seed)
-            self = .battleStart(seed: UInt64(seedString) ?? 0)
-        case "roundStart":
-            self = .roundStart(round: try c.decode(Int.self, forKey: .round))
-        case "attack":
-            self = .attack(
-                attackerID: try c.decode(String.self, forKey: .attacker),
-                defenderID: try c.decode(String.self, forKey: .defender),
-                damage: try c.decode(Int.self, forKey: .damage),
-                crit: try c.decode(Bool.self, forKey: .crit),
-                // Presentational parity fields (QA B-004); absent from older
-                // server builds, so optional.
-                move: try? c.decode(String.self, forKey: .move),
-                typeMod: try? c.decode(Double.self, forKey: .typeMod)
-            )
-        case "miss":
-            self = .miss(
-                attackerID: try c.decode(String.self, forKey: .attacker),
-                defenderID: try? c.decode(String.self, forKey: .defender)
-            )
-        case "faint":
-            self = .faint(unitID: try c.decode(String.self, forKey: .unit))
-        case "roundEnd":
-            self = .roundEnd(round: try c.decode(Int.self, forKey: .round))
-        case "victory":
-            let winner = try c.decode(String.self, forKey: .winner)
-            self = .victory(winnerSide: winner == "A" ? 0 : 1, rounds: try c.decode(Int.self, forKey: .rounds))
-        case let other:
-            throw DecodingError.dataCorruptedError(forKey: .event, in: c, debugDescription: "Unknown battle event '\(other)'")
-        }
-    }
-}
-
-/// Server response from `POST /battle/simulate`. Winner "A" = your squad.
+/// Shared battle-result shape (schemas/battle-result.json).
+/// Winner "A" = your squad. Events decode straight into BattleKit's
+/// `BattleEvent` — the wire shape is the engine's own event schema.
 struct ServerBattleResult: Decodable, Sendable {
     let winner: String
+    /// Total side-turns played (the engine's `turns`; the field name predates
+    /// the turn-based engine and stays for compatibility).
     let rounds: Int
-    let events: [ServerBattleEvent]
+    let events: [BattleEvent]
+    /// End-of-battle HP as fractions of effective max HP, in squad order.
+    let hpLeftA: [Double]
+    let hpLeftB: [Double]
+    /// Units that ended at 0 HP — the faint-persistence list.
+    let faintedA: [String]
+    let faintedB: [String]
 
     var winnerSide: Int { winner == "A" ? 0 : 1 }
 }
 
-/// POST /battle/async/challenge — result vs a friend's stored snapshot, with
-/// the snapshot echoed so the client can rebuild the replay.
-struct AsyncChallengeResponse: Decodable, Sendable {
+/// One member of an opponent's stored squad snapshot, as echoed by
+/// /battle/friendly and /battle/ranked. The combat bases travel with it so
+/// the replay can draw real HP/mana bars instead of placeholder 100s.
+struct ResolvedSquadMember: Decodable, Sendable {
+    let id: String
+    let name: String
+    let star: Int
+    let rarity: String
+    let baseHealth: Int?
+    let baseAttack: Int?
+    let baseMana: Int?
+}
+
+/// POST /battle/friendly — result vs a friend's stored snapshot, with the
+/// snapshot echoed so the client can render the replay.
+struct FriendlyBattleResponse: Decodable, Sendable {
     let winner: String
     let rounds: Int
-    let events: [ServerBattleEvent]
+    let events: [BattleEvent]
+    let hpLeftA: [Double]
+    let hpLeftB: [Double]
+    let faintedA: [String]
+    let faintedB: [String]
     let opponentId: String
-    let opponentSquad: [BattleSquadMember]
+    let opponentSquad: [ResolvedSquadMember]
 }
 
-/// One "your squad was challenged" feed item (GET /battle/async/notices).
-struct AsyncNoticeDTO: Decodable, Sendable {
-    let challengerId: String
-    let challengerName: String
-    /// true = your stored squad defended successfully.
-    let defendedWin: Bool
+/// POST /battle/ranked — SBMM-resolved match: the authoritative result plus
+/// the RR movement, any rank-odds Case the win granted, and the opponent's
+/// snapshot squad for replay rendering.
+struct RankedBattleResponse: Decodable, Sendable {
+    let winner: String
     let rounds: Int
-    let at: String
+    let events: [BattleEvent]
+    let hpLeftA: [Double]
+    let hpLeftB: [Double]
+    let faintedA: [String]
+    let faintedB: [String]
+    let rank: RankResultDTO
+    /// Rank-odds Case granted by a win; nil on a loss.
+    let caseReward: CaseRewardDTO?
+    let opponent: RankedOpponentDTO
+    let opponentSquad: [ResolvedSquadMember]
+
+    var winnerSide: Int { winner == "A" ? 0 : 1 }
 }
 
-struct AsyncNoticesResponse: Decodable, Sendable {
-    let notices: [AsyncNoticeDTO]
+struct RankResultDTO: Decodable, Sendable {
+    let rr: Int
+    /// Signed RR movement this match applied (+ on win, − on loss).
+    let delta: Int
+    let rank: String
+    let rankLabel: String
+    let promoted: Bool
+    let record: RankedRecordDTO
 }
+
+struct RankedRecordDTO: Decodable, Sendable {
+    let rankedWins: Int
+    let rankedLosses: Int
+}
+
+struct CaseRewardDTO: Decodable, Sendable {
+    let rarity: String
+}
+
+struct RankedOpponentDTO: Decodable, Sendable {
+    /// True when the queue was empty and a rank-calibrated bot fought.
+    let bot: Bool
+    let playerId: String?
+}
+
+// MARK: - Interactive battles (begin / commit)
+//
+// Two-phase spec §4 flow: begin parks the server-resolved matchup and hands
+// back the seed + full specs so the client runs the identical deterministic
+// engine locally; commit submits the decisions the player made and the
+// server replays them — the outcome is what the rules produce.
+
+/// A fully resolved unit as `/battle/*/begin` returns it. `rarity` travels
+/// as the tier name; `moves` is the authored moveset the server will replay.
+struct BattleUnitSpecDTO: Decodable, Sendable {
+    let id: String
+    let name: String
+    let baseHealth: Double
+    let baseAttack: Double
+    let star: Int
+    let rarity: String
+    let baseMana: Double?
+    let moves: [BattleMoveSpec]
+
+    /// Engine-ready spec — identical values on both sides of the wire.
+    var spec: BattleUnitSpec {
+        BattleUnitSpec(
+            id: id, name: name, baseHealth: baseHealth, baseAttack: baseAttack,
+            rarity: (Rarity(rawValue: rarity) ?? .common).battleRarity,
+            star: star, moves: moves, baseMana: baseMana
+        )
+    }
+}
+
+/// POST /battle/ranked/begin and /battle/friendly/begin share this shape.
+struct BattleBeginResponse: Decodable, Sendable {
+    let matchId: String
+    /// Decimal string — JSON can't carry a full UInt64.
+    let seed: String
+    /// Ranked only: who the SBMM queue found.
+    let opponent: RankedOpponentDTO?
+    /// Friendly only: the snapshot owner.
+    let opponentId: String?
+    let yourSquad: [BattleUnitSpecDTO]
+    let opponentSquad: [BattleUnitSpecDTO]
+}
+
+/// One decision in the commit script — the discriminated-union shape
+/// `battleActionSchema` expects on the backend.
+enum BattleActionDTO: Encodable, Sendable {
+    /// Use moves[moveIndex] of the active unit (consumes the turn).
+    case move(Int)
+    /// Voluntary switch to squad slot (consumes the turn).
+    case switchTo(Int)
+    /// Free faint-replacement pick (no turn, no RNG draw).
+    case choose(Int)
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .move(let i):
+            try c.encode("move", forKey: .type)
+            try c.encode(i, forKey: .moveIndex)
+        case .switchTo(let i):
+            try c.encode("switch", forKey: .type)
+            try c.encode(i, forKey: .unitIndex)
+        case .choose(let i):
+            try c.encode("choose", forKey: .type)
+            try c.encode(i, forKey: .unitIndex)
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case type, moveIndex, unitIndex
+    }
+}
+
 
 // MARK: - Infinite dungeon (backend/src/routes/battle.ts dungeon section)
 
@@ -116,27 +186,24 @@ struct DungeonFloorDTO: Decodable, Sendable {
     let won: Bool
     let rounds: Int
     let enemies: [String]
+    /// Coins paid for clearing this floor (0 when lost).
+    let reward: Int
 }
 
 struct DungeonRunResponse: Decodable, Sendable {
     let runSeed: String
     let floorsCleared: Int
     let bestFloor: Int
-    let keysEarned: Int
-    let keys: Int
-    let pendingIdleKeys: Int
+    /// Coins banked this run — kept even on wipe (spec §5).
+    let coinsEarned: Int
+    /// Wallet balance after the run.
+    let coins: Int
     let feed: [DungeonFloorDTO]
 }
 
 struct DungeonStateResponse: Decodable, Sendable {
     let bestFloor: Int
     let lastRunAt: String?
-    let pendingIdleKeys: Int
-}
-
-struct DungeonClaimResponse: Decodable, Sendable {
-    let claimed: Int
-    let keys: Int
 }
 
 // MARK: - User (GET /user/:id)
@@ -144,36 +211,132 @@ struct DungeonClaimResponse: Decodable, Sendable {
 struct UserProfileDTO: Decodable, Sendable {
     let id: String
     let displayName: String
-    let level: Int
+    /// Inert legacy fields — the spec has no XP/levels; kept so older
+    /// payloads still decode.
+    let level: Int?
     let xp: Int?
-    let streakDays: Int
-    let battlesWon: Int
+    let streakDays: Int?
+    let battlesWon: Int?
     var activeCharacterId: String?
     let colorMode: String
+    /// Ranked Rating (spec §5).
+    let rr: Int?
+    let rankedWins: Int?
+    let rankedLosses: Int?
+    /// Nutrition streak + stored Cookbook Boosts (spec §6).
+    let nutritionStreakDays: Int?
+    let cookbookBoosts: Int?
 }
 
-/// `GET /user/:id` wraps the profile: `{ "profile": {...} }`.
+/// `GET /user/:id` wraps the profile plus its derived rank, record, streak,
+/// faint list and today's tasks: `{ "profile": {...}, "rank": {...}, ... }`.
 struct UserResponse: Decodable, Sendable {
     let profile: UserProfileDTO
-    let progression: XPProgression?
-    /// Present once the player touches their profile — comeback crate status.
-    let comeback: ComebackDTO?
+    let rank: RankBlockDTO?
+    let record: RecordDTO?
+    let streak: StreakDTO?
+    /// Character ids currently fainted (recover on daily reset or a
+    /// nutrition-task revive).
+    let fainted: [String]?
+    let tasks: [TaskDTO]?
 }
 
-struct ComebackDTO: Decodable, Sendable {
-    /// A welcome-back crate is pending and claimable.
-    let eligible: Bool
-    let daysAway: Int
+/// Public rank block from the server: RR, derived rank, distance to promote.
+struct RankBlockDTO: Decodable, Sendable {
+    let rr: Int
+    let rank: String
+    let rankLabel: String
+    /// RR needed to reach the next rank; nil at Diamond.
+    let rrToNextRank: Int?
 }
 
-/// Server-derived XP state — level, progress into the current level, and
-/// the cost of the next one. All derived from lifetime xp server-side.
-struct XPProgression: Decodable, Sendable {
-    let level: Int
-    let xp: Int
-    let xpIntoLevel: Int
-    let xpForLevel: Int
-    let progress: Double   // 0...1
+struct RecordDTO: Decodable, Sendable {
+    let rankedWins: Int
+    let rankedLosses: Int
+    let winRate: Double
+}
+
+struct StreakDTO: Decodable, Sendable {
+    let days: Int
+    let boosts: Int
+    let nextBoostIn: Int
+}
+
+// MARK: - Daily tasks (GET /user/tasks/today, POST /user/tasks/:id/claim)
+
+/// One of today's three tasks — one nutrition, one battle, one flex.
+struct TaskDTO: Decodable, Sendable, Identifiable {
+    let id: String
+    let category: String
+    let label: String
+    /// Whether claiming awards task RR (+5, capped +10/day, never promotes).
+    let rrEligible: Bool
+    /// True on tasks that only exist when the player opted into watch data —
+    /// non-watch players never see them (the server substitutes instead).
+    let watchOnly: Bool?
+    /// Server-verified completion flag.
+    let done: Bool
+    let claimed: Bool
+}
+
+struct TasksResponse: Decodable, Sendable {
+    let day: String
+    let tasks: [TaskDTO]
+}
+
+/// POST /user/tasks/:taskId/claim result.
+struct TaskClaimResult: Decodable, Sendable {
+    let taskId: String
+    let coins: Int
+    let bonusCoins: Int
+    let allDone: Bool
+    /// Task RR actually applied — 0 for flex tasks, at the daily cap, or at
+    /// the top of the current rank.
+    let rrApplied: Int
+    let rr: Int
+    let rank: String
+    /// Fainted character revived by a nutrition-task claim, if any.
+    let revived: String?
+    let streakDays: Int?
+    let boostEarned: Bool?
+}
+
+// MARK: - Battle history (GET /user/:id/history)
+
+struct BattleHistoryEntry: Decodable, Sendable, Identifiable {
+    let id: Int
+    let mode: String
+    let result: String
+    let opponent: String?
+    let rrDelta: Int
+    let squad: [BattleHistorySquadMember]
+    /// Free-form per-mode detail (rounds, floors cleared, coins earned…).
+    /// All fields optional — the shape varies by mode.
+    let detail: BattleHistoryDetail?
+    let at: String
+}
+
+struct BattleHistoryDetail: Decodable, Sendable {
+    let rounds: Int?
+    let floorsCleared: Int?
+    let bestFloor: Int?
+    let coinsEarned: Int?
+    let defended: Bool?
+    let caseReward: String?
+
+    enum CodingKeys: String, CodingKey {
+        case rounds, floorsCleared, bestFloor, coinsEarned, defended
+        case caseReward = "case"
+    }
+}
+
+struct BattleHistorySquadMember: Decodable, Sendable {
+    let id: String
+    let name: String
+}
+
+struct BattleHistoryResponse: Decodable, Sendable {
+    let battles: [BattleHistoryEntry]
 }
 
 // MARK: - Vitals (backend/src/vitals — HealthKit snapshots from the watch)
@@ -200,30 +363,45 @@ struct VitalsLatestResponse: Decodable, Sendable {
     let analysis: [String: String]?
 }
 
+/// `POST /vitals` — acknowledgement plus the same analysis strings.
+struct VitalsUploadResponse: Decodable, Sendable {
+    let success: Bool
+    let message: String?
+    let analysis: [String: String]?
+}
+
 // MARK: - Loot crates (commit-reveal fairness)
 
 /// Character as returned by the lootbox routes' `characterPayload`:
-/// the core fields plus presentational extras.
+/// the source-neutral combat shape (Health/Attack, Mana on Epic+) plus
+/// presentational extras. Rarity belongs to the instance, never the design.
 struct LootCharacterDTO: Decodable, Sendable {
     let id: String
     let name: String
     let colorHex: String
     let rarity: String
-    let statType: String
+    let imageKey: String?
+    let tagline: String?
+    let baseHealth: Double?
+    let baseAttack: Double?
+    /// Present only on Epic-and-higher instances.
+    let baseMana: Double?
     let isLocked: Bool?
     let rarityLabel: String?
     let rarityColorHex: String?
     let flavor: String?
-    /// Set for dish-photo characters — drives the procedural artwork so a
-    /// salad and a steak don't render as the same silhouette.
-    let foodGroup: String?
+    let bio: String?
 }
 
+/// The mint-time roll units the server records for a drop (anti-cheat
+/// audit). `mintSegment` is the 55/27/13/4/1 band-segment pick;
+/// `mintPosition` the position inside it. All optional: drops minted before
+/// the fields existed, or budget-priced casino rewards, carry -1/none.
 struct DropRollsDTO: Decodable, Sendable {
-    let rarity: Double
-    let character: Double
-    let power: Double
-    let shiny: Double
+    let rarity: Double?
+    let character: Double?
+    let mintSegment: Double?
+    let mintPosition: Double?
 }
 
 struct FairnessDTO: Decodable, Sendable {
@@ -234,43 +412,34 @@ struct FairnessDTO: Decodable, Sendable {
 
 /// One resolved drop. `reel`/`reelWinnerIndex` are animation data returned
 /// only by the open route.
-/// Pity counters — opens since the last Epic+/Legendary+ pull, and how many
-/// opens remain until each guarantee forces a drop.
-struct PityDTO: Decodable, Sendable {
-    let sinceEpic: Int
-    let sinceLegendary: Int
-    let epicIn: Int
-    let legendaryIn: Int
-}
-
 struct CrateOpenResponse: Decodable, Sendable {
     /// The real, unique server-side drop instance id this pull just minted —
     /// what `/characters/sell` actually wants. Optional only so decoding
     /// never breaks against an older server; every current build sends it.
     let id: String?
+    /// Which source produced the mint: a cookbook id, "case:<rarity>",
+    /// "scan", "starter-roster", "merge", ...
     let crateId: String
     let character: LootCharacterDTO
-    let power: Double
-    let powerLabel: String
-    let shiny: Bool
+    /// The ★1 value rolled at mint — permanent; fusion keeps the max.
+    let baseMintValue: Int?
+    /// Current net worth: baseMintValue + star bonus.
     let value: Int
+    /// Mastery of the minted drop — always 1 on a fresh pull.
+    let stars: Int?
+    /// Rarity of the Case that produced this mint, when opened via a case.
+    let caseRarity: String?
     let rolls: DropRollsDTO?
-    /// Set when the pity guarantee lifted the rolled tier.
-    let pityForced: String?
-    let fairness: FairnessDTO
+    let fairness: FairnessDTO?
     let openedAt: String
     let reel: [LootCharacterDTO]?
     let reelWinnerIndex: Int?
-    /// Absent on a shop-case open (POST /lootbox/shop-cases/:id/open) — that
-    /// route is paid in coins and never touches keys.
-    let keysRemaining: Int?
-    /// Set only on a coin-paid open.
-    let coinsSpent: Int?
+    /// Coin balance after the open — cookbook opens are coin-paid.
     let coinBalance: Int?
-    /// Mastery of the minted drop — always 1 on a fresh pull; optional so
-    /// decoding never breaks against an older server.
-    let stars: Int?
-    let pity: PityDTO?
+    /// True when the mint overflowed a full inventory into the mailbox.
+    let overflowed: Bool?
+    /// True when a Cookbook Boost (×1.15 Rare+ odds) was consumed on this open.
+    let boostApplied: Bool?
 }
 
 struct CrateOddsDTO: Decodable, Sendable {
@@ -283,83 +452,71 @@ struct CrateOddsDTO: Decodable, Sendable {
     let perCharacterChance: Double?
 }
 
-struct CrateSummaryDTO: Decodable, Sendable {
+/// `GET /lootbox/cookbooks` — the Cookbooks, the only purchasable loot
+/// containers (spec §3). `price` is in coins; `contents` is included by the
+/// single-cookbook endpoint (rarity is rolled per mint).
+struct CookbookDTO: Decodable, Sendable, Identifiable {
     let id: String
     let name: String
     let description: String
-    let keyCost: Int
-    let characterCount: Int
+    let price: Int
     let odds: [CrateOddsDTO]
-    let pity: PityDTO?
+    let contents: [LootCharacterDTO]?
 }
 
-struct CratesResponse: Decodable, Sendable {
-    let crates: [CrateSummaryDTO]
-}
-
-/// One daily quest with server-verified progress (GET /user/quests/today).
-struct DailyQuestDTO: Decodable, Sendable {
-    let id: String
-    let label: String
-    let kind: String
-    let target: Int
-    let reward: Int
-    let progress: Int
-    let done: Bool
-    let claimed: Bool
-}
-
-struct DailyQuestsResponse: Decodable, Sendable {
-    let day: String
-    let quests: [DailyQuestDTO]
-}
-
-struct ClaimQuestResponse: Decodable, Sendable {
-    let keys: Int
+struct CookbooksResponse: Decodable, Sendable {
+    let cookbooks: [CookbookDTO]
 }
 
 struct InventoryItemDTO: Decodable, Sendable, Identifiable {
     let id: String
     let crateId: String
     let character: LootCharacterDTO
-    let power: Double
-    let powerLabel: String
-    let shiny: Bool
+    /// Current net worth: baseMintValue + star bonus.
     let value: Int
+    /// The ★1 value rolled at mint — permanent, inherited by fusion.
+    let baseMintValue: Int?
     let stars: Int?
     let lockedBy: String?
-    let fairness: FairnessDTO
+    let fairness: FairnessDTO?
     let openedAt: String
 
     var isStaked: Bool { lockedBy != nil && !(lockedBy ?? "").isEmpty }
 }
 
 struct InventoryResponse: Decodable, Sendable {
-    let keys: Int
     let count: Int
     let totalValue: Int
     let items: [InventoryItemDTO]
-    let pity: PityDTO?
+    let mailbox: MailboxDTO?
+    let cases: [PendingCaseDTO]?
 }
 
-struct GrantKeysResponse: Decodable, Sendable {
-    let keys: Int
-    let reason: String
+/// Rewards that arrived while the inventory was full — never silently lost.
+struct MailboxDTO: Decodable, Sendable {
+    let count: Int
+    let items: [InventoryItemDTO]
 }
 
-/// `GET /lootbox/shop-cases` — the coin shop: one case per rarity, with the
-/// server's derived coin price and its published odds.
-struct ShopCaseDTO: Decodable, Sendable, Identifiable {
-    let id: String
-    let name: String
-    let description: String
-    let coinCost: Int
-    let characterCount: Int
-    let odds: [CrateOddsDTO]
+/// A rank-granted Case waiting to be opened (spec §5 ranked rewards).
+struct PendingCaseDTO: Decodable, Sendable, Identifiable, Equatable {
+    var id: String { caseId }
+    let caseId: String
+    let rarity: String
+    let source: String
+    let createdAt: String
 }
 
-struct ShopCasesResponse: Decodable, Sendable {
-    let cases: [ShopCaseDTO]
+struct PendingCasesResponse: Decodable, Sendable {
+    let cases: [PendingCaseDTO]
+}
+
+/// `POST /lootbox/mailbox/claim` — moves overflow drops into the inventory.
+struct MailboxClaimResponse: Decodable, Sendable {
+    let claimed: [InventoryItemDTO]
+    let remaining: Int
+    let count: Int
+    let mailboxCount: Int
 }
 
 /// `POST /characters/merge` — three same-character/rarity/star copies fused
@@ -373,7 +530,8 @@ struct MergeResponseDTO: Decodable, Sendable {
         let star: Int
         let rarity: String
         let value: Int
-        let power: Double
+        /// Preview of the fused unit's Effective Attack (base × rarity × star).
+        let attack: Double?
     }
     let merged: InventoryItemDTO
     let consumedIds: [String]
@@ -381,12 +539,60 @@ struct MergeResponseDTO: Decodable, Sendable {
     let to: To
 }
 
-/// `GET /characters/catalog` — the authored roster, Pokédex-style.
+/// `GET /characters/catalog` — the 14 authored characters, Pokédex-style.
+/// The master record: permanent id, display name, combat bases, the 3
+/// authored standard moves + the Mana Special, art reference and lore.
 struct CharacterCatalogEntryDTO: Decodable, Sendable {
     let id: String
     let name: String
+    let colorHex: String
     let tagline: String
     let bio: String
+    let baseHealth: Double
+    let baseAttack: Double
+    /// The Mana pool the Special draws on — only meaningful at Epic+.
+    let baseMana: Double?
+    let moves: [CatalogMoveDTO]
+    let special: CatalogMoveDTO?
+    let image: CatalogImageDTO?
+
+    /// The moveset as the engine consumes it: three standards, Special last.
+    var engineMoves: [BattleMoveSpec] {
+        moves.map { $0.engineMove(kind: .standard) }
+            + (special.map { [$0.engineMove(kind: .special)] } ?? [])
+    }
+}
+
+/// An authored move as the catalog serves it (backend moveSchema).
+struct CatalogMoveDTO: Decodable, Sendable {
+    let id: String
+    let name: String
+    let power: Double
+    let accuracy: Double
+    let statusEffect: String?
+    let statusChance: Double?
+    let duration: Int?
+    let manaCost: Double
+    let description: String?
+
+    /// Same move in the engine's shape — identical fields on the wire.
+    func engineMove(kind: BattleMoveSpec.Kind) -> BattleMoveSpec {
+        BattleMoveSpec(
+            id: id, name: name, kind: kind, power: power, accuracy: accuracy,
+            manaCost: manaCost,
+            statusEffect: statusEffect.flatMap(StatusEffectID.init(rawValue:)),
+            statusChance: statusChance, duration: duration, description: description
+        )
+    }
+}
+
+/// Art resolution from `imageFor()` — a file under /assets when it exists,
+/// else the generated-art route.
+struct CatalogImageDTO: Decodable, Sendable {
+    let imageKey: String
+    let file: String?
+    let variant: String
+    let url: String
 }
 
 struct CharacterCatalogResponse: Decodable, Sendable {
@@ -404,27 +610,22 @@ struct SellResponse: Decodable, Sendable {
 
 // MARK: - Leaderboard (GET /user/leaderboard)
 
-enum LeaderboardSort: String, Sendable {
-    case wins
-    case rank
-}
-
+/// One leaderboard row. Server ordering is fixed by spec §6: RR desc, then
+/// ranked wins, then win rate — `rank` is the position, `rankLabel` the tier.
 struct LeaderboardEntry: Decodable, Sendable, Identifiable {
     let rank: Int
     let id: String
     let displayName: String
-    let level: Int
-    let battlesWon: Int
-    let streakDays: Int
-    /// Consistency-ladder fields (#67) — present regardless of sort mode.
-    let rankPoints: Int
-    let rankTier: String
+    let rr: Int
+    let rankLabel: String
+    let rankedWins: Int
+    let rankedLosses: Int
+    let winRate: Double
     let isYou: Bool
 }
 
 struct LeaderboardResponse: Decodable, Sendable {
     let entries: [LeaderboardEntry]
-    let sort: String
 }
 
 /// GET /lootbox/fairness — current commit-reveal commitment + retired seeds.
@@ -455,9 +656,8 @@ struct RotateSeedResponse: Decodable, Sendable {
 
 struct JourneySummary: Decodable, Sendable {
     let totalScans: Int
-    let totalCrateOpens: Int
+    let totalDrops: Int
     let totalCharacters: Int
-    let currentKeys: Int
     let totalLootValue: Int
     let totalVitalsSnapshots: Int
 }
@@ -472,11 +672,6 @@ struct JourneyDistribution: Decodable, Sendable {
     let count: Int
 }
 
-struct JourneyElementDistribution: Decodable, Sendable {
-    let element: String
-    let count: Int
-}
-
 struct JourneyVitalsPoint: Decodable, Sendable {
     let date: String
     let steps: Int?
@@ -486,12 +681,44 @@ struct JourneyVitalsPoint: Decodable, Sendable {
 
 struct JourneyCollection: Decodable, Sendable {
     let byRarity: [JourneyDistribution]
-    let byElement: [JourneyElementDistribution]
 }
 
 struct JourneyTimeline: Decodable, Sendable {
     let scansByDay: [JourneyBucket]
-    let cratesByDay: [JourneyBucket]
+    let dropsByDay: [JourneyBucket]
+}
+
+/// One completed workout as the server stored it from a vitals upload.
+/// `start`/`end` stay Strings for the same reason as `CasinoTrendPoint.bucket`.
+struct JourneyWorkout: Decodable, Sendable, Identifiable {
+    let activityType: String
+    let start: String
+    let end: String
+    let durationMinutes: Double
+    let activeCalories: Double?
+    let distanceMeters: Double?
+    let averageHeartRateBpm: Double?
+    let maxHeartRateBpm: Double?
+
+    var id: String { "\(activityType)|\(start)" }
+    var startDate: Date? { CasinoTrendPoint.parse(start) }
+}
+
+/// One calendar day (`date` is YYYY-MM-DD) of health activity.
+struct JourneyActivityDay: Decodable, Sendable, Identifiable {
+    let date: String
+    let workouts: [JourneyWorkout]
+    let workoutMinutes: Int
+    let workoutCalories: Int
+    let steps: Int?
+    let activeCalories: Int?
+    let exerciseMinutes: Int?
+
+    var id: String { date }
+}
+
+struct JourneyActivity: Decodable, Sendable {
+    let byDay: [JourneyActivityDay]
 }
 
 struct JourneyResponse: Decodable, Sendable {
@@ -501,6 +728,8 @@ struct JourneyResponse: Decodable, Sendable {
     let timeline: JourneyTimeline
     let recentDrops: [InventoryItemDTO]
     let vitals: [JourneyVitalsPoint]
+    /// Absent from servers that predate the Journey calendar.
+    let activity: JourneyActivity?
 }
 
 // MARK: - Promo codes
@@ -510,18 +739,77 @@ struct PromoRedeemResponse: Decodable, Sendable {
 }
 
 struct PromoReward: Decodable, Sendable {
+    /// "coins:<n>" or "case:<rarity>" — the reward descriptor that redeemed.
     let reward: String
-    let keys: Int
-    /// Only present for crate rewards. Contains the full open result.
-    let drop: CrateOpenResponse?
+    /// Present on coin rewards: the wallet after crediting.
+    let coinBalance: Int?
+    /// Present on case rewards: the Case now pending in the inventory.
+    let grantedCase: PendingCaseDTO?
+
+    private enum CodingKeys: String, CodingKey {
+        case reward, coinBalance
+        case grantedCase = "case"
+    }
+}
+
+// MARK: - Barcode scan (the only mint path)
+//
+//   POST /scan  { barcode } -> ScanResultDTO
+//
+// The server fetches nutrition from Open Food Facts itself (the client only
+// sends the digits), scores it holistically, and — the FIRST time this user
+// ever scans that barcode — mints a ★1 catalog monster. Re-scans log the
+// meal and count for tasks but never mint again; `duplicate` tells the UI
+// which case it's looking at.
+
+/// The per-100g nutrition snapshot the mint was generated from — also the
+/// anti-cheat record the server persists in scan_mint.
+struct ScanNutritionDTO: Decodable, Sendable {
+    let calories: Double?
+    let proteinG: Double?
+    let carbsG: Double?
+    let fatG: Double?
+    let fiberG: Double?
+    let sugarG: Double?
+    let sodiumMg: Double?
+    let satFatG: Double?
+}
+
+/// Proof a monster was minted this scan — absent on `duplicate` responses.
+struct ScanMintDTO: Decodable, Sendable {
+    let dropId: String
+    let netWorth: Int
+    let stars: Int
+}
+
+/// `POST /scan` — barcode → nutrition → (once ever) a monster.
+struct ScanResultDTO: Decodable, Sendable {
+    let barcode: String
+    let foodName: String
+    /// Open Food Facts brand string ("Ferrero"), when the product has one.
+    let brands: String?
+    /// 0–100 holistic NutritionScore; tilts the rarity roll.
+    let nutritionScore: Double?
+    /// The minted catalog instance — present only on the first-ever scan.
+    let summonedCharacter: LootCharacterDTO?
+    let nutrition: ScanNutritionDTO?
+    /// True on every scan after the first for this barcode.
+    let duplicate: Bool
+    let mealId: String
+    let mint: ScanMintDTO?
+}
+
+struct ScanResponseEnvelope: Decodable, Sendable {
+    let result: ScanResultDTO
 }
 
 // MARK: - Dish photo scan (no barcode)
 //
 // Two steps, mirroring backend/src/routes/scan.ts:
 //   POST /scan/photo/analyze  -> DishAnalysisDTO (a draft, nothing minted)
-//   POST /scan/photo/confirm  -> DishConfirmResult (the character)
-// The user reviews and corrects the draft in between.
+//   POST /scan/photo/confirm  -> DishConfirmResult (a meal log, nothing minted)
+// The user reviews and corrects the draft in between. A photographed plate
+// can NEVER mint a monster — barcode is the only food path that can.
 
 /// One food identified on the plate, with its own portion and nutrients.
 /// Nutrient figures are absolute for `portionG` grams — not per 100 g.
@@ -574,28 +862,19 @@ struct DishAnalysisDTO: Decodable, Sendable, Equatable, Identifiable {
     let lowConfidence: Bool
 }
 
-/// Battle stats derived from the confirmed plate.
-struct DishStatsDTO: Decodable, Sendable, Equatable {
-    let power: Double
-    let guardStat: Double
-    let vitality: Double
-    let tempo: Double
-
-    private enum CodingKeys: String, CodingKey {
-        case power, vitality, tempo
-        case guardStat = "guard"
-    }
-}
-
-/// What `POST /scan/photo/confirm` returns once the plate is locked in.
+/// What `POST /scan/photo/confirm` returns once the plate is locked in:
+/// a meal log entry — never a monster. `flagged` means the estimate was
+/// low-confidence or the confirmed totals were implausible; the app can
+/// surface it as "estimate — worth a second look" on the log.
 struct DishConfirmResult: Decodable, Sendable {
     let source: String?
     let foodName: String
-    let statType: String
-    let summonedCharacter: LootCharacterDTO?
-    let stats: DishStatsDTO?
+    let mealId: String
     let items: [DishItemDTO]
     let nutrition: DishTotalsDTO
+    let lowConfidence: Bool?
+    let implausible: Bool?
+    let flagged: Bool?
 }
 
 /// A single correction from the review screen. The server only honours
@@ -616,9 +895,8 @@ struct DishItemEdit: Encodable, Sendable {
 struct CasinoMonsterDTO: Decodable, Sendable, Identifiable, Equatable {
     let id: String
     let character: LootCharacterDTO
-    let power: Double
-    let powerLabel: String
-    let shiny: Bool
+    /// The ★1 value rolled at mint — permanent, inherited by fusion.
+    let baseMintValue: Int?
     let stars: Int
     let netWorth: Int
     let acquiredAt: String

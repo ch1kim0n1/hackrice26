@@ -3,26 +3,28 @@ import NutriQuestUI
 
 // MARK: - Welcome
 
-/// First screen of the flow: phone hero, headline, Get Started, Sign In.
+/// First screen of the flow: hero art, headline, enter-the-game CTA.
 struct OBWelcomeStep: View {
     let onGetStarted: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
-            
-
             Spacer(minLength: 16)
             NQAssetImage("onboarding-hero")
                 .frame(maxHeight: 440)
+                .nqPopIn()
             Spacer(minLength: 20)
 
-            Text("Calorie tracking\nmade easy")
-                .font(NQFont.display.font(30))
-                .foregroundStyle(OBTheme.ink)
+            Text("Scan a meal.\nSummon a monster.")
+                .font(NQText.display.font)
+                .foregroundStyle(NQTheme.ink)
                 .multilineTextAlignment(.center)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
+                .nqSlideUp(delay: 0.08)
 
-            OBPrimaryButton(title: "Get Started", action: onGetStarted)
+            OBPrimaryButton(title: "Build your squad", action: onGetStarted)
                 .padding(.top, 22)
+                .nqSlideUp(delay: 0.14)
         }
     }
 }
@@ -359,12 +361,15 @@ struct OBSpeedStep: View {
 
 /// "Connect to Apple Health" step with a recreated sync illustration.
 struct OBAppleHealthStep: View {
+    var isConnecting = false
     let onContinue: () -> Void
     let onSkip: () -> Void
 
     var body: some View {
         OBStepScaffold(
             title: "",
+            buttonTitle: isConnecting ? "Connecting…" : "Continue",
+            buttonEnabled: !isConnecting,
             secondaryTitle: "Not now",
             onSecondary: onSkip,
             onContinue: onContinue
@@ -438,28 +443,23 @@ struct OBAppleHealthStep: View {
         .accessibilityHidden(true)
     }
 
-    /// Small white capsule label used around the illustration, styled like
-    /// home's streak pill (white, ink stroke, sticker shadow).
+    /// Small ticket label used around the illustration, styled like the
+    /// app's chips (ticket cut, ink stroke, sticker shadow).
     private func labelPill(_ text: String) -> some View {
         Text(text)
             .font(NQFont.body.font(13))
             .foregroundStyle(OBTheme.ink)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .nqPlate(Capsule(), elevation: .sticker, inkStroke: true, lineWidth: 1.5)
+            .nqPlate(NQTicketShape(), elevation: .sticker, inkStroke: true, lineWidth: 1.5)
     }
 }
 
 // MARK: - Plan ready
 
-/// Final step: celebration header, target pill, and the daily
-/// recommendation card with macro rings and health score.
+/// Final step: celebration header and the daily recommendation card with
+/// macro rings and health score.
 struct OBPlanReadyStep: View {
-    let goal: WeightGoal
-    /// Absolute weight change target, in kg.
-    let deltaKg: Double
-    /// Projected completion date for the target.
-    let targetDate: Date
     let plan: OBPlanTargets
     let onFinish: () -> Void
 
@@ -481,46 +481,12 @@ struct OBPlanReadyStep: View {
                         .foregroundStyle(OBTheme.ink)
                         .multilineTextAlignment(.center)
 
-                    Text(goalLabel)
-                        .font(NQFont.body.font(16))
-                        .foregroundStyle(OBTheme.subtitle)
-                        .padding(.top, 8)
-
-                    Text(targetPillText)
-                        .font(NQFont.heading.font(16))
-                        .foregroundStyle(OBTheme.ink)
-                        .padding(.horizontal, 20)
-                        .padding(.vertical, 12)
-                        .nqPlate(Capsule(), elevation: .sticker, inkStroke: true, lineWidth: 1.5)
-
                     recommendationCard
                         .padding(.top, 10)
                 }
                 .padding(.bottom, 14)
             }
             OBPrimaryButton(title: "Let's get started!", action: onFinish)
-        }
-    }
-
-    /// "You should lose:" / "gain:" / "maintain:" header above the pill.
-    private var goalLabel: String {
-        switch goal {
-        case .lose: return "You should lose:"
-        case .gain: return "You should gain:"
-        case .maintain: return "You should maintain:"
-        }
-    }
-
-    /// Target pill copy, e.g. "Lose 10 kg by October 31".
-    private var targetPillText: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM d"
-        let date = formatter.string(from: targetDate)
-        let amount = String(format: deltaKg.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f" : "%.1f", deltaKg)
-        switch goal {
-        case .lose: return "Lose \(amount) kg by \(date)"
-        case .gain: return "Gain \(amount) kg by \(date)"
-        case .maintain: return "Maintain your weight"
         }
     }
 

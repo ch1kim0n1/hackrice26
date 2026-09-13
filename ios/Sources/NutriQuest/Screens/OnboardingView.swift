@@ -37,7 +37,7 @@ struct AchievementToast: View {
             NQButton("Nice", style: .secondary, fullWidth: false) { onDismiss() }
         }
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
+        .nqSurface(.sticker)
         .padding(NQTheme.spaceXL)
     }
 }
@@ -145,6 +145,8 @@ struct OnboardingView: View {
 
     @State private var step: Step = .welcome
     @State private var answers = OBAnswers()
+    /// Apple Health step: true while the permission sheet + first upload run.
+    @State private var connectingHealth = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -164,7 +166,7 @@ struct OnboardingView: View {
         .padding(.bottom, 10)
         .nqPageBackground()
         .animation(.easeInOut(duration: 0.3), value: step)
-        .preferredColorScheme(.light)
+        .preferredColorScheme(.dark)
     }
 
     /// Progress through the questionnaire, 0...1.
@@ -209,14 +211,23 @@ struct OnboardingView: View {
             }
         case .appleHealth:
             OBAppleHealthStep(
-                onContinue: { advance(to: .planReady) },
+                isConnecting: connectingHealth,
+                onContinue: {
+                    // Real connect: Health sheet + first upload. A failure is
+                    // not fatal to onboarding — Profile › Connected devices
+                    // is the retry path — so always move on.
+                    guard !connectingHealth else { return }
+                    connectingHealth = true
+                    Task {
+                        try? await gameState.connectAppleWatch()
+                        connectingHealth = false
+                        advance(to: .planReady)
+                    }
+                },
                 onSkip: { advance(to: .planReady) }
             )
         case .planReady:
             OBPlanReadyStep(
-                goal: answers.goal ?? .maintain,
-                deltaKg: answers.deltaKg,
-                targetDate: answers.targetDate,
                 plan: answers.planTargets(),
                 onFinish: {
                     // Persist the answers themselves, not just the plan: the

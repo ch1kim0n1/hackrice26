@@ -18,32 +18,31 @@ struct HealthDashboardView: View {
                 calorieCard
                 macroRow
                 diversityCard
+                funStatsCard
                 multiplierCard
                 todayLogCard
             }
             .padding(NQTheme.spaceL)
         }
         .nqPageBackground()
-        .navigationTitle("Health Dashboard")
+        .navigationTitle("Health")
         .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle("Health")
+            }
+        }
     }
 
     // MARK: - Calories
 
     private var calorieCard: some View {
-        VStack(spacing: NQTheme.spaceM) {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("TODAY")
-                        .font(NQText.microS.font)
-                        .tracking(0.6)
-                        .foregroundStyle(NQTheme.inkMuted)
-                    Text("Calories")
-                        .font(NQText.heading.font.weight(.heavy))
-                        .foregroundStyle(NQTheme.ink)
-                }
-                Spacer()
-                NQChip("\(gameState.todayEntries.count) logged", icon: .barcode)
+        VStack(alignment: .leading, spacing: NQTheme.spaceM) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Calories")
+                    .font(NQText.headingL.font)
+                    .foregroundStyle(NQTheme.ink)
             }
 
             HStack(spacing: NQTheme.spaceL) {
@@ -57,6 +56,11 @@ struct HealthDashboardView: View {
                 VStack(alignment: .leading, spacing: NQTheme.spaceS) {
                     statRow(label: "Consumed", value: "\(Int(gameState.todayCalories)) kcal", color: NQTheme.ink)
                     statRow(label: "Target", value: "\(Int(profile.calorieTarget)) kcal", color: NQTheme.inkMuted)
+                    statRow(
+                        label: "Meals",
+                        value: "\(gameState.todayEntries.count)",
+                        color: NQTheme.ink
+                    )
                     let remaining = profile.calorieTarget - gameState.todayCalories
                     statRow(
                         label: remaining >= 0 ? "Remaining" : "Over by",
@@ -68,7 +72,7 @@ struct HealthDashboardView: View {
             }
         }
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .raised)
+        .nqSurface(.sticker)
     }
 
     private func statRow(label: String, value: String, color: Color) -> some View {
@@ -184,8 +188,56 @@ struct HealthDashboardView: View {
             .padding(.horizontal, 4)
             .frame(maxWidth: .infinity)
             .background(
-                Capsule().fill(hit ? accent.accent : NQTheme.hairline)
+                NQTicketShape()
+                    .fill(hit ? accent.accent : NQTheme.chrome)
             )
+            .overlay {
+                NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2)
+            }
+    }
+
+    // MARK: - Fun stats
+
+    /// The game side of eating: what today's tracking has earned — streak,
+    /// boosts, mints and battles. All live GameState values, not samples.
+    private var funStatsCard: some View {
+        VStack(alignment: .leading, spacing: NQTheme.spaceS + 2) {
+            Text("Player Stats")
+                .font(NQText.heading.font)
+                .foregroundStyle(NQTheme.ink)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: NQTheme.spaceS) {
+                funStat(icon: "flame.fill", tint: NQTheme.warning, value: "\(gameState.streakCount)d", label: "Nutrition streak")
+                funStat(icon: "bolt.fill", tint: accent.accentDark, value: "\(gameState.profile?.cookbookBoosts ?? 0)", label: "Cookbook Boosts")
+                funStat(icon: "barcode", tint: NQTheme.info, value: "\(gameState.todayEntries.count)", label: "Foods logged today")
+                funStat(icon: "trophy.fill", tint: NQTheme.success, value: "\(gameState.profile?.rankedWins ?? 0)", label: "Ranked wins")
+                funStat(icon: "bitcoinsign.circle.fill", tint: NQTheme.gold, value: "\(gameState.coinBalance)", label: "Coins")
+                funStat(icon: "fork.knife", tint: NQTheme.inkMuted, value: "\(gameState.profile?.battlesWon ?? 0)", label: "Battles won")
+            }
+        }
+        .nqPadding(.card)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .soft)
+    }
+
+    private func funStat(icon: String, tint: Color, value: String, label: String) -> some View {
+        HStack(spacing: NQTheme.spaceS) {
+            Image(systemName: icon)
+                .font(.system(size: NQText.body.size, weight: .bold))
+                .foregroundStyle(tint)
+                .frame(width: 26)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(value)
+                    .font(NQText.body.font.weight(.heavy))
+                    .foregroundStyle(NQTheme.ink)
+                    .lineLimit(1)
+                Text(label)
+                    .font(NQText.microS.font)
+                    .foregroundStyle(NQTheme.inkFaint)
+            }
+            Spacer(minLength: 0)
+        }
+        .nqPadding(.card)
+        .background(NQTheme.hairline.opacity(0.5), in: RoundedRectangle(cornerRadius: NQTheme.radiusM))
     }
 
     // MARK: - Multiplier tie-in
@@ -193,13 +245,15 @@ struct HealthDashboardView: View {
     private var multiplierCard: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS + 2) {
             HStack {
-                Text("Today's Squad Boost")
+                Text("Today's Eating Score")
                     .font(NQText.heading.font)
                     .foregroundStyle(NQTheme.ink)
                 Spacer()
-                NQChip("×\(String(format: "%.2f", gameState.lastMultiplier))", icon: .battle, filled: true)
+                Text("×\(String(format: "%.2f", gameState.lastMultiplier))")
+                    .font(NQText.heading.font.weight(.heavy))
+                    .foregroundStyle(NQTheme.gold)
             }
-            Text("Balanced eating powers your squad in battle. Here's what's driving today's number.")
+            Text("Balanced eating lifts the rarity of monsters your scans mint: and keeps the streak alive. What's driving today's number:")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.inkMuted)
             VStack(spacing: 6) {
@@ -224,7 +278,7 @@ struct HealthDashboardView: View {
                 .font(NQText.caption.font)
                 .foregroundStyle(NQTheme.inkSubtle)
             Spacer()
-            Text(bonus == 0 ? "—" : "\(bonus > 0 ? "+" : "")\(Int(bonus * 100))%")
+            Text(bonus == 0 ? "-" : "\(bonus > 0 ? "+" : "")\(Int(bonus * 100))%")
                 .font(NQText.captionS.font.weight(.heavy))
                 .foregroundStyle(bonus > 0 ? NQTheme.success : (bonus < 0 ? NQTheme.warning : NQTheme.inkFaint))
         }

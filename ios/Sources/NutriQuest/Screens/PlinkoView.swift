@@ -146,9 +146,7 @@ struct PlinkoView: View {
                         id: monster.character.id,
                         name: monster.character.name,
                         colorHex: monster.character.colorHex,
-                        rarity: rarity,
-                        statType: StatType(rawValue: monster.character.statType) ?? .fiber,
-                        isShiny: monster.shiny
+                        rarity: rarity
                     )
                 )
                 .frame(width: 64, height: 64)
@@ -205,7 +203,7 @@ struct PlinkoView: View {
                             .foregroundStyle(entry.multiplier >= 1 ? NQTheme.success : NQTheme.inkMuted)
                             .nqPadding(.chip)
                             .background((entry.multiplier >= 1 ? NQTheme.success : NQTheme.inkFaint).opacity(0.14))
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                 }
             }
@@ -280,9 +278,7 @@ struct PlinkoView: View {
                     id: monster.character.id,
                     name: monster.character.name,
                     colorHex: monster.character.colorHex,
-                    rarity: Rarity(rawValue: monster.character.rarity) ?? .common,
-                    statType: StatType(rawValue: monster.character.statType) ?? .fiber,
-                    isShiny: monster.shiny
+                    rarity: Rarity(rawValue: monster.character.rarity) ?? .common
                 )
             )
             .frame(width: 40, height: 40)
@@ -520,7 +516,9 @@ struct PlinkoBoardView: View {
                 let x = (centre + CGFloat(peg) - CGFloat(pegCount - 1) / 2 + 0.5) * slotWidth
                 let struck = isStruck(row: row, x: x, slotWidth: slotWidth, fall: fall)
                 Circle()
-                    .fill(struck ? orbTint : NQTheme.inkFaint.opacity(0.4))
+                    // Dark navy pegs against the mid-blue board — the faint
+                    // light pegs read as holes, not obstacles (#18).
+                    .fill(struck ? orbTint : NQTheme.inkDeep.opacity(0.8))
                     .frame(width: pegSize(slotWidth, struck: struck),
                            height: pegSize(slotWidth, struck: struck))
                     .position(x: x, y: rowHeight * CGFloat(row + 1))
@@ -678,9 +676,7 @@ struct PlinkoResultView: View {
                     id: reward.character.id,
                     name: reward.character.name,
                     colorHex: reward.character.colorHex,
-                    rarity: rarity,
-                    statType: StatType(rawValue: reward.character.statType) ?? .fiber,
-                    isShiny: reward.shiny
+                    rarity: rarity
                 )
             )
             .frame(width: 140, height: 140)
@@ -691,7 +687,7 @@ struct PlinkoResultView: View {
                 .foregroundStyle(rarity.badgeText)
                 .nqPadding(.chip)
                 .background(rarity.badgeBackground)
-                .clipShape(Capsule())
+                .clipShape(NQTicketShape())
 
             Text(reward.character.name)
                 .font(NQText.displayL.font)
@@ -781,7 +777,7 @@ struct PlinkoRulesView: View {
                             .accessibilityElement(children: .combine)
                         }
 
-                        Text("Across the whole board the table pays back about \(String(format: "%.1f", config.expectedMultiplier * 100))% — a \(String(format: "%.0f", config.actualHouseEdge * 100))% house edge, the same as the other games.")
+                        Text("Across the whole board the table pays back about \(String(format: "%.1f", config.expectedMultiplier * 100))%: a \(String(format: "%.0f", config.actualHouseEdge * 100))% house edge, the same as the other games.")
                             .font(NQText.microXS.font)
                             .foregroundStyle(NQTheme.inkFaint)
                             .fixedSize(horizontal: false, vertical: true)

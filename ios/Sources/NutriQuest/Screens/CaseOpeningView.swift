@@ -1,11 +1,13 @@
 import SwiftUI
 import NutriQuestUI
 
-/// Pushed from the shop when a case is picked. The server resolves the drop
+/// Pushed from the shop when a Cookbook is picked. A cookbook buys a rarity
+/// Case (spec §3): the server resolves the rarity and the mint together
 /// before anything animates; the reel only dramatises what it sent back, and
-/// the win lands as a popup once the strip settles.
+/// the win lands as a popup once the strip settles — the Case's rarity is
+/// part of that reveal.
 struct CaseOpeningView: View {
-    let shopCase: ShopCaseDTO
+    let cookbook: CookbookDTO
     @ObservedObject var gameState: GameState
 
     @Environment(\.dismiss) private var dismiss
@@ -22,11 +24,18 @@ struct CaseOpeningView: View {
         case revealed(CrateOpenResponse)
     }
     @State private var phase: Phase = .idle
+    /// Cookbook Boost (spec §6): earned every fifth streak day, spends one
+    /// per open to multiply Rare+ odds by ×1.15. Default on when held.
+    @State private var useBoost = true
 
-    private var floor: Rarity {
-        Rarity(rawValue: shopCase.odds.first?.rarity ?? "") ?? .common
+    private var affordable: Bool { gameState.coinBalance >= cookbook.price }
+    private var boostsHeld: Int { gameState.streak?.boosts ?? 0 }
+    /// A book with no Rare+ mass can't benefit from a boost — the server
+    /// wouldn't spend one anyway, so don't offer the toggle.
+    private var boostable: Bool {
+        cookbook.odds.contains { $0.tierChance > 0 && $0.rarity != "common" && $0.rarity != "uncommon" }
     }
-    private var affordable: Bool { gameState.coinBalance >= shopCase.coinCost }
+    private var boostActive: Bool { useBoost && boostsHeld > 0 && boostable }
     private var busy: Bool {
         if case .idle = phase { return false }
         return true
@@ -38,6 +47,8 @@ struct CaseOpeningView: View {
                 header
 
                 oddsCard
+
+                if boostsHeld > 0 && boostable { boostRow }
 
                 if case .spinning(let drop) = phase, let reel = drop.reel, let winnerIndex = drop.reelWinnerIndex {
                     CaseRouletteStrip(reel: reel, winnerIndex: winnerIndex) {
@@ -72,7 +83,7 @@ struct CaseOpeningView: View {
         switch phase {
         case .opening: return "Opening…"
         case .spinning: return "Spinning…"
-        default: return "Open · \(shopCase.coinCost.formatted()) coins"
+        default: return "Open · \(cookbook.price.formatted()) coins"
         }
     }
 
@@ -81,11 +92,11 @@ struct CaseOpeningView: View {
     private var header: some View {
         HStack(alignment: .top, spacing: NQTheme.spaceM) {
             VStack(alignment: .leading, spacing: NQTheme.spaceXS) {
-                Text("CASE")
+                Text("COOKBOOK")
                     .font(NQText.micro.font)
                     .tracking(2)
                     .foregroundStyle(NQTheme.gold)
-                Text(shopCase.name)
+                Text(cookbook.name)
                     .font(NQText.display.font)
                     .foregroundStyle(NQTheme.ink)
                     .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
@@ -95,22 +106,52 @@ struct CaseOpeningView: View {
         }
     }
 
-    /// Every tier the case stocks with its real chance — the whole odds
-    /// table, not just the likeliest three.
+    /// Every tier the book's Case roll can land, with its real chance — the
+    /// whole published odds table, not just the likeliest three.
     private var oddsCard: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
-            Text(shopCase.description)
+            Text(cookbook.description)
                 .font(NQText.body.font)
                 .foregroundStyle(NQTheme.inkMuted)
-            ForEach(shopCase.odds, id: \.rarity) { odds in
+            ForEach(cookbook.odds, id: \.rarity) { odds in
                 NQBandRow(color: Color(hex: odds.colorHex), label: odds.label, range: percent(odds.tierChance))
             }
         }
         .nqPadding(.card)
+        .nqSurface(.sticker, fill: cookbook.shopTint.mix(with: NQTheme.background, amount: 0.55))
+        .overlay {
+            NQPanelShape().strokeBorder(cookbook.shopTint, lineWidth: 3)
+        }
+    }
+
+    /// The Cookbook Boost toggle: one stored boost moves Rare+ odds ×1.15
+    /// (renormalized — Common/Uncommon exempt). The server only consumes it
+    /// when the open actually lands.
+    private var boostRow: some View {
+        HStack(spacing: NQTheme.spaceS) {
+            NQIconView(icon: .sparkle, tint: NQTheme.gold)
+                .frame(width: NQLayout.iconL, height: NQLayout.iconL)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Cookbook Boost")
+                    .font(NQText.caption.font.weight(.bold))
+                    .foregroundStyle(NQTheme.ink)
+                Text("Rare+ odds ×1.15 · \(boostsHeld) held")
+                    .font(NQText.micro.font)
+                    .foregroundStyle(NQTheme.inkMuted)
+            }
+            Spacer(minLength: 0)
+            Toggle("", isOn: $useBoost)
+                .labelsHidden()
+                .tint(NQTheme.gold)
+        }
+        .nqPadding(.card)
         .nqSurface(.sticker)
         .overlay {
-            NQPanelShape().strokeBorder(floor.ringColor.opacity(0.6), lineWidth: NQLayout.hairlineWidth)
+            NQPanelShape().strokeBorder(NQTheme.gold.opacity(0.6), lineWidth: NQLayout.hairlineWidth)
         }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Cookbook Boost, \(boostsHeld) held")
+        .accessibilityHint("Rare and better odds are multiplied by 1.15 on this open")
     }
 
     private func percent(_ chance: Double) -> String {
@@ -126,7 +167,7 @@ struct CaseOpeningView: View {
         Task {
             // The server has already decided the outcome by the time this
             // returns — the reel only animates what it resolved.
-            if let drop = await gameState.openShopCase(caseID: shopCase.id) {
+            if let drop = await gameState.openCookbook(cookbookID: cookbook.id, useBoost: boostActive) {
                 gameState.addCrateCharacter(drop: drop)
                 if drop.reel != nil, drop.reelWinnerIndex != nil {
                     phase = .spinning(drop)
@@ -140,41 +181,45 @@ struct CaseOpeningView: View {
         }
     }
 
-    /// The win, once the strip lands: artwork, name, rarity, worth. Tap
-    /// outside or "Done" dismisses back to the shop.
+    /// The win, once the strip lands: the Case's rarity first, then artwork,
+    /// name, worth. Tap outside or "Done" dismisses back to the shop.
     private func winPopup(_ drop: CrateOpenResponse) -> some View {
         let rarity = Rarity(rawValue: drop.character.rarity) ?? .common
+        let caseRarity = drop.caseRarity.flatMap { Rarity(rawValue: $0) } ?? rarity
         return ZStack {
             Color.black.opacity(0.55)
                 .ignoresSafeArea()
                 .onTapGesture { dismiss() }
 
             VStack(spacing: NQTheme.spaceM) {
-                Text("YOU GOT")
+                Text("YOU GOT A \(caseRarity.label.uppercased()) CASE")
                     .font(NQText.micro.font)
                     .tracking(2)
-                    .foregroundStyle(rarity.ringColor)
+                    .foregroundStyle(caseRarity.ringColor)
                 CharacterArtwork(
                     character: Character(
                         id: drop.character.id,
                         name: drop.character.name,
                         colorHex: drop.character.colorHex,
-                        rarity: rarity,
-                        statType: StatType(rawValue: drop.character.statType) ?? .fiber,
-                        isShiny: drop.shiny
+                        rarity: rarity
                     )
                 )
                 .frame(width: 120, height: 156)
                 Text(drop.character.name)
                     .font(NQText.headingL.font.weight(.heavy))
                     .foregroundStyle(NQTheme.ink)
-                HStack(spacing: NQTheme.spaceS) {
-                    NQChip(rarity.label, tint: rarity.ringColor, filled: true)
-                    if drop.shiny { NQChip("SHINY", tint: NQTheme.gold, filled: true) }
+                NQChip(rarity.label, tint: rarity.ringColor, filled: true)
+                if drop.boostApplied == true {
+                    NQChip("Boosted ×1.15", icon: .sparkle, tint: NQTheme.gold, filled: true)
                 }
                 Text("Worth \(drop.value.formatted()) coins")
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.inkMuted)
+                if drop.overflowed == true {
+                    Text("Inventory full: sent to your mailbox")
+                        .font(NQText.micro.font)
+                        .foregroundStyle(NQTheme.warning)
+                }
                 NQButton("Done", icon: .checkCircle) { dismiss() }
             }
             .nqPadding(.card)

@@ -4,15 +4,13 @@ import XCTest
 // ============================================================================
 // Scan -> character pipeline regression guard (issue #24).
 //
-// GameState.registerScan is the moment a scanned barcode becomes a playable
-// character. These tests pin the contract: the character lands in
-// GameState.scannedCharacters (the collection source of truth) and its
-// battle representation is registered so the battle screen can field it.
-//
-// Note: issue #20 tracks the fact that RootTabView still feeds Collection/
-// Battle from a static SampleData list instead of GameState.scannedCharacters.
-// When #20 lands and GameState becomes the single source of truth, these
-// tests guard the merge point.
+// GameState.registerScanResult is the moment a barcode scan becomes a
+// playable character. The server owns the mint — it scores nutrition, rolls
+// rarity, picks the catalog monster and returns the instance — so these
+// tests pin the client contract: the minted character lands in
+// GameState.scannedCharacters (the collection source of truth), its battle
+// snapshot is registered under the character id, and a duplicate scan logs
+// the meal without minting.
 // ============================================================================
 
 @MainActor
@@ -37,11 +35,48 @@ final class ScanPipelineTests: XCTestCase {
         return try JSONDecoder().decode(FoodProduct.self, from: json)
     }
 
+    private func makeResult(
+        name: String = "Nutella",
+        rarity: String = "rare",
+        baseHealth: Double = 120,
+        baseAttack: Double = 60,
+        duplicate: Bool = false
+    ) -> ScanResultDTO {
+        ScanResultDTO(
+            barcode: barcode,
+            foodName: name,
+            brands: nil,
+            nutritionScore: 62,
+            summonedCharacter: duplicate ? nil : LootCharacterDTO(
+                id: "scan-\(barcode)",
+                name: name,
+                colorHex: "#5FCB82",
+                rarity: rarity,
+                imageKey: nil,
+                tagline: nil,
+                baseHealth: baseHealth,
+                baseAttack: baseAttack,
+                baseMana: nil,
+                isLocked: false,
+                rarityLabel: nil,
+                rarityColorHex: nil,
+                flavor: nil,
+                bio: nil
+            ),
+            nutrition: ScanNutritionDTO(
+                calories: 539, proteinG: 6.3, carbsG: nil, fatG: nil,
+                fiberG: 3.3, sugarG: 56.3, sodiumMg: nil, satFatG: nil
+            ),
+            duplicate: duplicate,
+            mealId: "meal-1",
+            mint: duplicate ? nil : ScanMintDTO(dropId: "drop-1", netWorth: 1200, stars: 1)
+        )
+    }
+
     func testScanRegistersCharacterInCollection() throws {
         let gameState = GameState()
-        let product = try makeProduct()
 
-        let character = gameState.registerScan(product: product, barcode: barcode)
+        let character = try XCTUnwrap(gameState.registerScanResult(makeResult()))
 
         XCTAssertEqual(character.id, "scan-\(barcode)")
         XCTAssertEqual(character.name, "Nutella")
@@ -51,9 +86,8 @@ final class ScanPipelineTests: XCTestCase {
 
     func testScanRegistersBattleCharacter() throws {
         let gameState = GameState()
-        let product = try makeProduct()
 
-        let character = gameState.registerScan(product: product, barcode: barcode)
+        let character = try XCTUnwrap(gameState.registerScanResult(makeResult()))
 
         // Keyed by the character id — the same key every lookup uses. This
         // used to assert the bare barcode, which encoded a bug: lookups by
@@ -63,67 +97,47 @@ final class ScanPipelineTests: XCTestCase {
         XCTAssertEqual(battleCharacter?.name, "Nutella")
     }
 
-    /// The stats a battle actually uses must be the scanned nutrition, not
-    /// the balanced sample fallback (all 50s).
-    func testScannedCharacterBattlesWithItsRealStats() throws {
+    /// The stats a battle actually uses must be the server's minted bases,
+    /// not the local fallback (100/50).
+    func testScannedCharacterBattlesWithItsServerStats() throws {
         let gameState = GameState()
-        let product = try makeProduct()
 
-        let character = gameState.registerScan(product: product, barcode: barcode)
-        let stats = try XCTUnwrap(gameState.battleStats(for: character))
+        let character = try XCTUnwrap(gameState.registerScanResult(
+            makeResult(baseHealth: 120, baseAttack: 60)
+        ))
+        let stats = gameState.battleStats(for: character)
 
-        // CharacterFactory: power = 20 + protein × 4. The sample fallback is 50.
-        XCTAssertEqual(stats.baseStats.power, 20 + 6.3 * 4, accuracy: 0.001)
-        XCTAssertNotEqual(stats.baseStats.power, 50)
+        XCTAssertEqual(stats.baseHealth, 120, accuracy: 0.001)
+        XCTAssertEqual(stats.baseAttack, 60, accuracy: 0.001)
     }
 
-    /// A product with enough scarcity signals must surface its real tier.
-    ///
-    /// Regression guard: BattleRarity is Int-backed and Rarity is String-backed,
-    /// so bridging through the raw value produced "0"/"1"/... and fell back to
-    /// .common for every scan ever made. CharacterFactory scores 4+ labels as
-    /// .rare, so this product must not come back common.
-    func testScanPreservesRarityFromTheProduct() throws {
+    /// Rarity comes from the server's roll — the client never re-derives it.
+    func testScanPreservesRarityFromTheServer() throws {
         let gameState = GameState()
-        let json = """
-        {
-            "product_name_en": "Fancy Muesli",
-            "nutriments": { "proteins_100g": 12, "fiber_100g": 9, "sugars_100g": 4 },
-            "vitamins_tags": ["en:vitamin-b2", "en:vitamin-e"],
-            "labels_tags": ["en:organic", "en:fair-trade", "en:no-added-sugar"]
-        }
-        """.data(using: .utf8)!
-        let product = try JSONDecoder().decode(FoodProduct.self, from: json)
 
-        let character = gameState.registerScan(product: product, barcode: "1234567890123")
-
-        XCTAssertEqual(character.rarity, .rare)
-    }
-
-    /// Every BattleKit tier must survive the hop into the app's Rarity enum.
-    func testEveryRarityTierBridgesFromBattleKit() throws {
-        let gameState = GameState()
-        // 8+ labels scores .epic in CharacterFactory.
-        let json = """
-        {
-            "product_name_en": "Superfood Bowl",
-            "nutriments": { "proteins_100g": 20, "fiber_100g": 14, "sugars_100g": 2 },
-            "vitamins_tags": ["en:vitamin-a", "en:vitamin-c", "en:vitamin-d", "en:vitamin-e"],
-            "labels_tags": ["en:organic", "en:vegan", "en:gluten-free", "en:fair-trade", "en:no-additives"]
-        }
-        """.data(using: .utf8)!
-        let product = try JSONDecoder().decode(FoodProduct.self, from: json)
-
-        let character = gameState.registerScan(product: product, barcode: "9876543210987")
+        let character = try XCTUnwrap(gameState.registerScanResult(makeResult(rarity: "epic")))
 
         XCTAssertEqual(character.rarity, .epic)
     }
 
+    /// A barcode mints once per user ever: the duplicate response carries no
+    /// monster but still logs the meal and the scan.
+    func testDuplicateScanMintsNothingButStillLogs() throws {
+        let gameState = GameState()
+
+        let character = gameState.registerScanResult(makeResult(duplicate: true))
+
+        XCTAssertNil(character)
+        XCTAssertTrue(gameState.scannedCharacters.isEmpty)
+        XCTAssertEqual(gameState.recentScans.first, "Nutella")
+        // The meal also lands on the day log, but appendDayLog is async —
+        // asserting it here races the MainActor hop.
+    }
+
     func testRecentScansLogRecordsDisplayName() throws {
         let gameState = GameState()
-        let product = try makeProduct(name: "Nutella")
 
-        gameState.registerScan(product: product, barcode: barcode)
+        _ = gameState.registerScanResult(makeResult())
 
         XCTAssertEqual(gameState.recentScans.first, "Nutella")
     }

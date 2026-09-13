@@ -12,6 +12,11 @@ import { migration as humanGatePersona } from "./011_human_gate_persona";
 import { migration as mirrorOutbox } from "./012_mirror_outbox";
 import { migration as caseCoinReason } from "./013_case_coin_reason";
 import { migration as collectionDrops } from "./014_collection_drops";
+import { migration as cookbookEconomy } from "./015_cookbook_economy";
+import { migration as scanMintAndMeals } from "./016_scan_mint_and_meals";
+import { migration as progression } from "./017_progression";
+import { migration as battleMatches } from "./018_battle_matches";
+import { migration as healMissingTables } from "./019_heal_missing_tables";
 
 export const migrations = [
   initial,
@@ -27,5 +32,10 @@ export const migrations = [
   humanGatePersona,
   mirrorOutbox,
   caseCoinReason,
-  collectionDrops
+  collectionDrops,
+  cookbookEconomy,
+  scanMintAndMeals,
+  progression,
+  battleMatches,
+  healMissingTables
 ];

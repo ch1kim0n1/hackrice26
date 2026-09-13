@@ -131,8 +131,8 @@ struct BodyMetricsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, NQTheme.spaceS)
-        .background(color.opacity(0.16))
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusS))
+        .background(NQTicketShape().fill(color.opacity(0.16)))
+        .overlay { NQTicketShape().strokeBorder(color.opacity(0.5), lineWidth: 1.5) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label) \(grams) grams")
     }
@@ -164,7 +164,8 @@ struct BodyMetricsView: View {
     }
 
     /// Imperial/metric switch. Only changes how the numbers are shown — the
-    /// stored values stay metric.
+    /// stored values stay metric. Persists on tap: a display preference
+    /// shouldn't wait on the Save button at the bottom of the form.
     private var unitToggle: some View {
         HStack(spacing: NQTheme.spaceM) {
             Text("Units")
@@ -177,6 +178,9 @@ struct BodyMetricsView: View {
             }
             .pickerStyle(.segmented)
             .frame(width: 190)
+            // Persisting inside the Picker's set made the segmented control
+            // snap back mid-gesture; onChange lands after it settles.
+            .onChange(of: draft.usesMetric) { gameState.setUnitsPreference($0) }
         }
         .padding(.vertical, NQTheme.spaceS)
     }

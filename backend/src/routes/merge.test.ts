@@ -32,29 +32,32 @@ let counter = 0;
 
 /** A player holding `count` identical copies at `star`. */
 async function withCopies(
-  spec: { character: string; value: number; star: number; count: number },
+  spec: { character: string; rarity?: string; value: number; star: number; count: number },
   run: (call: Call, ctx: { playerId: string; ids: string[] }) => Promise<void>
 ): Promise<void> {
   const { charactersRouter } = await import("./characters");
   const { stateFor } = await import("../services/lootboxState");
-  const { CHARACTERS } = await import("../data/lootTable");
+  const { testDrop, testCharacter } = await import("../testkit");
+  const { rarityForValue } = await import("../game/rarityBands");
 
   const playerId = `merge_${counter++}_${Date.now()}`;
   const session = stateFor(playerId);
 
+  const character = testCharacter(
+    (spec.rarity ?? rarityForValue(spec.value)) as never,
+    spec.character
+  );
   const ids = Array.from({ length: spec.count }, (_, i) =>
-    session.record({
-      crateId: "starter-crate",
-      character: CHARACTERS[spec.character],
-      stars: spec.star,
-      power: 55,
-      powerLabel: "Steady",
-      shiny: false,
-      value: spec.value,
-      rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
-      fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i },
-      openedAt: new Date().toISOString()
-    }).id
+    session.record(
+      testDrop({
+        crateId: "test",
+        character,
+        stars: spec.star,
+        baseMintValue: spec.value,
+        value: spec.value,
+        fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i }
+      })
+    ).drop.id
   );
 
   const app = express();
@@ -136,21 +139,18 @@ describe("merging", () => {
   it("refuses copies that are not the same character or star", async () => {
     await withCopies({ character: "broccoli-bud", value: 500, star: 1, count: 3 }, async (call, { playerId, ids }) => {
       const { stateFor } = await import("../services/lootboxState");
-      const { CHARACTERS } = await import("../data/lootTable");
+      const { testDrop, testCharacter } = await import("../testkit");
       const session = stateFor(playerId);
 
-      const different = session.record({
-        crateId: "starter-crate",
-        character: CHARACTERS["carrot-cadet"],
-        stars: 1,
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
-        value: 500,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
-        fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 9 },
-        openedAt: new Date().toISOString()
-      });
+      const different = session.record(
+        testDrop({
+          crateId: "test",
+          character: testCharacter("common", "carrot-cadet"),
+          baseMintValue: 500,
+          value: 500,
+          fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 9 }
+        })
+      ).drop;
 
       const mismatch = await call("POST", "/characters/merge", {
         dropIds: [ids[0], ids[1], different.id]
@@ -165,22 +165,19 @@ describe("merging", () => {
   it("refuses copies of the same character at a different rarity", async () => {
     await withCopies({ character: "broccoli-bud", value: 500, star: 1, count: 3 }, async (call, { playerId, ids }) => {
       const { stateFor } = await import("../services/lootboxState");
-      const { CHARACTERS } = await import("../data/lootTable");
+      const { testDrop, testCharacter } = await import("../testkit");
       const session = stateFor(playerId);
 
       // Same character, same star — but the rarity is off.
-      const offRarity = session.record({
-        crateId: "starter-crate",
-        character: { ...CHARACTERS["broccoli-bud"], rarity: "rare" },
-        stars: 1,
-        power: 55,
-        powerLabel: "Steady",
-        shiny: false,
-        value: 500,
-        rolls: { rarity: 0.1, character: 0.1, power: 0.1, shiny: 0.9 },
-        fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 9 },
-        openedAt: new Date().toISOString()
-      });
+      const offRarity = session.record(
+        testDrop({
+          crateId: "test",
+          character: testCharacter("rare", "broccoli-bud"),
+          baseMintValue: 500,
+          value: 500,
+          fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: 9 }
+        })
+      ).drop;
 
       const mismatch = await call("POST", "/characters/merge", {
         dropIds: [ids[0], ids[1], offRarity.id]
@@ -216,5 +213,67 @@ describe("merging", () => {
       // All three survive: consumeDrops is all-or-nothing.
       for (const id of ids) expect(session.dropById(id)).toBeDefined();
     });
+  });
+
+  it("inherits the highest baseMintValue of the three consumed copies", async () => {
+    // Spec §2: fusion keeps max(baseMintValue) — a valuable copy's worth
+    // survives merging, not just the average. Seed three copies of the same
+    // character/rarity/star with deliberately different bases.
+    const { charactersRouter } = await import("./characters");
+    const { stateFor } = await import("../services/lootboxState");
+    const { testDrop, testCharacter } = await import("../testkit");
+    const { starBonus } = await import("../game/rarityBands");
+
+    const playerId = `merge_inherit_${Date.now()}`;
+    const session = stateFor(playerId);
+    const character = testCharacter("rare", "salmon-striker");
+    const ids = [2_800, 3_400, 2_900].map(
+      (base, i) =>
+        session.record(
+          testDrop({
+            crateId: "test",
+            character,
+            stars: 1,
+            baseMintValue: base,
+            value: base,
+            fairness: { serverSeedHash: "hash", clientSeed: "seed", nonce: i }
+          })
+        ).drop.id
+    );
+
+    const app = express();
+    app.use(express.json());
+    app.use("/characters", charactersRouter);
+    const server = app.listen(0);
+    await new Promise<void>((resolve) => server.once("listening", resolve));
+    const port = (server.address() as { port: number }).port;
+    const call: Call = (method, url, body) =>
+      fetch(`http://127.0.0.1:${port}${url}`, {
+        method,
+        headers: { "Content-Type": "application/json", "X-Player-Id": playerId },
+        body: body === undefined ? undefined : JSON.stringify(body)
+      });
+
+    try {
+      const body = (await (
+        await call("POST", "/characters/merge", { dropIds: ids })
+      ).json()) as MergeBody & { merged: { baseMintValue: number } };
+      expect(body.merged.baseMintValue).toBe(3_400);
+      expect(body.to.value).toBe(3_400 + starBonus("rare", 2));
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it("refuses to fuse a Secret past ★2 — the terminal cap", async () => {
+    // Spec §2: Secret is the one rarity that cannot reach ★5.
+    await withCopies(
+      { character: "the-first-seed", rarity: "secret", value: 200_000, star: 2, count: 3 },
+      async (call, { ids }) => {
+        const response = await call("POST", "/characters/merge", { dropIds: ids });
+        expect(response.status).toBe(409);
+        expect(((await response.json()) as { error: { code: string } }).error.code).toBe("MAX_STAR");
+      }
+    );
   });
 });

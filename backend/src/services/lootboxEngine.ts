@@ -1,4 +1,4 @@
-// Crate opening logic.
+// Cookbook / Case opening logic.
 //
 // Every outcome is derived from three inputs -- a server seed, a client seed and
 // a nonce -- so it can be recomputed and checked afterwards. This is the
@@ -8,38 +8,34 @@
 //     roll(cursor) = HMAC_SHA256(serverSeed, `${clientSeed}:${nonce}:${cursor}`)
 //
 // The first 8 hex digits become a float in [0, 1). A distinct cursor per
-// decision keeps the draws independent while staying reproducible.
+// decision keeps the draws independent while staying reproducible. No roll is
+// ever turned into an integer via `% N` — that would bias toward low indices
+// when N doesn't divide 2^32. Indices come from floor(unit * N), which is
+// unbiased for a uniform unit.
 //
 // The server publishes SHA256(serverSeed) *before* any open and reveals the seed
 // only when rotating it, so past rolls can be verified but never chosen.
 
 import { createHash, createHmac, randomBytes } from "crypto";
 import {
-  BASE_VALUES,
-  CHARACTERS,
-  POWER_BANDS,
+  COOKBOOK_BY_ID,
   RARITY_ORDER,
-  RARITY_TIERS
+  RARITY_TIERS,
+  mintPool
 } from "../data/lootTable";
-import { Character, Crate, CrateOdds, DropRolls, PowerBand, Rarity } from "../types";
-import { dropNetWorth } from "../game/rarityBands";
-import { RankTier } from "../game/rankTiers";
-
-/** What selection actually needs from a crate — key crates and coin-shop
- *  cases both satisfy it. */
-export type CrateStock = Pick<Crate, "id" | "characterIds">;
+import { RosterCharacter, asCharacter } from "../data/roster";
+import { Character, Cookbook, CrateOdds, DropRolls, Rarity } from "../types";
+import { mintValue } from "../game/rarityBands";
+import { BOOST_EXEMPT, BOOST_RARE_PLUS_MULT } from "../game/spec";
 
 /** One cursor per independent decision, so no two draws share a digest. */
 export const CURSOR = {
   rarity: 0,
   character: 1,
-  power: 2,
-  shiny: 3,
+  mintSegment: 2,
+  mintPosition: 3,
   reelBase: 100
 } as const;
-
-export const SHINY_CHANCE = 0.1;
-export const SHINY_MULTIPLIER = 2;
 
 export const REEL_LENGTH = 60;
 /** The reel scrolls past its tail and stops here. */
@@ -69,77 +65,36 @@ export function roll(
 // Selection
 // ---------------------------------------------------------------------------
 
-// Crate composition never changes at runtime, so derive the tables once.
-const weightsCache = new Map<string, Partial<Record<Rarity, number>>>();
-const poolCache = new Map<string, Character[]>();
-
 /**
- * Tier weights restricted to the tiers this crate actually stocks.
- *
- * A crate need not contain every tier. Renormalising over the tiers present
- * keeps the odds a true probability distribution, instead of silently losing the
- * missing tiers' share of the roll to whichever tier happens to be last.
+ * Pick a rarity off a probability table (a Cookbook's published odds, or a
+ * fixed-rarity Case's degenerate table). Rarest first: the tiny intervals sit
+ * at the bottom of the range where floating-point noise in a wide band ahead
+ * of them cannot swallow them.
  */
-export function crateRarityWeights(crate: CrateStock): Partial<Record<Rarity, number>> {
-  const cached = weightsCache.get(crate.id);
-  if (cached) return cached;
-
-  const present = new Set(crate.characterIds.map((id) => CHARACTERS[id].rarity));
-  const weights: Partial<Record<Rarity, number>> = {};
-  for (const rarity of RARITY_ORDER) {
-    if (present.has(rarity)) weights[rarity] = RARITY_TIERS[rarity].weight;
-  }
-  weightsCache.set(crate.id, weights);
-  return weights;
-}
-
-/** The crate's characters of one tier, in a stable order. */
-export function cratePool(crate: CrateStock, rarity: Rarity): Character[] {
-  const key = `${crate.id}:${rarity}`;
-  const cached = poolCache.get(key);
-  if (cached) return cached;
-
-  const pool = crate.characterIds
-    .map((id) => CHARACTERS[id])
-    .filter((c) => c.rarity === rarity)
-    .sort((a, b) => a.id.localeCompare(b.id));
-  poolCache.set(key, pool);
-  return pool;
-}
-
-/** Per-tier odds bonus on non-common pulls (issue #86): silver +25%, gold
- *  +50%, plat +75% weight on every tier above common. The common slice shrinks
- *  correspondingly after normalisation — pity is applied after this, so a
- *  forced epic/legendary still always wins. */
-const RANK_ODDS_STEP: Record<RankTier, number> = { bronze: 0, silver: 0.25, gold: 0.5, plat: 0.75 };
-
-export function rankScaledWeights(
-  weights: Partial<Record<Rarity, number>>,
-  tier: RankTier
-): Partial<Record<Rarity, number>> {
-  const boost = RANK_ODDS_STEP[tier];
-  if (!boost) return weights;
-  const out: Partial<Record<Rarity, number>> = {};
-  for (const [rarity, w] of Object.entries(weights) as [Rarity, number][]) {
-    out[rarity] = rarity === "common" ? w : w * (1 + boost);
-  }
-  return out;
-}
-
 /**
- * Walk the cumulative weights from rarest to most common.
- *
- * Rarest first is deliberate: it puts the tiny intervals at the bottom of the
- * range, where they cannot be swallowed by floating point noise in a much wider
- * band sitting ahead of them.
+ * A Cookbook Boost's odds table (spec §6): Rare-and-above weights ×1.15,
+ * renormalized to sum to 1. Common/Uncommon are exempt — the boost pushes
+ * probability mass at the top of the ladder, exactly once.
  */
-export function pickRarity(crate: CrateStock, value: number, tier?: RankTier): Rarity {
-  const weights = tier ? rankScaledWeights(crateRarityWeights(crate), tier) : crateRarityWeights(crate);
-  const entries = (Object.entries(weights) as [Rarity, number][]).sort(
-    (a, b) => a[1] - b[1]
-  );
+export function boostedOdds(odds: Partial<Record<Rarity, number>>): Partial<Record<Rarity, number>> {
+  const scaled = Object.fromEntries(
+    RARITY_ORDER.map((rarity) => [
+      rarity,
+      (odds[rarity] ?? 0) * (BOOST_EXEMPT.includes(rarity) ? 1 : BOOST_RARE_PLUS_MULT)
+    ])
+  ) as Record<Rarity, number>;
+  const total = RARITY_ORDER.reduce((sum, r) => sum + scaled[r], 0);
+  if (total <= 0) return { ...odds };
+  return Object.fromEntries(RARITY_ORDER.map((r) => [r, scaled[r] / total]));
+}
+
+export function pickRarity(odds: Partial<Record<Rarity, number>>, value: number): Rarity {
+  const entries = RARITY_ORDER
+    .map((rarity) => [rarity, odds[rarity] ?? 0] as [Rarity, number])
+    .filter(([, w]) => w > 0)
+    .sort((a, b) => a[1] - b[1]);
   const total = entries.reduce((sum, [, w]) => sum + w, 0);
-  const target = value * total;
+  const target = Math.min(Math.max(value, 0), 1 - Number.EPSILON) * total;
 
   let cumulative = 0;
   for (const [rarity, weight] of entries) {
@@ -149,129 +104,113 @@ export function pickRarity(crate: CrateStock, value: number, tier?: RankTier): R
   return entries[entries.length - 1][0]; // unreachable but for rounding
 }
 
-/** Uniform pick among the crate's characters of that tier. */
-export function pickCharacter(crate: CrateStock, rarity: Rarity, value: number): Character {
-  const pool = cratePool(crate, rarity);
+/**
+ * Uniform pick of a character *design* from the rolled rarity's pool.
+ * Rarity lives on the instance, not the design — the same roll unit picks
+ * the design, and the caller stamps the rolled rarity onto it via
+ * asCharacter(). Secret pools are the brainrot set.
+ */
+export function pickDesign(value: number, rarity: Rarity): RosterCharacter {
+  const pool = mintPool(rarity);
   return pool[Math.min(Math.floor(value * pool.length), pool.length - 1)];
-}
-
-export function powerBandFor(power: number): PowerBand {
-  return (
-    POWER_BANDS.find((b) => power >= b.min && power < b.max) ??
-    POWER_BANDS[POWER_BANDS.length - 1]
-  );
 }
 
 // ---------------------------------------------------------------------------
 // Opening
 // ---------------------------------------------------------------------------
 
-// Pity guarantees (game/pity.ts): an Epic-or-better pull is guaranteed on the
-// 15th consecutive open without one, Legendary-or-better on the 40th.
-export const EPIC_PITY = 15;
-export const LEGENDARY_PITY = 40;
-
-/** Rarity rank in the crate ladder — pity only ever upgrades, never downgrades. */
-const TIER_RANK: Record<Rarity, number> = {
-  common: 0, uncommon: 1, rare: 2, epic: 3, legendary: 4, mythic: 5, secret: 6
-};
-
-export interface PityState {
-  sinceEpic: number;
-  sinceLegendary: number;
-}
-
-/**
- * Apply pity to a rolled rarity. Deterministic given the counters, which the
- * API discloses — the roll still happened (see `rolls`), pity just lifts the
- * tier when the guarantee comes due. Returns the forced tier, if any.
- */
-export function applyPity(
-  crate: CrateStock,
-  rolled: Rarity,
-  pity: PityState
-): { rarity: Rarity; forced: "epic" | "legendary" | null } {
-  const stocked = new Set(crate.characterIds.map((id) => CHARACTERS[id].rarity));
-  let rarity = rolled;
-  let forced: "epic" | "legendary" | null = null;
-
-  if (pity.sinceLegendary + 1 >= LEGENDARY_PITY && TIER_RANK[rarity] < TIER_RANK.legendary) {
-    const target: Rarity = stocked.has("legendary") ? "legendary"
-      : stocked.has("mythic") ? "mythic"
-      : "secret";
-    rarity = target;
-    forced = "legendary";
-  } else if (pity.sinceEpic + 1 >= EPIC_PITY && TIER_RANK[rarity] < TIER_RANK.epic) {
-    rarity = "epic";
-    forced = "epic";
-  }
-  return { rarity, forced };
-}
-
-/** Advance pity counters after an open resolves at `rarity`. */
-export function advancePity(pity: PityState, rarity: Rarity): PityState {
-  return {
-    sinceEpic: TIER_RANK[rarity] >= TIER_RANK.epic ? 0 : pity.sinceEpic + 1,
-    sinceLegendary: TIER_RANK[rarity] >= TIER_RANK.legendary ? 0 : pity.sinceLegendary + 1
-  };
-}
-
 export interface OpenOutcome {
   character: Character;
-  power: number;
-  powerLabel: string;
-  shiny: boolean;
+  /** Rarity of the Case this mint came out of. */
+  caseRarity: Rarity;
+  baseMintValue: number;
   value: number;
   rolls: DropRolls;
-  /** Set when pity overrode the rolled tier — disclosed so the open stays auditable. */
-  pityForced: "epic" | "legendary" | null;
-  reel: string[];
+  /** The reel's cosmetic filler — monster instances with their rolled rarity. */
+  reel: Character[];
   reelWinnerIndex: number;
   openedAt: string;
 }
 
-/** Resolve one open. Pure: the same seeds and nonce always give this result. */
-export function openCrate(
-  crate: CrateStock,
-  serverSeed: string,
-  clientSeed: string,
+interface SeedPair {
+  serverSeed: string;
+  clientSeed: string;
+}
+
+/**
+ * Mint a ★1 monster of a known rarity — the second half of every container
+ * open, shared by Cookbooks and granted Cases.
+ */
+function mintMonster(
+  sourceId: string,
+  rarity: Rarity,
+  pair: SeedPair,
   nonce: number,
-  pity?: PityState,
-  rankTier?: RankTier
+  rarityRoll: number,
+  reelOdds: Partial<Record<Rarity, number>>
 ): OpenOutcome {
-  const rarityRoll = roll(serverSeed, clientSeed, nonce, CURSOR.rarity);
-  const characterRoll = roll(serverSeed, clientSeed, nonce, CURSOR.character);
-  const powerRoll = roll(serverSeed, clientSeed, nonce, CURSOR.power);
-  const shinyRoll = roll(serverSeed, clientSeed, nonce, CURSOR.shiny);
+  const characterRoll = roll(pair.serverSeed, pair.clientSeed, nonce, CURSOR.character);
+  const segmentRoll = roll(pair.serverSeed, pair.clientSeed, nonce, CURSOR.mintSegment);
+  const positionRoll = roll(pair.serverSeed, pair.clientSeed, nonce, CURSOR.mintPosition);
 
-  const rolled = pickRarity(crate, rarityRoll, rankTier);
-  const { rarity, forced } = pity ? applyPity(crate, rolled, pity) : { rarity: rolled, forced: null };
-  const character = pickCharacter(crate, rarity, characterRoll);
-  const power = Math.round(powerRoll * 1000) / 10; // 0.0 - 100.0
-  const band = powerBandFor(power);
-  const shiny = shinyRoll < SHINY_CHANCE;
-
-  // Net worth is the rarity's band floor plus however far the power roll and
-  // the holo carry it up that band -- never past it (game/rarityBands.ts).
-  const value = dropNetWorth(rarity, band.valueMultiplier, shiny);
+  const character = asCharacter(pickDesign(characterRoll, rarity), rarity);
+  const baseMintValue = mintValue(rarity, segmentRoll, positionRoll);
 
   return {
     character,
-    power,
-    powerLabel: band.label,
-    shiny,
-    value,
+    caseRarity: rarity,
+    baseMintValue,
+    value: baseMintValue, // fresh mints are ★1: star bonus is 0
     rolls: {
       rarity: rarityRoll,
       character: characterRoll,
-      power: powerRoll,
-      shiny: shinyRoll
+      mintSegment: segmentRoll,
+      mintPosition: positionRoll
     },
-    pityForced: forced,
-    reel: buildReel(crate, character, serverSeed, clientSeed, nonce),
+    reel: buildReel(reelOdds, character, pair.serverSeed, pair.clientSeed, nonce),
     reelWinnerIndex: REEL_WINNER_INDEX,
     openedAt: new Date().toISOString()
   };
+}
+
+/**
+ * Resolve one Cookbook open (spec §3): the rarity roll picks which Case the
+ * book produced, then a monster of that rarity mints. Pure: same seeds and
+ * nonce always give this result.
+ */
+export function openCookbook(
+  book: Cookbook,
+  serverSeed: string,
+  clientSeed: string,
+  nonce: number,
+  /** Cookbook Boost table — pass boostedOdds(book.odds) when a boost was
+   *  consumed for this open. Defaults to the book's published odds. */
+  odds: Partial<Record<Rarity, number>> = book.odds
+): OpenOutcome {
+  const rarityRoll = roll(serverSeed, clientSeed, nonce, CURSOR.rarity);
+  const rarity = pickRarity(odds, rarityRoll);
+  return mintMonster(book.id, rarity, { serverSeed, clientSeed }, nonce, rarityRoll, odds);
+}
+
+/**
+ * Resolve a granted Case (ranked win, promo): the rarity is already decided,
+ * the roll chain still mints character + net worth. The `rarity` roll is
+ * recorded as 1.0 — no rarity was rolled — so verification stays honest.
+ */
+export function openCaseRarity(
+  rarity: Rarity,
+  serverSeed: string,
+  clientSeed: string,
+  nonce: number
+): OpenOutcome {
+  return mintMonster(
+    `case:${rarity}`,
+    rarity,
+    { serverSeed, clientSeed },
+    nonce,
+    1,
+    { [rarity]: 1 }
+  );
 }
 
 /**
@@ -280,101 +219,46 @@ export function openCrate(
  * reproduces the exact animation and not merely the result.
  */
 export function buildReel(
-  crate: CrateStock,
+  odds: Partial<Record<Rarity, number>>,
   winner: Character,
   serverSeed: string,
   clientSeed: string,
   nonce: number
-): string[] {
-  const reel: string[] = [];
+): Character[] {
+  const reel: Character[] = [];
   for (let slot = 0; slot < REEL_LENGTH; slot++) {
     if (slot === REEL_WINNER_INDEX) {
-      reel.push(winner.id);
+      reel.push(winner);
       continue;
     }
-    const rarity = pickRarity(crate, roll(serverSeed, clientSeed, nonce, CURSOR.reelBase + slot));
+    const rarity = pickRarity(odds, roll(serverSeed, clientSeed, nonce, CURSOR.reelBase + slot));
     const filler = roll(serverSeed, clientSeed, nonce, CURSOR.reelBase + slot + REEL_LENGTH);
-    reel.push(pickCharacter(crate, rarity, filler).id);
+    reel.push(asCharacter(pickDesign(filler, rarity), rarity));
   }
   return reel;
 }
 
-/** Per-character drop chance, so the UI can show real numbers rather than vibes. */
-export function crateOdds(crate: CrateStock): CrateOdds[] {
-  const weights = crateRarityWeights(crate);
-  const total = Object.values(weights).reduce((sum, w) => sum + (w ?? 0), 0);
-
-  return (Object.entries(weights) as [Rarity, number][])
-    .map(([rarity, weight]) => {
-      const pool = cratePool(crate, rarity);
-      const tierChance = weight / total;
+/** Per-tier and per-character odds for a Cookbook — real numbers for the UI. */
+export function cookbookOdds(book: Cookbook): CrateOdds[] {
+  return RARITY_ORDER
+    .filter((rarity) => (book.odds[rarity] ?? 0) > 0)
+    .map((rarity) => {
+      const tierChance = book.odds[rarity];
+      const designCount = mintPool(rarity).length;
       return {
         rarity,
         label: RARITY_TIERS[rarity].label,
         colorHex: RARITY_TIERS[rarity].colorHex,
         tierChance,
-        oneIn: Math.round(total / weight),
-        characterCount: pool.length,
-        perCharacterChance: pool.length ? tierChance / pool.length : 0
+        oneIn: Math.round(1 / tierChance),
+        characterCount: designCount,
+        perCharacterChance: tierChance / designCount
       };
     })
     .sort((a, b) => b.tierChance - a.tierChance);
 }
 
-// ---------------------------------------------------------------------------
-// Coin-shop cases
-// ---------------------------------------------------------------------------
-
-/**
- * Resolve one coin-shop case open the Loot-Boxes-Logic branch's way: the plain
- * weighted roll over the case's stocked tiers (no pity, no rank boost), the
- * same seed chain and reel, and value from BASE_VALUES × power band × shiny
- * instead of the rarity bands key crates use.
- */
-export function openShopCase(
-  crate: CrateStock,
-  serverSeed: string,
-  clientSeed: string,
-  nonce: number
-): OpenOutcome {
-  const outcome = openCrate(crate, serverSeed, clientSeed, nonce);
-  const band = powerBandFor(outcome.power);
-  return {
-    ...outcome,
-    value: Math.round(
-      BASE_VALUES[outcome.character.rarity] * band.valueMultiplier * (outcome.shiny ? SHINY_MULTIPLIER : 1)
-    )
-  };
-}
-
-/** Mean power-band value multiplier over a uniform 0-100 power roll. */
-function expectedPowerMultiplier(): number {
-  return POWER_BANDS.reduce((sum, band) => {
-    const width = Math.min(band.max, 100) - Math.max(band.min, 0);
-    return sum + (width / 100) * band.valueMultiplier;
-  }, 0);
-}
-
-/**
- * The house margin on a shop case. At exactly expected value a case is a
- * coin-neutral slot machine — buy at EV, sell the drop back at full worth,
- * repeat forever with free upside. A 15% overround keeps the shop a sink.
- */
-export const SHOP_CASE_MARGIN = 1.15;
-
-/**
- * A case's coin price: what its drop is worth on average (tier odds ×
- * BASE_VALUES × expected power multiplier × expected shiny multiplier) plus
- * the house margin, rounded up to the next 10. Derived rather than hand-set,
- * so a pricier case costs more exactly because its odds are better, and
- * editing BASE_VALUES or the odds re-prices the shop with it.
- */
-export function shopCaseCoinCost(crate: CrateStock): number {
-  const shinyMultiplier = 1 + SHINY_CHANCE * (SHINY_MULTIPLIER - 1);
-  const expected =
-    crateOdds(crate).reduce((sum, odds) => sum + odds.tierChance * BASE_VALUES[odds.rarity], 0) *
-    expectedPowerMultiplier() *
-    shinyMultiplier *
-    SHOP_CASE_MARGIN;
-  return Math.ceil(expected / 10) * 10;
+/** Look a Cookbook up by id — undefined if the id is not one of the four. */
+export function cookbookFor(id: string): Cookbook | undefined {
+  return COOKBOOK_BY_ID[id];
 }

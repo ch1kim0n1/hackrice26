@@ -42,32 +42,69 @@ final class GameState: ObservableObject {
     /// Characters pulled from loot crates (issue #21) — merged into the
     /// collection alongside scans and the starter roster.
     @Published var crateCharacters: [Character] = []
-    @Published var battleCharacters: [String: FoodCharacter] = [:]
+    /// Battle-ready snapshots keyed by card id — minted monsters keep their
+    /// server-rolled combat bases here for squad/dungeon calls.
+    @Published var battleCharacters: [String: BattleUnitSpec] = [:]
     @Published var lastReplay: BattleReplay?
-    /// BattleKit unit UUID -> app Character id, so replay events attribute
-    /// to the characters rendered on screen.
-    @Published var lastUnitIDs: [UUID: String] = [:]
+    /// Unit ids in a replay are already the squad ids sent to the server —
+    /// no UUID mapping needed (the legacy engine's UUID-keyed events are gone).
     @Published var recentScans: [String] = []
     @Published var lastMultiplier: Double = 1.0
     /// Present the crate opening sheet (Home button, QA launch arg).
     @Published var showCrates = false
 
-    // Backend-backed state. nil profile/keys means "not loaded yet";
-    // screens should fall back to cached/sample values while loading.
+    /// The player identity every user-scoped call keys on: the authenticated
+    /// session's id once the human gate lands, the install-local id before.
+    /// Using `AppConfig.playerID` while a bearer token is live would hit a
+    /// different player than the server resolves — that was the "profile does
+    /// not save after login" bug.
+    var playerID: String { SessionStore.shared.playerID ?? AppConfig.playerID }
+
+    // Backend-backed state. nil profile means "not loaded yet"; screens
+    // should fall back to cached/sample values while loading.
     @Published var profile: UserProfileDTO?
-    @Published var progression: XPProgression?
-    @Published var keysRemaining: Int?
     @Published var coinBalance: Int = 0
     @Published var lastCrateDrop: CrateOpenResponse?
     @Published var crateInventory: InventoryResponse?
     @Published var fairness: FairnessResponse?
-    /// Opens until the next guaranteed Epic+ / Legendary+ pull (server-pity).
-    @Published var pity: PityDTO?
-    /// Today's three quests with server-verified progress (GET /user/quests/today).
-    @Published var dailyQuests: [DailyQuestDTO] = []
+    /// Granted Cases waiting to be opened — ranked wins, promos (spec §5).
+    @Published var pendingCases: [PendingCaseDTO] = []
+
     /// Last backend error, surfaced through the existing Banner/NQBanner
     /// components by the screens. Cleared on the next successful call.
     @Published var backendError: String?
+
+    /// Full-screen loading veil (#19). Only flips on when a tracked update
+    /// runs longer than ~0.2 s, so quick refreshes never flash it.
+    @Published private(set) var loadingVisible = false
+    private var inFlightBlocking = 0
+    private var loadingDelayTask: Task<Void, Never>?
+
+    private func beginBlockingUpdate() {
+        inFlightBlocking += 1
+        guard inFlightBlocking == 1, loadingDelayTask == nil else { return }
+        loadingDelayTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            guard !Task.isCancelled else { return }
+            self?.loadingVisible = true
+        }
+    }
+
+    private func endBlockingUpdate() {
+        inFlightBlocking = max(0, inFlightBlocking - 1)
+        guard inFlightBlocking == 0 else { return }
+        loadingDelayTask?.cancel()
+        loadingDelayTask = nil
+        loadingVisible = false
+    }
+
+    /// Wrap a user-facing state update: shows the loading veil only if the
+    /// work outlasts the 0.2 s grace window.
+    func withBlockingUpdate<T>(_ work: () async throws -> T) async rethrows -> T {
+        beginBlockingUpdate()
+        defer { endBlockingUpdate() }
+        return try await work()
+    }
     /// Player tapped Connect on the Watch screen. Persisted so Profile
     /// doesn't keep saying "Not Connected" after a successful link.
     @Published var watchLinked: Bool = UserDefaults.standard.bool(forKey: "watch.linked")
@@ -77,29 +114,73 @@ final class GameState: ObservableObject {
         UserDefaults.standard.set(value, forKey: "watch.linked")
     }
 
-    /// Gym photo logged until this date. +5% on the daily multiplier while live.
-    @Published var gymCheckUntil: Date? = {
-        let t = UserDefaults.standard.double(forKey: "gym.checkUntil")
-        guard t > Date().timeIntervalSince1970 else { return nil }
-        return Date(timeIntervalSince1970: t)
+    /// True while a HealthKit read + upload is in flight; screens use it to
+    /// disable the Sync button rather than queue duplicate uploads.
+    @Published private(set) var isSyncingHealth = false
+    /// When the phone last uploaded a HealthKit snapshot. Persisted so the
+    /// Profile row can say "Synced 3m ago" across launches.
+    @Published private(set) var lastHealthSyncAt: Date? = {
+        let t = UserDefaults.standard.double(forKey: "watch.lastSyncAt")
+        return t > 0 ? Date(timeIntervalSince1970: t) : nil
     }()
 
-    var gymBonus: Double {
-        guard let until = gymCheckUntil, until > Date() else { return 0 }
-        return 0.05
+    /// Foreground re-syncs closer together than this are skipped: HealthKit
+    /// only gets fresh watch data every few minutes, and the backend rate
+    /// limits /vitals at 60/min per player.
+    private let healthSyncMinInterval: TimeInterval = 60
+
+    /// Connect flow behind Profile › Connected devices and the onboarding
+    /// Apple Health step: show the system Health sheet (first time only),
+    /// upload today's snapshot, then mark the watch linked. Throws when
+    /// Health data is unavailable, the sheet failed, or the upload failed —
+    /// the caller shows the failure state. "HealthKit had no data" is *not*
+    /// a failure: the link succeeds and the screen shows dashes until the
+    /// first real reading.
+    func connectAppleWatch() async throws {
+        isSyncingHealth = true
+        defer { isSyncingHealth = false }
+        let uploaded = try await HealthSyncService.shared.sync(requestAuthorizationIfNeeded: true)
+        setWatchLinked(true)
+        if uploaded { markHealthSynced() }
+        await refreshVitals()
     }
 
-    func logGymCheck() {
-        let until = Date().addingTimeInterval(24 * 60 * 60)
-        gymCheckUntil = until
-        UserDefaults.standard.set(until.timeIntervalSince1970, forKey: "gym.checkUntil")
-        recomputeMultiplier()
+    /// Silent foreground sync (launch, scene became active, Sync now). Does
+    /// nothing until the player has connected; never re-prompts for
+    /// permission. Transport/5xx errors surface via `backendError` like every
+    /// other call; a HealthKit read problem is swallowed because it looks
+    /// identical to "no data" from the phone's side.
+    func syncHealthIfLinked(force: Bool = false) async {
+        guard watchLinked, HealthSyncService.shared.hasRequestedAuthorization, !isSyncingHealth else { return }
+        if !force, let last = lastHealthSyncAt, Date().timeIntervalSince(last) < healthSyncMinInterval { return }
+        isSyncingHealth = true
+        defer { isSyncingHealth = false }
+        do {
+            if try await HealthSyncService.shared.sync(requestAuthorizationIfNeeded: false) {
+                markHealthSynced()
+            }
+            await refreshVitals()
+        } catch let error as APIError {
+            backendError = error.localizedDescription
+        } catch {
+            // HealthKit unavailable / read failed: nothing to upload this time.
+        }
     }
 
-    private let factory = CharacterFactory()
-    private let engine = BattleEngine()
+    private func markHealthSynced() {
+        let now = Date()
+        lastHealthSyncAt = now
+        UserDefaults.standard.set(now.timeIntervalSince1970, forKey: "watch.lastSyncAt")
+    }
+
+    // Battle resolution is `BattleEngine.simulate` (static, deterministic) —
+    // no engine instance to hold.
     private let multiplierCalc = DailyMultiplierCalculator()
     private let api = APIClient.shared
+
+    /// Raised by Profile's "Replay the tour" row and by the first-run gate —
+    /// RootTabView covers the app with GuidedTourView while it's set.
+    @Published var showTour = false
 
     /// Height, weight, age, sex, activity and goal — the inputs every
     /// nutrition number is derived from. Set by onboarding, editable later in
@@ -128,6 +209,13 @@ final class GameState: ObservableObject {
     func applyPlan(_ plan: DailyPlan) {
         dailyPlan = plan
         plan.save()
+    }
+
+    /// Display-unit preference — persisted the moment it flips rather than
+    /// waiting on the metrics editor's Save.
+    func setUnitsPreference(_ metric: Bool) {
+        bodyMetrics.usesMetric = metric
+        bodyMetrics.save()
     }
 
     /// Saves edited body metrics and re-derives everything that depends on
@@ -161,7 +249,7 @@ final class GameState: ObservableObject {
     /// silent rather than an offline banner on the Profile tab.
     private func syncBodyMetrics() async {
         _ = try? await api.updateBodyMetrics(
-            id: AppConfig.playerID,
+            id: playerID,
             age: bodyMetrics.ageYears,
             sex: bodyMetrics.sex.battleKitSex.rawValue,
             heightCm: bodyMetrics.heightCm,
@@ -171,101 +259,78 @@ final class GameState: ObservableObject {
         )
     }
 
-    /// Creates a battle character from a scanned product and registers it.
+    /// Registers the backend's answer to `POST /scan`. The server owns the
+    /// mint: the FIRST time this player ever scans a barcode the result
+    /// carries the ★1 monster it created; every re-scan comes back with
+    /// `duplicate` set and is nutrition-only. Either way the plate lands on
+    /// the day log — re-scans still count for tasks.
+    ///
+    /// Returns the minted character for the summon animation, or nil when the
+    /// scan was a duplicate. `product` is the best-effort local OFF lookup —
+    /// it only enriches the day log (food group, micro score); the monster
+    /// and its stats always come from the server.
     @discardableResult
-    func registerScan(product: FoodProduct, barcode: String, colorHex: String = "#5FCB82") -> Character {
-        let foodCharacter = factory.character(from: product, barcode: barcode)
+    func registerScanResult(_ result: ScanResultDTO, product: FoodProduct? = nil) -> Character? {
+        var minted: Character?
+        if let dto = result.summonedCharacter, let mint = result.mint {
+            var character = Character(
+                id: dto.id,
+                name: dto.name,
+                colorHex: dto.colorHex,
+                imageKey: dto.imageKey,
+                rarity: Rarity(rawValue: dto.rarity) ?? .common,
+                baseHealth: dto.baseHealth ?? 100,
+                baseAttack: dto.baseAttack ?? 50,
+                baseMana: dto.baseMana,
+                starLevel: mint.stars,
+                bio: dto.bio ?? dto.flavor,
+                dropIDs: [mint.dropId],
+                netWorth: mint.netWorth
+            )
+            character.dropMeta[mint.dropId] = DropMeta(stars: mint.stars, rarity: dto.rarity, locked: false)
+            scannedCharacters.append(character)
+            battleCharacters[dto.id] = unitSpec(for: character)
+            minted = character
+        }
 
-        let appCharacter = Character(
-            id: "scan-\(barcode)",
-            name: foodCharacter.name,
-            colorHex: colorHex,
-            rarity: foodCharacter.rarity.appRarity,
-            statType: StatType(rawValue: foodCharacter.element.rawValue) ?? .fiber
-        )
-        // Keyed by the character id, which is what every lookup uses
-        // (battleStats(for:), resolveBattle, LAN squads). Keying by the bare
-        // barcode meant scanned characters silently fought with sample stats.
-        battleCharacters[appCharacter.id] = foodCharacter
-        scannedCharacters.append(appCharacter)
-        if recentScans.count < 8 { recentScans.insert(product.displayName, at: 0) }
+        if recentScans.count < 8 { recentScans.insert(result.foodName, at: 0) }
         markScannedToday()
         bumpCounter("stats.totalScans")
 
-        // Recompute the daily party multiplier from the day's scans.
+        // Recompute the daily party multiplier from the day's scans. The
+        // snapshot the server scored is per-100g, same as the product feed.
+        let n = result.nutrition
         let entry = DayLogEntry(
-            barcode: barcode,
-            name: product.displayName,
-            calories: product.nutriments?.energyKcal100g ?? 0,
-            protein: product.nutriments?.proteins100g ?? 0,
-            carbs: product.nutriments?.carbohydrates100g ?? 0,
-            fat: product.nutriments?.fat100g ?? 0,
-            fiber: product.nutriments?.fiber100g ?? 0,
-            sugar: product.nutriments?.sugars100g ?? 0,
-            microScore: product.microScore ?? 0.3,
-            foodGroup: Self.foodGroup(for: product)
+            barcode: result.barcode,
+            name: result.foodName,
+            calories: n?.calories ?? 0,
+            protein: n?.proteinG ?? 0,
+            carbs: n?.carbsG ?? 0,
+            fat: n?.fatG ?? 0,
+            fiber: n?.fiberG ?? 0,
+            sugar: n?.sugarG ?? 0,
+            microScore: product?.microScore ?? 0.3,
+            foodGroup: product.map { Self.foodGroup(for: $0) } ?? .other
         )
-        Task { [weak self] in
-            guard let self else { return }
-            let breakdown = await self.multiplierCalc.calculate(entries: self.dayLog + [entry], profile: self.nutritionProfile)
-            await MainActor.run {
-                self.dayLog.append(entry)
-                self.lastBreakdown = breakdown
-                self.recomputeMultiplier()
-                self.persistTodayCalories()
-            }
-        }
+        appendDayLog(entry)
         checkAchievements()
-        return appCharacter
+        return minted
     }
 
-    /// Registers a confirmed dish-photo plate.
+    /// Registers a confirmed dish-photo plate: a meal-log entry, never a
+    /// monster — the barcode path is the only food scan that can mint.
     ///
-    /// Unlike a barcode scan, the stats, rarity and element already arrived
-    /// server-authoritative — the backend scored the *confirmed* plate with the
-    /// same BATTLE-SYSTEM §2 formulas — so they're adopted as-is instead of
-    /// being re-derived on device, which would risk the two drifting apart.
-    ///
-    /// The day log also gets real plate totals here (actual grams eaten) rather
+    /// The day log gets real plate totals here (actual grams eaten) rather
     /// than the per-100g figures a barcode product carries.
-    @discardableResult
-    func registerDish(result: DishConfirmResult) -> Character? {
-        guard let dto = result.summonedCharacter else { return nil }
-
-        let appCharacter = Character(
-            id: dto.id,
-            name: dto.name,
-            colorHex: dto.colorHex,
-            rarity: Rarity(rawValue: dto.rarity) ?? .common,
-            statType: StatType(rawValue: dto.statType) ?? .fiber,
-            foodGroup: dto.foodGroup
-        )
-        scannedCharacters.append(appCharacter)
-
-        if let stats = result.stats {
-            battleCharacters[dto.id] = FoodCharacter(
-                name: dto.name,
-                barcode: dto.id,
-                element: BattleElement(rawValue: dto.statType) ?? .fiber,
-                rarity: (Rarity(rawValue: dto.rarity) ?? .common).battleRarity,
-                fusionTier: 0,
-                baseStats: BattleStats(
-                    power: stats.power,
-                    guard: stats.guardStat,
-                    vitality: stats.vitality,
-                    tempo: stats.tempo
-                )
-            )
-        }
-
-        if recentScans.count < 8 { recentScans.insert(dto.name, at: 0) }
+    func registerDishLog(result: DishConfirmResult) {
+        if recentScans.count < 8 { recentScans.insert(result.foodName, at: 0) }
         markScannedToday()
         bumpCounter("stats.totalScans")
 
         let totals = result.nutrition
-        let entry = DayLogEntry(
-            barcode: dto.id,
-            name: dto.name,
+        appendDayLog(DayLogEntry(
+            barcode: result.mealId,
+            name: result.foodName,
             calories: totals.calories,
             protein: totals.proteinG,
             carbs: totals.carbsG,
@@ -274,19 +339,25 @@ final class GameState: ObservableObject {
             sugar: totals.sugarG,
             microScore: totals.microScore,
             foodGroup: FoodGroup(rawValue: totals.dominantFoodGroup) ?? .other
-        )
+        ))
+        checkAchievements()
+    }
+
+    /// Appends an entry and rescores the multiplier against the new day log.
+    private func appendDayLog(_ entry: DayLogEntry) {
+        // Synchronous append — the log is observable state callers may read
+        // right after registering a scan/meal. Only the multiplier recompute
+        // is deferred (it awaits the async calculator).
+        dayLog.append(entry)
+        persistTodayCalories()
         Task { [weak self] in
             guard let self else { return }
-            let breakdown = await self.multiplierCalc.calculate(entries: self.dayLog + [entry], profile: self.nutritionProfile)
+            let breakdown = await self.multiplierCalc.calculate(entries: self.dayLog, profile: self.nutritionProfile)
             await MainActor.run {
-                self.dayLog.append(entry)
                 self.lastBreakdown = breakdown
                 self.recomputeMultiplier()
-                self.persistTodayCalories()
             }
         }
-        checkAchievements()
-        return appCharacter
     }
 
     /// Every scan this session, oldest first. Not yet persisted across
@@ -461,27 +532,27 @@ final class GameState: ObservableObject {
 
     // MARK: - Per-day goal completion (streak calendar)
 
-    /// Current streak length in days. The backend's streakDays is the source
-    /// of truth once the profile has loaded; before that (or offline) the
-    /// locally tracked count keeps the number honest.
+    /// Current nutrition streak in days. The backend's streak block is the
+    /// source of truth once the profile has loaded; before that (or offline)
+    /// the locally tracked count keeps the number honest.
     var streakCount: Int {
-        profile?.streakDays ?? UserDefaults.standard.integer(forKey: StreakKeys.localCount)
+        streak?.days ?? profile?.nutritionStreakDays ?? UserDefaults.standard.integer(forKey: StreakKeys.localCount)
     }
 
-    /// Marks today as "all goals achieved" once every daily quest is done.
+    /// Marks today as "all goals achieved" once every daily task is done.
     /// Persisted under "goals.day.yyyy-MM-dd" so the profile's streak
     /// calendar can still mark past days after a relaunch.
     private func persistGoalCompletionIfEarned() {
-        guard !dailyQuests.isEmpty, dailyQuests.allSatisfy(\.done) else { return }
+        guard !dailyTasks.isEmpty, dailyTasks.allSatisfy(\.done) else { return }
         UserDefaults.standard.set(true, forKey: "goals.day.\(todayKey())")
     }
 
     /// True when every daily goal was completed on the given day. Today also
-    /// checks the live quest list so the calendar lights up the moment the
+    /// checks the live task list so the calendar lights up the moment the
     /// last goal lands; past days read the persisted per-day flag.
     func allGoalsAchieved(on date: Date) -> Bool {
         if Calendar.current.isDateInToday(date),
-           !dailyQuests.isEmpty, dailyQuests.allSatisfy(\.done) {
+           !dailyTasks.isEmpty, dailyTasks.allSatisfy(\.done) {
             return true
         }
         return UserDefaults.standard.bool(forKey: "goals.day.\(key(for: date))")
@@ -506,7 +577,7 @@ final class GameState: ObservableObject {
             uniqueCharacters: collection.filter { !$0.isLocked }.count,
             rarePlusPulls: UserDefaults.standard.integer(forKey: "stats.rarePlusPulls"),
             legendaries: UserDefaults.standard.integer(forKey: "stats.legendaries"),
-            battlesWon: profile?.battlesWon ?? 0
+            battlesWon: record?.rankedWins ?? profile?.battlesWon ?? 0
         )
         if let unlocked = Achievements.evaluate(stats: stats).first {
             achievement = unlocked
@@ -538,7 +609,7 @@ final class GameState: ObservableObject {
     @Published private(set) var lastBreakdown: DailyMultiplierBreakdown = .neutral
 
     private func recomputeMultiplier() {
-        lastMultiplier = min(1.5, max(0.8, lastBreakdown.total + vitalsBonus + gymBonus))
+        lastMultiplier = min(1.5, max(0.8, lastBreakdown.total + vitalsBonus))
     }
 
     /// GET /vitals/latest — pulls the watch's snapshot and folds its activity
@@ -569,109 +640,226 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// Resolves a battle on the backend (POST /battle/simulate) and maps the
-    /// server's authoritative event stream into a BattleReplay for animation.
-    ///
-    /// The local BattleEngine is never used to decide the outcome — the server
-    /// result is the source of truth. Returns nil (and sets `backendError`)
-    /// when the backend is unreachable instead of silently resolving locally.
-    @discardableResult
-    func resolveBattle(yourSquad: [Character], opponentSquad: [Character], chosenMove: String? = nil) async -> BattleReplay? {
-        func units(_ chars: [Character], mult: Double) -> [BattleUnit] {
-            chars.compactMap { c in
-                guard let fc = battleCharacters[c.id] ?? sampleFoodCharacter(for: c) else { return nil }
-                return BattleUnit(character: fc, partyMultiplier: mult)
-            }
+    /// The squad payload sent to the server: identity + progression only.
+    /// Combat stats and authored moves resolve server-side from the catalog,
+    /// so a stale local snapshot can never skew a match.
+    private func squadMember(_ c: Character) -> BattleSquadMember {
+        BattleSquadMember(id: c.id, name: c.name, rarity: c.rarity.rawValue, star: c.starLevel)
+    }
+
+    /// The three monsters a mode fields automatically: first three unlocked,
+    /// non-fainted cards. Fainted monsters are excluded up front so ranked
+    /// and dungeon don't bounce off the server's 409.
+    var battleReadySquad: [Character] {
+        Array(collection
+            .filter { !$0.isLocked && !faintedIds.contains($0.id) }
+            .prefix(3))
+    }
+
+    /// Everything a ranked match changed, for the result card.
+    struct RankedOutcome {
+        let replay: BattleReplay
+        /// The snapshot squad the server matched against — real or bot.
+        let opponentSquad: [Character]
+        /// True when SBMM found no human and a rank-calibrated bot played.
+        let isBot: Bool
+        let rrDelta: Int
+        let rr: Int
+        let rankLabel: String
+        let promoted: Bool
+        /// Rarity of the rank-odds Case a win granted, if any.
+        let caseRarity: String?
+    }
+
+    /// A parked interactive match — everything the local engine needs to
+    /// play the exact fight the server will replay on commit.
+    struct InteractiveMatch {
+        enum Kind { case ranked, friendly }
+        let kind: Kind
+        let matchId: String
+        /// Server-drawn seed — decimal string on the wire.
+        let seed: UInt64
+        /// Locked specs, in squad order. Side 0 is always the player.
+        let yourSpecs: [BattleUnitSpec]
+        let opponentSpecs: [BattleUnitSpec]
+        /// Display models for the opponent's units (art + rarity).
+        let opponentCharacters: [Character]
+        /// True when SBMM fell back to a rank-calibrated bot.
+        let isBot: Bool
+    }
+
+    /// POST /battle/ranked/begin — matchmake + park. Returns nil on error
+    /// (fainted squad → backendError carries the server's message).
+    func beginRankedBattle(squad: [Character]) async -> InteractiveMatch? {
+        return await withBlockingUpdate {
+
+        guard squad.count == 3 else {
+            backendError = "You need 3 healthy monsters for ranked: scan more food or wait for faints to recover."
+            return nil
         }
-
-        // Same seed derivation the local engine used, so a replay re-derived
-        // from the same squads + seed matches the server's simulation. Masked
-        // to 53 bits so the value survives the JSON -> JS double -> BigInt
-        // round trip on the server without precision loss.
-        let seedString = (yourSquad + opponentSquad).map(\.id).joined() + "|" + (chosenMove ?? "")
-        let seed = seedString.utf8.reduce(UInt64(31)) { ($0 &+ UInt64($1) &+ 31) &* 0x100000001b3 } & 0x001FFFFFFFFFFFFF
-
-        func member(_ c: Character) -> BattleSquadMember {
-            // rarity is sent so the server applies the same stat scaling the
-            // local engine does; omitting it made every unit fight as common.
-            BattleSquadMember(
-                id: c.id,
-                name: c.name,
-                statType: c.statType.rawValue,
-                rarity: c.rarity.rawValue
-            )
-        }
-
-        // String id -> FoodCharacter UUID, for mapping server events back to
-        // the UUID-keyed BattleEvent replay the UI animates.
-        var unitIDs: [String: UUID] = [:]
-        for c in yourSquad + opponentSquad {
-            if let fc = battleCharacters[c.id] ?? sampleFoodCharacter(for: c) {
-                unitIDs[c.id] = fc.id
-            }
-        }
-
         do {
-            let result = try await api.simulateBattle(BattleSimulateRequest(
-                yourSquad: yourSquad.map(member),
-                opponentSquad: opponentSquad.map(member),
-                seed: seed
-            ))
-            let replay = try BattleReplayMapper.replay(from: result, unitIDs: unitIDs)
-            lastReplay = replay
-            lastUnitIDs = Dictionary(uniqueKeysWithValues: unitIDs.map { ($1, $0) })
+            let begin = try await api.beginRanked(squad: squad.map(squadMember))
+            guard let seed = UInt64(begin.seed) else {
+                backendError = "Bad match seed from server."
+                return nil
+            }
             backendError = nil
-            return replay
+            return InteractiveMatch(
+                kind: .ranked,
+                matchId: begin.matchId,
+                seed: seed,
+                yourSpecs: begin.yourSquad.map(\.spec),
+                opponentSpecs: begin.opponentSquad.map(\.spec),
+                opponentCharacters: begin.opponentSquad.map(displayCharacter(for:)),
+                isBot: begin.opponent?.bot ?? false
+            )
         } catch {
             backendError = error.localizedDescription
             return nil
         }
+    
+        }
     }
 
-    /// Challenges your stored squad against a friend's snapshot. The server
-    /// resolves and records it — the defender sees a notice on next launch.
-    /// Returns the replay plus the snapshot squad so the caller can animate it.
-    func challengeFriend(opponentId: String) async -> (replay: BattleReplay, opponentSquad: [Character])? {
-        let yourSquad = collection.filter { !$0.isLocked }.prefix(3).map { c in
-            BattleSquadMember(id: c.id, name: c.name, statType: c.statType.rawValue, rarity: c.rarity.rawValue)
-        }
-        guard !yourSquad.isEmpty else { return nil }
+    /// POST /battle/ranked/commit — the script of decisions the player made.
+    /// The server replays it deterministically; the returned outcome is the
+    /// authoritative one (RR, Case, faints all applied server-side).
+    @discardableResult
+    func commitRankedBattle(_ match: InteractiveMatch, actions: [BattleActionDTO]) async -> RankedOutcome? {
+        return await withBlockingUpdate {
 
         do {
-            let result = try await api.challengeFriend(opponentId: opponentId, yourSquad: yourSquad)
-            // Snapshot units become displayable characters for the replay.
+            let result = try await api.commitRanked(matchId: match.matchId, actions: actions)
             let opponentChars = result.opponentSquad.map { m in
                 Character(
                     id: m.id,
                     name: m.name,
                     colorHex: "#9C978F",
                     rarity: Rarity(rawValue: m.rarity) ?? .common,
-                    statType: StatType(rawValue: m.statType) ?? .fiber
+                    baseHealth: Double(m.baseHealth ?? 100),
+                    baseAttack: Double(m.baseAttack ?? 50),
+                    baseMana: m.baseMana.map(Double.init),
+                    starLevel: m.star
                 )
             }
-            var unitIDs: [String: UUID] = [:]
-            for c in collection.filter({ !$0.isLocked }).prefix(3) + opponentChars {
-                if let fc = battleCharacters[c.id] ?? sampleFoodCharacter(for: c) {
-                    unitIDs[c.id] = fc.id
-                }
-            }
             let replay = try BattleReplayMapper.replay(
-                from: ServerBattleResult(winner: result.winner, rounds: result.rounds, events: result.events),
-                unitIDs: unitIDs
+                from: ServerBattleResult(
+                    winner: result.winner, rounds: result.rounds, events: result.events,
+                    hpLeftA: result.hpLeftA, hpLeftB: result.hpLeftB,
+                    faintedA: result.faintedA, faintedB: result.faintedB
+                )
             )
             lastReplay = replay
+            rank = RankBlockDTO(
+                rr: result.rank.rr,
+                rank: result.rank.rank,
+                rankLabel: result.rank.rankLabel,
+                rrToNextRank: nil
+            )
+            record = RecordDTO(
+                rankedWins: result.rank.record.rankedWins,
+                rankedLosses: result.rank.record.rankedLosses,
+                winRate: result.rank.record.rankedWins + result.rank.record.rankedLosses > 0
+                    ? Double(result.rank.record.rankedWins) / Double(result.rank.record.rankedWins + result.rank.record.rankedLosses)
+                    : 0
+            )
+            faintedIds.formUnion(result.faintedA)
+            if result.caseReward != nil { _ = await refreshPendingCases() }
+            await loadProfile()
             backendError = nil
-            return (replay, opponentChars)
+            checkAchievements()
+            return RankedOutcome(
+                replay: replay,
+                opponentSquad: opponentChars,
+                isBot: result.opponent.bot,
+                rrDelta: result.rank.delta,
+                rr: result.rank.rr,
+                rankLabel: result.rank.rankLabel,
+                promoted: result.rank.promoted,
+                caseRarity: result.caseReward?.rarity
+            )
         } catch {
             backendError = error.localizedDescription
             return nil
         }
+    
+        }
     }
 
-    /// One "your squad was challenged" feed item, polled on the battle hub.
-    @Published var battleNotices: [AsyncNoticeDTO] = []
+    /// POST /battle/friendly/begin — park an interactive fight against a
+    /// friend's stored snapshot.
+    func beginFriendlyBattle(opponentId: String, squad: [Character]) async -> InteractiveMatch? {
+        return await withBlockingUpdate {
 
-    /// Infinite dungeon — depth record + idle key income.
+        guard squad.count == 3 else {
+            backendError = "You need 3 healthy monsters for a friendly: scan more food or wait for faints to recover."
+            return nil
+        }
+        do {
+            let begin = try await api.beginFriendly(opponentId: opponentId, squad: squad.map(squadMember))
+            guard let seed = UInt64(begin.seed) else {
+                backendError = "Bad match seed from server."
+                return nil
+            }
+            backendError = nil
+            return InteractiveMatch(
+                kind: .friendly,
+                matchId: begin.matchId,
+                seed: seed,
+                yourSpecs: begin.yourSquad.map(\.spec),
+                opponentSpecs: begin.opponentSquad.map(\.spec),
+                opponentCharacters: begin.opponentSquad.map(displayCharacter(for:)),
+                isBot: false
+            )
+        } catch {
+            backendError = error.localizedDescription
+            return nil
+        }
+    
+        }
+    }
+
+    /// POST /battle/friendly/commit — submit the friendly script.
+    @discardableResult
+    func commitFriendlyBattle(_ match: InteractiveMatch, actions: [BattleActionDTO]) async -> BattleReplay? {
+        return await withBlockingUpdate {
+
+        do {
+            let result = try await api.commitFriendly(matchId: match.matchId, actions: actions)
+            let replay = try BattleReplayMapper.replay(
+                from: ServerBattleResult(
+                    winner: result.winner, rounds: result.rounds, events: result.events,
+                    hpLeftA: result.hpLeftA, hpLeftB: result.hpLeftB,
+                    faintedA: result.faintedA, faintedB: result.faintedB
+                )
+            )
+            lastReplay = replay
+            faintedIds.formUnion(result.faintedA)
+            backendError = nil
+            return replay
+        } catch {
+            backendError = error.localizedDescription
+            return nil
+        }
+    
+        }
+    }
+
+    /// A resolved spec DTO → a display Character (art resolves off the id).
+    private func displayCharacter(for dto: BattleUnitSpecDTO) -> Character {
+        Character(
+            id: dto.id,
+            name: dto.name,
+            colorHex: "#9C978F",
+            rarity: Rarity(rawValue: dto.rarity) ?? .common,
+            baseHealth: dto.baseHealth,
+            baseAttack: dto.baseAttack,
+            baseMana: dto.baseMana,
+            starLevel: dto.star
+        )
+    }
+
+    /// Endless dungeon — personal best + last run feed (spec §5).
     @Published var dungeonState: DungeonStateResponse?
     @Published var lastDungeonRun: DungeonRunResponse?
 
@@ -683,17 +871,21 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// POST /battle/dungeon/run — top 5 unlocked characters descend.
+    /// POST /battle/dungeon/run — exactly 3 unlocked characters descend.
+    /// Floors pay coins on clear and earnings survive a wipe.
     @discardableResult
     func runDungeon() async -> DungeonRunResponse? {
-        let squad = collection.filter { !$0.isLocked }.prefix(5).map {
-            BattleSquadMember(id: $0.id, name: $0.name, statType: $0.statType.rawValue, rarity: $0.rarity.rawValue)
+        return await withBlockingUpdate {
+
+        let squad = battleReadySquad.map(squadMember)
+        guard squad.count == 3 else {
+            backendError = "You need 3 healthy monsters to descend: scan more food or wait for faints to recover."
+            return nil
         }
-        guard !squad.isEmpty else { return nil }
         do {
             let run = try await api.runDungeon(squad: squad)
             lastDungeonRun = run
-            keysRemaining = run.keys
+            coinBalance = run.coins
             await refreshDungeon()
             backendError = nil
             return run
@@ -701,70 +893,8 @@ final class GameState: ObservableObject {
             backendError = error.localizedDescription
             return nil
         }
-    }
-
-    /// POST /battle/dungeon/claim — bank the idle keys.
-    @discardableResult
-    func claimDungeonIncome() async -> Int {
-        do {
-            let result = try await api.claimDungeonIncome()
-            keysRemaining = result.keys
-            await refreshDungeon()
-            backendError = nil
-            return result.claimed
-        } catch {
-            backendError = error.localizedDescription
-            return 0
+    
         }
-    }
-
-    /// Comeback crate — armed server-side after >3 days away, claimed once.
-    @Published var comebackPending = false
-    @Published var comebackDaysAway = 0
-
-    /// POST /user/comeback/claim — the free welcome-back pull.
-    @discardableResult
-    func claimComeback() async -> CrateOpenResponse? {
-        do {
-            let drop = try await api.claimComeback()
-            lastCrateDrop = drop
-            keysRemaining = drop.keysRemaining
-            comebackPending = false
-            _ = addCrateCharacter(drop: drop)
-            backendError = nil
-            return drop
-        } catch {
-            backendError = error.localizedDescription
-            return nil
-        }
-    }
-
-    func refreshBattleNotices() async {
-        do {
-            battleNotices = try await api.fetchBattleNotices().notices
-        } catch {
-            backendError = error.localizedDescription
-        }
-    }
-
-    /// Local deterministic simulation. Kept for replaying/animating a result
-    /// the server already produced (same squads + seed = same replay); never
-    /// used to decide an outcome on its own.
-    func simulateLocally(yourSquad: [Character], opponentSquad: [Character]) async -> BattleReplay {
-        func units(_ chars: [Character], mult: Double) -> [BattleUnit] {
-            chars.compactMap { c in
-                guard let fc = battleCharacters[c.id] ?? sampleFoodCharacter(for: c) else { return nil }
-                return BattleUnit(character: fc, partyMultiplier: mult)
-            }
-        }
-
-        let a = BattleSquad(units: units(yourSquad, mult: 1.2))
-        let b = BattleSquad(units: units(opponentSquad, mult: 1.0))
-        let seedString = (yourSquad + opponentSquad).map(\.id).joined()
-        let seed = seedString.utf8.reduce(UInt64(31)) { ($0 &+ UInt64($1) &+ 31) &* 0x100000001b3 }
-        let replay = await engine.simulate(squadA: a, squadB: b, seed: seed)
-        lastReplay = replay
-        return replay
     }
 
     // MARK: - Collection (single source of truth)
@@ -799,27 +929,27 @@ final class GameState: ObservableObject {
     func addCrateCharacter(drop: CrateOpenResponse) -> Character {
         let loot = drop.character
         let rarity = Rarity(rawValue: loot.rarity) ?? .common
-        let statType = StatType(rawValue: loot.statType) ?? .fiber
 
         var character = Character(
             id: "crate-\(loot.id)",
             name: loot.name,
             colorHex: loot.colorHex,
+            imageKey: loot.imageKey,
             rarity: rarity,
-            statType: statType,
-            isShiny: drop.shiny,
+            baseHealth: loot.baseHealth ?? 100,
+            baseAttack: loot.baseAttack ?? 50,
+            baseMana: loot.baseMana,
             starLevel: drop.stars ?? 1,
-            bio: loot.flavor,
+            bio: loot.bio ?? loot.flavor,
             dropIDs: drop.id.map { [$0] } ?? [],
             netWorth: drop.value
         )
         if let dropID = drop.id {
             character.dropMeta[dropID] = DropMeta(stars: drop.stars ?? 1, rarity: loot.rarity, locked: false)
         }
-        // Dedupe by id — a shiny re-pull upgrades the existing entry rather
-        // than adding a second card with the same grid identity.
+        // Dedupe by id — a re-pull folds into the existing card rather than
+        // adding a second card with the same grid identity.
         if let idx = crateCharacters.firstIndex(where: { $0.id == character.id }) {
-            if character.isShiny { crateCharacters[idx].isShiny = true }
             if let dropID = drop.id {
                 crateCharacters[idx].dropIDs.append(dropID)
                 crateCharacters[idx].dropMeta[dropID] = DropMeta(stars: drop.stars ?? 1, rarity: loot.rarity, locked: false)
@@ -829,7 +959,6 @@ final class GameState: ObservableObject {
         } else {
             crateCharacters.append(character)
         }
-        keysRemaining = drop.keysRemaining
         // Rare+ pulls award a streak freeze — loss-aversion item earned
         // through the variable-reward loop.
         // Compared by rank rather than a list of tier names, so an eighth tier
@@ -852,21 +981,109 @@ final class GameState: ObservableObject {
     @Published var profileLoading = false
 
     /// GET /user/:id for this install's player ID. On failure the previous
-    /// profile (if any) stays and `backendError` is set.
+    /// profile (if any) stays and `backendError` is set. The response also
+    /// carries the derived rank block, record, streak, faints and today's
+    /// tasks — all synced here so screens read one place.
     func loadProfile() async {
+        await withBlockingUpdate {
+
         profileLoading = true
         defer { profileLoading = false }
         do {
-            let result = try await api.fetchUserProfile(id: AppConfig.playerID)
+            let result = try await api.fetchUserProfile(id: playerID)
             profile = result.profile
-            progression = result.progression
-            if let cb = result.comeback {
-                comebackPending = cb.eligible
-                comebackDaysAway = cb.daysAway
-            }
+            rank = result.rank
+            record = result.record
+            streak = result.streak
+            faintedIds = Set(result.fainted ?? [])
+            if let tasks = result.tasks { dailyTasks = tasks }
             backendError = nil
         } catch {
             backendError = error.localizedDescription
+        }
+    
+        }
+    }
+
+    // MARK: - Progression state (spec §5/§6)
+
+    /// Derived rank block — RR, rank label, distance to promote.
+    @Published var rank: RankBlockDTO?
+    /// Ranked record — wins, losses, win rate.
+    @Published var record: RecordDTO?
+    /// Nutrition streak + unspent Cookbook Boosts.
+    @Published var streak: StreakDTO?
+    /// Character ids currently fainted — cannot be fielded until the daily
+    /// reset or a nutrition-task revive.
+    @Published var faintedIds: Set<String> = []
+    /// Today's three tasks (nutrition / battle / flex).
+    @Published var dailyTasks: [TaskDTO] = []
+    /// Completed battles, newest first (profile history).
+    @Published var battleHistory: [BattleHistoryEntry] = []
+
+    /// GET /user/tasks/today — refresh verified task progress.
+    func refreshTasks() async {
+        await withBlockingUpdate {
+
+        do {
+            dailyTasks = try await api.fetchTasks().tasks
+            persistGoalCompletionIfEarned()
+            backendError = nil
+        } catch {
+            backendError = error.localizedDescription
+        }
+    
+        }
+    }
+
+    /// POST /user/tasks/:id/claim — server verifies completion, pays coins
+    /// (+500 on the trio), applies task RR and may revive a faint.
+    @discardableResult
+    func claimTask(_ taskId: String) async -> TaskClaimResult? {
+        return await withBlockingUpdate {
+
+        do {
+            let result = try await api.claimTask(taskId)
+            coinBalance += result.coins + result.bonusCoins
+            if let i = dailyTasks.firstIndex(where: { $0.id == taskId }) {
+                dailyTasks[i] = TaskDTO(
+                    id: dailyTasks[i].id,
+                    category: dailyTasks[i].category,
+                    label: dailyTasks[i].label,
+                    rrEligible: dailyTasks[i].rrEligible,
+                    watchOnly: dailyTasks[i].watchOnly,
+                    done: true,
+                    claimed: true
+                )
+            }
+            if let revived = result.revived { faintedIds.remove(revived) }
+            if var r = rank { r = RankBlockDTO(rr: result.rr, rank: result.rank, rankLabel: r.rankLabel, rrToNextRank: r.rrToNextRank); rank = r }
+            persistGoalCompletionIfEarned()
+            if let days = result.streakDays, var s = streak {
+                s = StreakDTO(days: days, boosts: s.boosts + (result.boostEarned == true ? 1 : 0), nextBoostIn: s.nextBoostIn)
+                streak = s
+            }
+            backendError = nil
+            return result
+        } catch {
+            backendError = error.localizedDescription
+            return nil
+        }
+    
+        }
+    }
+
+    /// GET /user/:id/history — refresh the battle log.
+    func refreshBattleHistory() async {
+        await withBlockingUpdate {
+
+        do {
+            battleHistory = try await api.fetchBattleHistory(id: playerID).battles
+            backendError = nil
+        } catch {
+            backendError = error.localizedDescription
+        }
+    
         }
     }
 
@@ -875,10 +1092,12 @@ final class GameState: ObservableObject {
     /// the old character, and rolls back if the server rejects it.
     @discardableResult
     func setDisplayCharacter(_ characterID: String) async -> Bool {
+        return await withBlockingUpdate {
+
         let previous = profile?.activeCharacterId
         profile?.activeCharacterId = characterID
         do {
-            let result = try await api.updateProfile(id: AppConfig.playerID, activeCharacterId: characterID)
+            let result = try await api.updateProfile(id: playerID, activeCharacterId: characterID)
             profile = result.profile
             backendError = nil
             return true
@@ -887,30 +1106,30 @@ final class GameState: ObservableObject {
             backendError = error.localizedDescription
             return false
         }
+    
+        }
     }
 
     /// GET /user/:id/journey — all numbers + timelines for the Journey view.
     @Published var journey: JourneyResponse?
     func loadJourney() async {
         do {
-            journey = try await api.fetchJourney(id: AppConfig.playerID)
+            journey = try await api.fetchJourney(id: playerID)
             backendError = nil
         } catch {
             backendError = error.localizedDescription
         }
     }
 
-    // MARK: - Backend: loot crates (commit-reveal fairness)
+    // MARK: - Backend: cookbooks & cases (commit-reveal fairness)
 
-    /// POST /lootbox/crates/:id/open — the server resolves the drop
-    /// (commit-reveal); the client never rolls outcomes locally.
+    /// POST /lootbox/cases/:id/open — consume a granted Case; the server
+    /// resolves the drop (commit-reveal); the client never rolls outcomes.
     @discardableResult
-    func openCrate(crateID: String, clientSeed: String? = nil) async -> CrateOpenResponse? {
+    func openPendingCase(caseID: String, clientSeed: String? = nil) async -> CrateOpenResponse? {
         do {
-            let drop = try await api.openCrate(crateID: crateID, clientSeed: clientSeed)
+            let drop = try await api.openPendingCase(caseId: caseID, clientSeed: clientSeed)
             lastCrateDrop = drop
-            keysRemaining = drop.keysRemaining
-            if let p = drop.pity { pity = p }
             backendError = nil
             return drop
         } catch {
@@ -919,13 +1138,14 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// GET /lootbox/inventory — pulls + key balance for this player.
+    /// GET /lootbox/inventory — pulls, mailbox and pending cases for this player.
     func refreshInventory(limit: Int = 50) async {
+        await withBlockingUpdate {
+
         do {
             let inventory = try await api.fetchInventory(limit: limit)
             crateInventory = inventory
-            keysRemaining = inventory.keys
-            if let p = inventory.pity { pity = p }
+            pendingCases = inventory.cases ?? pendingCases
             // A full listing is authoritative about what is still owned —
             // Cauldron Crash destroys instances, so cards have to be able to
             // leave the collection, not only join it. A truncated page says
@@ -937,6 +1157,8 @@ final class GameState: ObservableObject {
         } catch {
             backendError = error.localizedDescription
         }
+    
+        }
     }
 
     func refreshCoins() async {
@@ -947,33 +1169,59 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// POST /characters/sell — one monster out, coins in. Refreshes inventory.
-    /// GET /lootbox/shop-cases — the coin shop, cheapest case first.
-    func refreshShopCases() async -> [ShopCaseDTO] {
+    /// GET /lootbox/cookbooks — the four Cookbooks, cheapest first.
+    func refreshCookbooks() async -> [CookbookDTO] {
         do {
-            let cases = try await api.fetchShopCases()
+            let books = try await api.fetchCookbooks()
             backendError = nil
-            return cases
+            return books
         } catch {
             backendError = error.localizedDescription
             return []
         }
     }
 
-    /// POST /lootbox/shop-cases/:id/open — paid in coins. Shop cases have no
-    /// pity and no rank boost, so only the coin balance comes back to sync;
-    /// `openCrate` above stays the keys path for quests/promos/comeback pulls.
+    /// POST /lootbox/cookbooks/:id/open — paid in coins. `useBoost` spends one
+    /// stored Cookbook Boost on the open (×1.15 Rare+ odds, spec §6); the
+    /// server only consumes it when the mint lands, so a failed open never
+    /// burns the boost. The response's `boostApplied` confirms the spend and
+    /// the local boost count follows it.
     @discardableResult
-    func openShopCase(caseID: String, clientSeed: String? = nil) async -> CrateOpenResponse? {
+    func openCookbook(cookbookID: String, clientSeed: String? = nil, useBoost: Bool = false) async -> CrateOpenResponse? {
+        return await withBlockingUpdate {
+
         do {
-            let drop = try await api.openShopCase(caseID: caseID, clientSeed: clientSeed)
+            let drop = try await api.openCookbook(id: cookbookID, clientSeed: clientSeed, useBoost: useBoost)
             lastCrateDrop = drop
             if let balance = drop.coinBalance { coinBalance = balance }
+            if drop.boostApplied == true, let s = streak {
+                streak = StreakDTO(days: s.days, boosts: max(0, s.boosts - 1), nextBoostIn: s.nextBoostIn)
+            }
             backendError = nil
             return drop
         } catch {
             backendError = error.localizedDescription
             return nil
+        }
+    
+        }
+    }
+
+    /// POST /lootbox/mailbox/claim — move overflow drops into the inventory.
+    @discardableResult
+    func claimMailbox(dropIDs: [String]) async -> Bool {
+        return await withBlockingUpdate {
+
+        do {
+            _ = try await api.claimMailbox(dropIDs: dropIDs)
+            await refreshInventory(limit: 200)
+            backendError = nil
+            return true
+        } catch {
+            backendError = error.localizedDescription
+            return false
+        }
+    
         }
     }
 
@@ -984,7 +1232,11 @@ final class GameState: ObservableObject {
     /// GET /characters/coins — non-fatal: the shop still works with no
     /// balance shown while this is still in flight or unreachable.
     func loadCoinBalance() async {
+        await withBlockingUpdate {
+
         coinBalance = (try? await api.fetchCoins().balance) ?? coinBalance
+    
+        }
     }
 
     /// POST /characters/sell — converts monsters to coins at full net worth.
@@ -1049,7 +1301,6 @@ final class GameState: ObservableObject {
                 locked: item.lockedBy != nil
             )
             if let index = indexByID[id] {
-                if item.shiny { rebuilt[index].isShiny = true }
                 rebuilt[index].dropIDs.append(item.id)
                 rebuilt[index].dropMeta[item.id] = meta
                 rebuilt[index].netWorth += item.value
@@ -1061,11 +1312,13 @@ final class GameState: ObservableObject {
                 id: id,
                 name: item.character.name,
                 colorHex: item.character.colorHex,
+                imageKey: item.character.imageKey,
                 rarity: Rarity(rawValue: item.character.rarity) ?? .common,
-                statType: StatType(rawValue: item.character.statType) ?? .fiber,
-                isShiny: item.shiny,
+                baseHealth: item.character.baseHealth ?? 100,
+                baseAttack: item.character.baseAttack ?? 50,
+                baseMana: item.character.baseMana,
                 starLevel: item.stars ?? 1,
-                bio: item.character.flavor,
+                bio: item.character.bio ?? item.character.flavor,
                 dropIDs: [item.id],
                 netWorth: item.value
             )
@@ -1080,10 +1333,17 @@ final class GameState: ObservableObject {
     /// falls back rather than leaving a sheet blank.
     @Published var characterCatalogBios: [String: String] = [:]
 
-    /// GET /characters/catalog. Bios are static content, so this runs once per
-    /// launch and a failure is not surfaced as a backend error: the sheet has
-    /// a local fallback and nothing else depends on it.
+    /// Authored movesets from the same catalog fetch, keyed by roster id —
+    /// 3 standards + the Special. Powers practice mode and stat sheets so a
+    /// card never fights with just Strike.
+    private(set) var catalogMoves: [String: [BattleMoveSpec]] = [:]
+
+    /// GET /characters/catalog. Bios and movesets are static content, so this
+    /// runs once per launch and a failure is not surfaced as a backend error:
+    /// the sheet has a local fallback and battles fall back to Strike.
     func loadCharacterCatalog() async {
+        await withBlockingUpdate {
+
         guard characterCatalogBios.isEmpty else { return }
         do {
             let catalog = try await api.fetchCharacterCatalog()
@@ -1091,8 +1351,14 @@ final class GameState: ObservableObject {
                 catalog.map { ($0.id, $0.bio) },
                 uniquingKeysWith: { first, _ in first }
             )
+            catalogMoves = Dictionary(
+                catalog.map { ($0.id, $0.engineMoves) },
+                uniquingKeysWith: { first, _ in first }
+            )
         } catch {
             // Left empty on purpose — see the doc comment.
+        }
+    
         }
     }
 
@@ -1128,16 +1394,13 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// POST /lootbox/promos/:code/redeem — one-time reward (keys or a free crate).
+    /// POST /lootbox/promos/:code/redeem — one-time reward (coins or a Case).
     @discardableResult
     func redeemPromo(code: String) async -> PromoRedeemResponse? {
         do {
             let response = try await api.redeemPromo(code: code)
-            keysRemaining = response.result.keys
-            if let drop = response.result.drop {
-                lastCrateDrop = drop
-                _ = addCrateCharacter(drop: drop)
-            }
+            if let balance = response.result.coinBalance { coinBalance = balance }
+            if let granted = response.result.grantedCase { pendingCases.append(granted) }
             backendError = nil
             return response
         } catch {
@@ -1146,43 +1409,17 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// GET /lootbox/crates — crate catalog with published odds.
-    func refreshCrates() async -> [CrateSummaryDTO] {
-        do {
-            let crates = try await api.fetchCrates()
-            if let p = crates.compactMap(\.pity).first { pity = p }
-            backendError = nil
-            return crates
-        } catch {
-            backendError = error.localizedDescription
-            return []
-        }
-    }
-
-    /// GET /user/quests/today — refresh the daily checklist.
-    func refreshQuests() async {
-        do {
-            let response = try await api.fetchDailyQuests()
-            dailyQuests = response.quests
-            persistGoalCompletionIfEarned()
-            backendError = nil
-        } catch {
-            backendError = error.localizedDescription
-        }
-    }
-
-    /// POST /user/quests/:id/claim — pays keys, syncs balance + checklist.
+    /// GET /lootbox/cases — Cases this player can still open.
     @discardableResult
-    func claimQuest(id: String) async -> Bool {
+    func refreshPendingCases() async -> [PendingCaseDTO] {
         do {
-            let result = try await api.claimQuest(id: id)
-            keysRemaining = result.keys
-            await refreshQuests()
+            let cases = try await api.fetchPendingCases()
+            pendingCases = cases
             backendError = nil
-            return true
+            return cases
         } catch {
             backendError = error.localizedDescription
-            return false
+            return pendingCases
         }
     }
 
@@ -1212,28 +1449,37 @@ final class GameState: ObservableObject {
         }
     }
 
-    /// The battle stats behind a collection card — real scanned nutrition
-    /// when available, balanced defaults otherwise. Powers the character
-    /// detail sheet as well as squad selection.
-    func battleStats(for character: Character) -> FoodCharacter? {
-        battleCharacters[character.id] ?? sampleFoodCharacter(for: character)
+    /// The battle stats behind a collection card — the card's own combat
+    /// bases (baseHealth/baseAttack/baseMana from the mint or catalog) plus
+    /// its instance rarity and stars. Powers the character detail sheet as
+    /// well as squad selection.
+    func battleStats(for character: Character) -> BattleUnitSpec {
+        let spec = battleCharacters[character.id] ?? unitSpec(for: character)
+        // A spec cached before the catalog landed still carries the Strike
+        // fallback — swap in the authored moveset once it is known.
+        if let moves = catalogMoves[character.rosterID], !moves.isEmpty, spec.moves.count <= 1 {
+            return BattleUnitSpec(
+                id: spec.id, name: spec.name, baseHealth: spec.baseHealth,
+                baseAttack: spec.baseAttack, rarity: spec.rarity, star: spec.star,
+                moves: moves, baseMana: spec.baseMana
+            )
+        }
+        return spec
     }
 
-    /// Sample characters (no scan yet) map to balanced defaults so the battle
-    /// screen always works.
-    private func sampleFoodCharacter(for c: Character) -> FoodCharacter? {
-        guard let element = BattleElement(rawValue: c.statType.rawValue) else { return nil }
-        // BattleRarity is Int-backed; Character.Rarity is a string enum.
-        // `battleRarity` matches by case name, not raw value, so this never
-        // falls through to .common regardless of real rarity. Both ladders
-        // carry the same seven tiers, so every case resolves 1:1.
-        let rarity = c.rarity.battleRarity
-        return FoodCharacter(
+    /// A character card expressed as the engine's squad snapshot. The card
+    /// carries everything the spec needs; authored moves come from the
+    /// fetched catalog (same data the server replays), Strike as last resort.
+    private func unitSpec(for c: Character) -> BattleUnitSpec {
+        BattleUnitSpec(
+            id: c.id,
             name: c.name,
-            barcode: c.id,
-            element: element,
-            rarity: rarity,
-            baseStats: BattleStats(power: 50, guard: 50, vitality: 50, tempo: 50)
+            baseHealth: c.baseHealth,
+            baseAttack: c.baseAttack,
+            rarity: c.rarity.battleRarity,
+            star: c.starLevel,
+            moves: catalogMoves[c.rosterID] ?? [strikeMove],
+            baseMana: c.baseMana
         )
     }
 
@@ -1392,17 +1638,18 @@ final class GameState: ObservableObject {
             id: "crate-\(reward.character.id)",
             name: reward.character.name,
             colorHex: reward.character.colorHex,
+            imageKey: reward.character.imageKey,
             rarity: Rarity(rawValue: reward.character.rarity) ?? .common,
-            statType: StatType(rawValue: reward.character.statType) ?? .fiber,
-            isShiny: reward.shiny,
+            baseHealth: reward.character.baseHealth ?? 100,
+            baseAttack: reward.character.baseAttack ?? 50,
+            baseMana: reward.character.baseMana,
             starLevel: reward.stars,
-            bio: reward.character.flavor,
+            bio: reward.character.bio ?? reward.character.flavor,
             dropIDs: [reward.id],
             netWorth: reward.netWorth
         )
         character.dropMeta[reward.id] = meta
         if let index = crateCharacters.firstIndex(where: { $0.id == character.id }) {
-            if character.isShiny { crateCharacters[index].isShiny = true }
             crateCharacters[index].dropIDs.append(reward.id)
             crateCharacters[index].dropMeta[reward.id] = meta
             crateCharacters[index].netWorth += reward.netWorth

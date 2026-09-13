@@ -62,7 +62,7 @@ struct LANLobbyView: View {
                     Text("Battle friends nearby")
                         .font(NQText.headingL.font.weight(.heavy))
                         .foregroundStyle(NQTheme.ink)
-                    Text("Everyone on the same Wi-Fi can join. Casual play — no XP or rank on the line.")
+                    Text("Everyone on the same Wi-Fi can join. Casual play: no XP or rank on the line.")
                         .font(NQText.captionS.font)
                         .foregroundStyle(NQTheme.inkMuted)
                         .multilineTextAlignment(.center)
@@ -363,7 +363,7 @@ struct LANBracketView: View {
     private func slot(_ player: String?, pairing: LANPairing) -> some View {
         let isWinner = player != nil && player == pairing.winner
         let isLoser = pairing.winner != nil && player != nil && player != pairing.winner
-        return Text(player.map { name($0) } ?? "—")
+        return Text(player.map { name($0) } ?? "-")
             .font(NQText.captionS.font.weight(isWinner ? .heavy : .regular))
             .foregroundStyle(isWinner ? NQTheme.ink : (isLoser ? NQTheme.inkFaint : NQTheme.inkMuted))
             .strikethrough(isLoser)
@@ -426,7 +426,7 @@ struct LANMatchView: View {
                 if let squad = gameState.lanSquad(from: chosen) {
                     client.lockIn(squad)
                 } else {
-                    client.notice = "Couldn't build that squad — try three different characters."
+                    client.notice = "Couldn't build that squad: try three different characters."
                 }
             }
 
@@ -437,14 +437,13 @@ struct LANMatchView: View {
             BattleView(
                 yourSquad: result.myCharacters,
                 opponentSquad: result.opponentCharacters,
-                fatigued: false,
-                moves: [],
                 gameState: gameState,
                 mode: .lan(LANBattleContext(
                     replay: result.replay,
                     opponentName: client.name(for: result.opponentID),
                     mySide: result.mySide,
-                    unitCharacterIDs: result.unitCharacterIDs
+                    unitCharacterIDs: result.unitCharacterIDs,
+                    unitSpecs: result.unitSpecs
                 ))
             )
 
@@ -457,7 +456,7 @@ struct LANMatchView: View {
         VStack(spacing: NQTheme.spaceM) {
             NQDotsLoader(color: accent.accent)
             Text(match.phase == .revealing
-                 ? "Both squads locked — revealing…"
+                 ? "Both squads locked: revealing…"
                  : "Waiting for \(client.name(for: match.opponentID)) to lock in…")
                 .font(NQText.bodyL.font.weight(.semibold))
                 .foregroundStyle(NQTheme.ink)

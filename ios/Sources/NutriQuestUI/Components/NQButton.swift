@@ -62,7 +62,6 @@ public struct NQButton: View {
                                 startPoint: .top, endPoint: .bottom
                             ))
                         }
-                        .shadow(color: NQTheme.inkDeep, radius: 0, y: 4)
                 }
             }
             .overlay {
@@ -75,7 +74,11 @@ public struct NQButton: View {
             .opacity(isEnabled ? 1 : 0.5)
             .accessibilityElement(children: .combine)
         }
-        .buttonStyle(NQPressableStyle(scale: 0.94, haptic: false))
+        .buttonStyle(NQPressableStyle(
+            scale: 0.96,
+            haptic: false,
+            ledge: style == .ghost ? 0 : (style == .primary ? 5 : 3)
+        ))
         .onHover { hovering in
             if hovering { NQSound.play(.hover) }
         }
@@ -133,7 +136,7 @@ public struct NQStreakPill: View {
             NQCountUpText(value: count, font: NQText.body.font)
         }
         .nqPadding(.chip)
-        .nqPlate(NQPanelShape(), elevation: .sticker, inkStroke: true, lineWidth: NQLayout.hairlineWidth)
+        .nqPlate(NQTicketShape(), elevation: .sticker, inkStroke: true, lineWidth: NQLayout.hairlineWidth)
         .onAppear { running = true; pulsing = true }
         .onDisappear { running = false }
         .accessibilityElement(children: .ignore)
@@ -170,13 +173,60 @@ public struct NQChip: View {
                 .font(NQText.captionS.font)
         }
         .foregroundStyle(filled ? color.readableTextColor() : color)
-        .nqPadding(.chip)
-        .background(filled ? color : color.opacity(0.12))
-        .clipShape(NQPanelShape(cut: NQTheme.radiusXS))
+        .padding(.horizontal, NQTheme.spaceS)
+        .padding(.vertical, 6)
+        .background(NQTicketShape().fill(filled ? color : NQTheme.chrome))
         .overlay {
-            NQPanelShape(cut: NQTheme.radiusXS).strokeBorder(color.opacity(0.5), lineWidth: 1)
+            NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2)
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// Pulsing "Live" chip for a round that's still in play.
+public struct NQLiveBadge: View {
+    private var tint: Color
+    @State private var pulse = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(tint: Color = NQTheme.warning) {
+        self.tint = tint
+    }
+
+    public var body: some View {
+        HStack(spacing: NQTheme.spaceXS) {
+            Circle()
+                .fill(tint)
+                .frame(width: 7, height: 7)
+                .scaleEffect(pulse && !reduceMotion ? 1.25 : 0.9)
+            Text("Live")
+                .font(NQText.microS.font)
+        }
+        .foregroundStyle(tint)
+        .nqPadding(.badge)
+        .background(NQPanelShape(cut: NQTheme.radiusXS).fill(tint.opacity(0.16)))
+        .overlay {
+            NQPanelShape(cut: NQTheme.radiusXS).strokeBorder(tint.opacity(0.45), lineWidth: 1)
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+        .accessibilityLabel("Live round")
+    }
+}
+
+/// Trailing chevron used on rows and doorways — one glyph, one size.
+public struct NQChevron: View {
+    public init() {}
+
+    public var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.system(size: NQLayout.iconS, weight: .bold))
+            .foregroundStyle(NQTheme.inkFaint)
+            .accessibilityHidden(true)
     }
 }
 

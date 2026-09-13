@@ -16,6 +16,7 @@ import {
 import { HOUSE_EDGE } from "../data/cauldron";
 import { RARITY_BANDS } from "../game/rarityBands";
 import { RARITY_ORDER } from "../data/lootTable";
+import { ROSTER } from "../data/roster";
 import { Rarity } from "../types";
 
 // ============================================================================
@@ -214,11 +215,13 @@ describe("reward selection", () => {
     }
   });
 
-  it("keeps power inside the band that priced it", () => {
+  it("keeps the mint value inside the band that priced it", () => {
     for (let i = 0; i < 20; i++) {
       const reward = rewardFor(25_000, i / 20, i / 20);
-      expect(reward.power).toBeGreaterThanOrEqual(0);
-      expect(reward.power).toBeLessThanOrEqual(100);
+      const band = RARITY_BANDS[reward.rarity];
+      expect(reward.baseMintValue).toBeGreaterThanOrEqual(band.min);
+      expect(reward.baseMintValue).toBeLessThanOrEqual(band.max);
+      expect(reward.value).toBe(reward.baseMintValue); // rewards are always ★1
     }
   });
 
@@ -230,7 +233,12 @@ describe("reward selection", () => {
     }
   });
 
-  it("keeps brainrot out of casino secret cash-outs", () => {
-    expect(rewardPool("secret").map((c) => c.id)).toEqual(["the-first-seed"]);
+  it("mints casino rewards from the rarity's pool — Secret draws brainrot", () => {
+    // The 14 food designs mint common..mythic; Secret rewards come from the
+    // secret-only brainrot set, so a big cash-out never produces food art.
+    expect([...rewardPool("common").map((c) => c.id)].sort())
+      .toEqual([...ROSTER.filter((c) => c.rarityEligibility?.includes("common")).map((c) => c.id)].sort());
+    expect(rewardPool("secret").every((c) => c.rarityEligibility?.includes("secret"))).toBe(true);
+    expect(rewardPool("secret").length).toBeGreaterThan(0);
   });
 });

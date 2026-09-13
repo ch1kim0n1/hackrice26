@@ -105,13 +105,13 @@ final class LANHostMatchTests: XCTestCase {
 
     func testTamperedSquadBytesAreRejected() {
         var match = revealing()
-        let swapped = LANFixtures.bytes(LANFixtures.squad("z", power: 100))
+        let swapped = LANFixtures.bytes(LANFixtures.squad("z", attack: 100))
         let outputs = match.handle(.reveal(from: "alice", nonce: alice.nonce, squadBytes: swapped), now: t0)
         XCTAssertTrue(isCancelled(outputs))
     }
 
     func testAnImpossibleSquadIsRejectedEvenWhenHonestlyCommitted() {
-        let cheater = LANTestFighter(id: "alice", side: 0, squad: LANFixtures.squad("a", power: 999))
+        let cheater = LANTestFighter(id: "alice", side: 0, squad: LANFixtures.squad("a", attack: 999))
         var match = picking()
         _ = match.handle(.commit(from: "alice", hash: cheater.commitment(for: match.matchID)), now: t0)
         _ = match.handle(.commit(from: "bob", hash: bob.commitment(for: match.matchID)), now: t0)

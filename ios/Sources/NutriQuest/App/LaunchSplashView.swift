@@ -1,10 +1,7 @@
 import SwiftUI
 import NutriQuestUI
 
-/// Cold-launch splash implemented from the Figma reference: an adventure-blue
-/// screen with the centered "hackrice" lockup that fades in. Purely
-/// presentational -- no data loading gates on it, so a slow network never
-/// extends it.
+/// Cold-launch splash: adventure-blue sky, logo lockup, then into the game.
 struct LaunchSplashView: View {
     @State private var visible = false
 
@@ -13,11 +10,18 @@ struct LaunchSplashView: View {
     var body: some View {
         ZStack {
             NQAdventureBackdrop().ignoresSafeArea()
+            NQFloatingSparkles(count: 10, color: NQTheme.gold)
 
-            NQAssetImage("logo")
-                .frame(width: 180, height: 180)
-                .opacity(visible ? 1 : 0)
-                .scaleEffect(visible ? 1 : 0.94)
+            VStack(spacing: NQTheme.spaceM) {
+                NQAssetImage("logo")
+                    .frame(width: 180, height: 180)
+                Text("NutriQuest")
+                    .font(NQText.display.font)
+                    .foregroundStyle(NQTheme.gold)
+                    .shadow(color: NQTheme.inkDeep, radius: 0, y: 3)
+            }
+            .opacity(visible ? 1 : 0)
+            .scaleEffect(visible ? 1 : 0.92)
         }
         .accessibilityHidden(true)
         .onAppear {
@@ -25,7 +29,7 @@ struct LaunchSplashView: View {
                 visible = true
                 return
             }
-            withAnimation(.easeOut(duration: 0.45)) {
+            withAnimation(.spring(response: 0.5, dampingFraction: 0.72)) {
                 visible = true
             }
         }

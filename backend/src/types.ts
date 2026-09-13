@@ -12,37 +12,74 @@ export type Rarity =
   | "legendary"
   | "mythic"
   | "secret";
-export type StatType = "protein" | "fiber" | "vitamin" | "hydration";
-
 /** Mirrors ColorMode in DesignTokens.swift -- how the accent color is sourced. */
 export type ColorMode = "active" | "bestUnselected" | "none";
 
+/**
+ * A monster as the API presents it — catalog identity fields plus the owning
+ * instance's combat base. The catalog (data/characters.json) defines
+ * baseHealth/baseAttack/baseMana and the authored moves; a barcode mint may
+ * override the combat base with its nutrition-derived profile (source-neutral
+ * combat: the instance fights on its own stored numbers).
+ *
+ * There is deliberately no `element`, `statType` or four-stat blob — the spec
+ * removed the type system entirely.
+ */
 export interface Character {
   id: string;
   name: string;
   /** Hex string, e.g. "#5FCB82" -- mirrors Character.colorHex in the Swift app. */
   colorHex: string;
+  /** Sprite/art lookup key (checked-in asset name). */
+  imageKey?: string;
+  tagline?: string;
+  /** Lore. */
+  bio?: string;
+  /** Instance rarity — rolled at mint, never a property of the design. */
   rarity: Rarity;
-  statType: StatType;
+  baseHealth: number;
+  baseAttack: number;
+  /** Present only on Epic+ instances — Mana exists only there. */
+  baseMana?: number;
+  /** Authored move ids (resolve via data/attacks.ts / the catalog endpoint). */
+  moves?: string[];
+  /** The Mana Special's move id; present only on Epic+ instances. */
+  special?: string;
   isLocked: boolean;
-  /** produce/grain/dairy/protein/other. Set for dish-photo characters, where
-   *  it drives the procedural artwork so different kinds of meal read as
-   *  different creatures. Absent for barcode scans and sample characters. */
-  foodGroup?: string;
+}
+
+/** Nutrition snapshot persisted per scan mint (anti-cheat) and shown to the
+ *  user — per-100g fields as reported by the nutrition source. */
+export interface ScanNutrition {
+  calories?: number;
+  proteinG?: number;
+  carbsG?: number;
+  fatG?: number;
+  fiberG?: number;
+  sugarG?: number;
+  sodiumMg?: number;
+  satFatG?: number;
 }
 
 export interface ScanResult {
   barcode: string;
   foodName: string;
-  /** Which stat this food primarily boosts -- determines which character it can summon. */
-  statType: StatType;
-  /** Set when this scan was novel/balanced enough to summon a new character. */
+  /** Open Food Facts brand string, when the product carries one. */
+  brands?: string;
+  /** 0..100 — the holistic quality score the rarity roll tilted on. */
+  nutritionScore?: number;
+  /** Set when this scan minted a new ★1 monster (first-ever scan of this
+   *  barcode by this player; barcode is the only mint path). */
   summonedCharacter?: Character;
+  /** Nutrition the scan logged — present whether or not it minted. */
+  nutrition?: ScanNutrition;
+  /** True when this player has already minted from this barcode — the scan
+   *  still logs nutrition and counts for tasks, it just never mints again. */
+  duplicate?: boolean;
 }
 
 export interface BattleMove {
   name: string;
-  statType: StatType;
   description: string;
 }
 
@@ -136,29 +173,31 @@ export interface RarityTier {
   statMultiplier: number;
 }
 
-export interface Crate {
+/**
+ * A Cookbook — the only purchasable loot container (spec §3). Specs (price,
+ * 7-tier odds) live in game/spec.ts; flavour text lives in data/lootTable.ts.
+ */
+export interface Cookbook {
   id: string;
   name: string;
   description: string;
-  keyCost: number;
-  /** Character ids this crate can yield. */
-  characterIds: string[];
+  price: number;
+  odds: Record<Rarity, number>;
 }
 
-/** Which band a power roll fell into, and what it does to the drop's value. */
-
-export interface PowerBand {
-  label: string;
-  min: number;
-  max: number;
-  valueMultiplier: number;
-}
-
+/**
+ * The disclosed rolls behind a mint. Every roll is a uniform float in [0,1)
+ * derived from the commit-reveal seed pair — kept so /lootbox/verify can
+ * reproduce the exact outcome.
+ */
 export interface DropRolls {
   rarity: number;
   character: number;
-  power: number;
-  shiny: number;
+  /** Band-segment pick (55/27/13/4/1). -1 when the drop was budget-priced
+   *  (casino rewards) and no segment was rolled. */
+  mintSegment: number;
+  /** Position inside the band/segment. */
+  mintPosition: number;
 }
 
 export interface Fairness {
@@ -168,20 +207,19 @@ export interface Fairness {
 }
 
 export interface LootDrop {
+  /** Container/source that produced this drop: a cookbook id, a granted case
+   *  source ("case:<rarity>"), "scan", "starter-roster", "merge", ... */
   crateId: string;
   character: Character;
-  /** Mastery stars. Raised by fusion; a Cauldron Crash reward always lands at
-   *  1, because Crash is rarity progression and never mastery. */
+  /** Mastery stars (1-5). Raised by fusion; fresh mints always land at 1. */
   stars?: number;
-  /** 0-100. Higher is better, unlike a CS:GO float. */
-  power: number;
-  powerLabel: string;
-  /** The holo variant. Cosmetic, but doubles the drop's value. */
-  shiny: boolean;
+  /** The ★1 value rolled at mint — permanent, inherited by fusion (max wins). */
+  baseMintValue: number;
+  /** Current net worth: baseMintValue + star bonus (spec §2). */
   value: number;
   rolls: DropRolls;
-  /** Set when the pity guarantee lifted the rolled tier (see lootboxEngine). */
-  pityForced?: "epic" | "legendary" | null;
+  /** Rarity of the Case that produced this mint, when opened via a case. */
+  caseRarity?: Rarity;
   fairness: Fairness;
   openedAt: string;
 }

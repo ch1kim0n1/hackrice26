@@ -1,144 +1,587 @@
-import { describe, it, expect } from "vitest";
-import { simulate, SimUnit } from "./battle";
+import { describe, it, expect, beforeAll } from "vitest";
+import type { SimUnit } from "./battle";
+import {
+  Battle,
+  BattleAction,
+  BattleUnitSpec,
+  MoveSpec,
+  STATUS_PARAMS,
+  combatStar,
+  effectiveStat,
+  makeRng,
+  simulateBattle,
+  startingMana,
+  DAMAGE_SCALE,
+  MAX_TURNS
+} from "../services/battleEngine";
+import {
+  CRIT_CHANCE,
+  CRIT_MULT,
+  VARIANCE_MIN,
+  VARIANCE_MAX,
+  MIN_DAMAGE,
+  STAR_COMBAT_MULT,
+  STAR_MANA_MULT,
+  RARITY_COMBAT_MULT
+} from "../game/spec";
 
 // ============================================================================
-// Battle engine determinism + cross-port parity tests.
+// Battle engine tests — final-dev-doc §4 + checklist.
 //
-// The Swift BattleEngine (ios/Sources/BattleKit/BattleEngine.swift) is the
-// reference implementation. This TypeScript port
-// (backend/src/routes/battle.ts) MUST produce identical outcomes for the same
-// squads + seed, because docs/BATTLE-SYSTEM.md §5 makes the server
-// authoritative for PvP: "Both clients replay the identical event list.
-// Clients never compute outcomes." If the two ports drift, a PvP battle
-// resolved on the server would not match the replay the clients animate,
-// which is a correctness contract violation.
-//
-// The fixtures below mirror BattleFixtures in
-// ios/Tests/BattleKitTests/BattleEngineTests.swift. The Swift test suite
-// records the canonical winner/rounds for each seed; the assertions here
-// check the TS port agrees.
+// The Swift mirror (ios/Sources/BattleKit/BattleEngine.swift) MUST produce
+// identical event streams for identical squads + seed — the server is
+// authoritative and clients replay the same events. The canonical results
+// table at the bottom is baked into BOTH test suites; a drift on either side
+// fails the port that moved.
 // ============================================================================
 
-// --- Fixtures (mirror BattleFixtures in BattleEngineTests.swift) ---
-// Stats are PRE rarity/fusion scaling, matching the Swift baseStats. The
-// Swift engine scales by rarity * star inside FoodCharacter.stats and the TS
-// port now does too (B-001 fixed); we feed already-scaled stats here to
-// isolate the parity check to the simulation loop itself.
+const STRIKE: MoveSpec = { id: "strike", name: "Strike", kind: "standard", power: 3, accuracy: 100, manaCost: 0 };
 
-function scaled(rarityMult: number, fusionTier: number, base: { power: number; guard: number; vitality: number; tempo: number }) {
-  const m = rarityMult * (1 + 0.08 * fusionTier);
-  return { power: base.power * m, guard: base.guard * m, vitality: base.vitality * m, tempo: base.tempo * m };
+function unit(id: string, overrides: Partial<BattleUnitSpec> = {}): BattleUnitSpec {
+  return {
+    id,
+    name: id,
+    baseHealth: 100,
+    baseAttack: 50,
+    rarity: "common",
+    star: 1,
+    moves: [STRIKE],
+    ...overrides
+  };
 }
 
-const RARITY_MULT = { common: 1.0, rare: 1.12, epic: 1.25, legendary: 1.4 } as const;
+function squadOf(prefix: string, n = 3, overrides: Partial<BattleUnitSpec> = {}): BattleUnitSpec[] {
+  return Array.from({ length: n }, (_, i) => unit(`${prefix}${i}`, overrides));
+}
 
-const proteinHero = scaled(RARITY_MULT.rare, 0, { power: 80, guard: 40, vitality: 50, tempo: 60 });
-const fiberGuardian = scaled(RARITY_MULT.epic, 0, { power: 40, guard: 90, vitality: 60, tempo: 30 });
-const vitaminSage = scaled(RARITY_MULT.common, 0, { power: 30, guard: 30, vitality: 80, tempo: 50 });
-const hydrationRogue = scaled(RARITY_MULT.legendary, 0, { power: 50, guard: 50, vitality: 50, tempo: 90 });
-const proteinBruiser = scaled(RARITY_MULT.common, 0, { power: 70, guard: 50, vitality: 40, tempo: 40 });
-const fiberScout = scaled(RARITY_MULT.rare, 0, { power: 35, guard: 60, vitality: 55, tempo: 45 });
+// ---------------------------------------------------------------------------
+// Formulas
+// ---------------------------------------------------------------------------
 
-const squadA: SimUnit[] = [
-  { id: "00000000-0000-0000-0000-000000000001", name: "Protein Hero", element: "protein", ...proteinHero },
-  { id: "00000000-0000-0000-0000-000000000002", name: "Fiber Guardian", element: "fiber", ...fiberGuardian },
-  { id: "00000000-0000-0000-0000-000000000003", name: "Vitamin Sage", element: "vitamin", ...vitaminSage }
-];
-
-const squadB: SimUnit[] = [
-  { id: "00000000-0000-0000-0000-000000000004", name: "Hydration Rogue", element: "hydration", ...hydrationRogue },
-  { id: "00000000-0000-0000-0000-000000000005", name: "Protein Bruiser", element: "protein", ...proteinBruiser },
-  { id: "00000000-0000-0000-0000-000000000006", name: "Fiber Scout", element: "fiber", ...fiberScout }
-];
-
-// --- Canonical outcomes from the Swift reference engine ---
-// These were produced by running BattleEngineTests.swift on the Swift engine
-// with the same fixtures + seeds. The TS port MUST agree. If it does not,
-// the drift is a blocker (see QA report B-001..B-005).
-//
-// Swift winnerSide: 0 = squadA wins, 1 = squadB wins.
-// TS winner: "A" | "B".
-const SWIFT_RESULTS: Record<string, { winner: "A" | "B"; rounds: number }> = {
-  // Recorded from BattleEngineTests.testZZZ_recordCanonicalOutcomes on the
-  // Swift reference engine (ios/Sources/BattleKit/BattleEngine.swift) using
-  // the same fixtures above. The TS port MUST agree.
-  //
-  // These assertions previously recorded known drift (B-001..B-005) and were
-  // expected to fail; the port now agrees with the Swift reference on every
-  // fixture. If one starts failing, the drift is back and is a blocker.
-  "0xDEADBEEFCAFEBABE": { winner: "A", rounds: 3 },
-  "42": { winner: "A", rounds: 6 },
-  "1": { winner: "B", rounds: 6 },
-  "100": { winner: "A", rounds: 4 },
-  "9999": { winner: "B", rounds: 7 }
-};
-
-describe("battle engine — determinism (TS port)", () => {
-  it("same seed + same squads produces identical output", () => {
-    const seed = 0xDEADBEEFCAFEBABEn;
-    const r1 = simulate(squadA, squadB, seed);
-    const r2 = simulate(squadA, squadB, seed);
-    expect(r1).toEqual(r2);
+describe("battle engine — spec §4 formulas", () => {
+  it("effectiveStat = base × rarityMult × starCombatMult", () => {
+    expect(effectiveStat(100, "common", 1)).toBeCloseTo(100);
+    expect(effectiveStat(100, "epic", 3)).toBeCloseTo(100 * 1.25 * 1.18);
+    expect(effectiveStat(50, "legendary", 5)).toBeCloseTo(50 * 1.4 * 1.45);
   });
 
-  it("different seeds produce different event streams", () => {
-    const r1 = simulate(squadA, squadB, 1n);
-    const r2 = simulate(squadA, squadB, 2n);
-    expect(r1.events).not.toEqual(r2.events);
+  it("star combat mults follow the spec curve", () => {
+    expect(STAR_COMBAT_MULT[1]).toBe(1.0);
+    expect(STAR_COMBAT_MULT[2]).toBe(1.08);
+    expect(STAR_COMBAT_MULT[3]).toBe(1.18);
+    expect(STAR_COMBAT_MULT[4]).toBe(1.3);
+    expect(STAR_COMBAT_MULT[5]).toBe(1.45);
   });
 
-  it("winner is always A or B", () => {
-    for (const seed of [1n, 100n, 9999n, 0xFFFFFFFFn]) {
-      const r = simulate(squadA, squadB, seed);
-      expect(["A", "B"]).toContain(r.winner);
-    }
+  it("secret monsters clamp to ★2 for combat", () => {
+    expect(combatStar("secret", 5)).toBe(2);
+    expect(effectiveStat(100, "secret", 5)).toBeCloseTo(100 * 1.7 * 1.08);
   });
 
-  it("rounds are bounded by maxRounds + 1", () => {
-    const r = simulate(squadA, squadB, 0xCAFEn);
-    expect(r.rounds).toBeGreaterThanOrEqual(1);
-    expect(r.rounds).toBeLessThanOrEqual(13);
+  it("starting mana = floor(baseMana × starManaMult), Epic+ only", () => {
+    const epic = unit("e", { rarity: "epic", star: 3, baseMana: 100 });
+    expect(startingMana(epic)).toBe(Math.floor(100 * STAR_MANA_MULT[3]));
+    const common = unit("c", { rarity: "common", baseMana: 100 });
+    expect(startingMana(common)).toBe(0);
   });
 
-  it("replay starts with battleStart and ends with victory", () => {
-    const r = simulate(squadA, squadB, 42n);
-    expect(r.events[0]).toMatchObject({ event: "battleStart" });
-    expect(r.events[r.events.length - 1]).toMatchObject({ event: "victory" });
+  it("a successful damaging hit never deals less than MIN_DAMAGE", () => {
+    // Ticklish attacker vs a raid boss: power 1 × attack 1 → base ≈ 2.1,
+    // floor still ≥ 1 on every roll.
+    const tickle: MoveSpec = { id: "t", name: "Tickle", kind: "standard", power: 1, accuracy: 100, manaCost: 0 };
+    const weak = unit("w", { baseAttack: 1, moves: [tickle] });
+    const boss = unit("b", { baseHealth: 200, rarity: "secret", star: 2 });
+    const result = simulateBattle([weak], [boss], 7n);
+    const hits = result.events.filter(
+      (e): e is { event: string; damage: number } => (e as { event: string }).event === "attack"
+    );
+    expect(hits.length).toBeGreaterThan(0);
+    for (const hit of hits) expect(hit.damage).toBeGreaterThanOrEqual(MIN_DAMAGE);
   });
 });
 
-describe("battle engine — Swift/TS parity (BLOCKER if fails)", () => {
-  // These tests assert the TS port agrees with the Swift reference engine.
-  // They are EXPECTED TO FAIL until the port drift is fixed (see QA report
-  // B-001..B-005). The failure is the point: it surfaces the drift.
-  for (const [seedStr, expected] of Object.entries(SWIFT_RESULTS)) {
-    it(`seed ${seedStr}: TS winner matches Swift winner=${expected.winner} rounds=${expected.rounds}`, () => {
-      const r = simulate(squadA, squadB, BigInt(seedStr));
-      // NOTE: this will fail until B-001..B-005 are fixed.
+// ---------------------------------------------------------------------------
+// Determinism
+// ---------------------------------------------------------------------------
+
+describe("battle engine — determinism", () => {
+  const a = squadOf("a");
+  const b = squadOf("b");
+
+  it("same seed + same squads → identical result", () => {
+    expect(simulateBattle(a, b, 42n)).toEqual(simulateBattle(a, b, 42n));
+  });
+
+  it("different seeds → different event streams", () => {
+    expect(simulateBattle(a, b, 1n).events).not.toEqual(simulateBattle(a, b, 2n).events);
+  });
+
+  it("winner is always A or B, events start with battleStart and end with victory", () => {
+    for (const seed of [1n, 100n, 9999n]) {
+      const r = simulateBattle(a, b, seed);
+      expect(["A", "B"]).toContain(r.winner);
+      expect(r.events[0]).toMatchObject({ event: "battleStart" });
+      expect(r.events[r.events.length - 1]).toMatchObject({ event: "victory" });
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Turn structure
+// ---------------------------------------------------------------------------
+
+describe("battle engine — turns", () => {
+  it("PvE firstTurn 'A' makes the player move first", () => {
+    const battle = new Battle(squadOf("a"), squadOf("b"), 1n, { firstTurn: "A" });
+    expect(battle.currentSide).toBe("A");
+  });
+
+  it("PvP coinFlip consumes exactly one draw before the first action", () => {
+    // Drive both sides with a fixed move; the only pre-action draw is the
+    // flip, so comparing against the raw RNG stream proves no extra draws.
+    const rng = makeRng(5n);
+    const flip = rng(); // the draw the constructor will make
+    const battle = new Battle(squadOf("a"), squadOf("b"), 5n, { firstTurn: "coinFlip" });
+    expect(battle.currentSide).toBe(flip < 0.5 ? "A" : "B");
+  });
+
+  it("turns strictly alternate — no tempo ordering", () => {
+    const battle = new Battle(squadOf("a"), squadOf("b"), 1n, { firstTurn: "A" });
+    const seen: string[] = [];
+    for (let i = 0; i < 6 && !battle.finished; i++) {
+      seen.push(battle.currentSide!);
+      battle.act(battle.currentSide === "A" ? 0 : 1, { type: "move", moveIndex: 0 });
+    }
+    expect(seen).toEqual(["A", "B", "A", "B", "A", "B"]);
+  });
+
+  it("a voluntary switch consumes the whole turn", () => {
+    const battle = new Battle(squadOf("a"), squadOf("b"), 1n, { firstTurn: "A" });
+    battle.act(0, { type: "switch", unitIndex: 1 });
+    const last = battle.events[battle.events.length - 1];
+    expect(last).toMatchObject({ event: "turnEnd", turn: 1 });
+    const sw = battle.events.find((e) => (e as { event: string }).event === "switch") as
+      | { forced: boolean; in: string }
+      | undefined;
+    expect(sw?.forced).toBe(false);
+    expect(sw?.in).toBe("a1");
+    // No attack happened on side A's turn.
+    expect(battle.events.some((e) => (e as { event: string }).event === "attack")).toBe(false);
+    expect(battle.activeIndex(0)).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Faints and forced replacement
+// ---------------------------------------------------------------------------
+
+describe("battle engine — faints", () => {
+  it("a faint triggers a free replacement that does not consume a turn", () => {
+    const glass = unit("glass", { baseHealth: 1 });
+    const strong = squadOf("b", 3, { baseAttack: 200, rarity: "legendary", star: 5 });
+    const battle = new Battle([glass, unit("a1"), unit("a2")], strong, 3n, { firstTurn: "B" });
+    // B's first hit faints 'glass'.
+    battle.act(1, { type: "move", moveIndex: 0 });
+    const events = battle.events as { event: string; [k: string]: unknown }[];
+    const faint = events.find((e) => e.event === "faint" && e.unit === "glass");
+    expect(faint).toBeTruthy();
+    const sw = events.find((e) => e.event === "switch" && e.forced === true);
+    expect(sw).toBeTruthy();
+    // The replacement was automatic and free — side A still acts next.
+    expect(battle.currentSide).toBe("A");
+  });
+
+  it("the battle ends when all three monsters on one side faint", () => {
+    const weak = squadOf("w", 3, { baseHealth: 1 });
+    const strong = squadOf("s", 3, { baseAttack: 300, rarity: "secret", star: 2 });
+    const result = simulateBattle(weak, strong, 11n, { firstTurn: "B" });
+    expect(result.winner).toBe("B");
+    expect(result.reason).toBe("wipeout");
+    expect(result.faintedA).toHaveLength(3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Accuracy and statuses
+// ---------------------------------------------------------------------------
+
+describe("battle engine — accuracy & statuses", () => {
+  const blind: MoveSpec = { id: "blind", name: "Blind", kind: "standard", power: 3, accuracy: 0, manaCost: 0 };
+
+  it("a 0-accuracy move always misses and deals nothing", () => {
+    // Blind BOTH sides so no attack ever lands.
+    const r = simulateBattle([unit("a", { moves: [blind] })], [unit("b", { moves: [blind] })], 9n, { maxTurns: 10 });
+    const misses = r.events.filter((e) => (e as { event: string }).event === "miss");
+    expect(misses.length).toBeGreaterThan(0);
+    expect(r.events.some((e) => (e as { event: string }).event === "attack" && (e as { damage: number }).damage > 0)).toBe(false);
+    expect(r.reason).toBe("turnLimit");
+  });
+
+  it("a status only rolls when the move hits (P = P(hit) × P(status|hit))", () => {
+    // accuracy 0 + statusChance 100 must NEVER apply the status.
+    const whiff: MoveSpec = { ...blind, statusEffect: "burn", statusChance: 100, duration: 3 };
+    const r = simulateBattle([unit("a", { moves: [whiff] })], [unit("b")], 9n, { maxTurns: 10 });
+    expect(r.events.some((e) => (e as { event: string }).event === "status")).toBe(false);
+  });
+
+  it("burn ticks damage at the start of the target's turns", () => {
+    const burner: MoveSpec = { id: "br", name: "Burn", kind: "standard", power: 0, accuracy: 100, statusEffect: "burn", statusChance: 100, duration: 3, manaCost: 0 };
+    const battle = new Battle([unit("a", { moves: [burner] })], [unit("b")], 4n, { firstTurn: "A" });
+    battle.act(0, { type: "move", moveIndex: 0 }); // apply burn
+    battle.act(1, { type: "move", moveIndex: 0 }); // b ticks, then strikes
+    const tick = (battle.events as { event: string; kind?: string; damage?: number }[]).find(
+      (e) => e.event === "statusTick" && e.kind === "burn"
+    );
+    expect(tick).toBeTruthy();
+    expect(tick!.damage).toBeCloseTo(100 * STATUS_PARAMS.burnFraction);
+  });
+
+  it("stun makes the afflicted unit skip its action", () => {
+    const stunner: MoveSpec = { id: "st", name: "Stun", kind: "standard", power: 0, accuracy: 100, statusEffect: "stun", statusChance: 100, duration: 1, manaCost: 0 };
+    const battle = new Battle([unit("a", { moves: [stunner] })], [unit("b")], 4n, { firstTurn: "A" });
+    battle.act(0, { type: "move", moveIndex: 0 });
+    battle.act(1, { type: "move", moveIndex: 0 }); // b is stunned — no attack
+    expect(battle.events.some((e) => (e as { event: string }).event === "stunned")).toBe(true);
+  });
+
+  it("heal restores a fraction of max HP on proc", () => {
+    const healer: MoveSpec = { id: "h", name: "Heal", kind: "standard", power: 0, accuracy: 100, statusEffect: "heal", statusChance: 100, manaCost: 0 };
+    const battle = new Battle(
+      [unit("a", { moves: [healer] })],
+      [unit("b")],
+      4n,
+      { firstTurn: "A", carryHPA: [0.4] }
+    );
+    const before = battle.unitState(0, 0).hp;
+    battle.act(0, { type: "move", moveIndex: 0 });
+    const after = battle.unitState(0, 0).hp;
+    expect(after - before).toBeCloseTo(battle.unitState(0, 0).maxHP * STATUS_PARAMS.healFraction);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mana / specials
+// ---------------------------------------------------------------------------
+
+describe("battle engine — mana", () => {
+  const special: MoveSpec = { id: "sp", name: "Special", kind: "special", power: 8, accuracy: 100, manaCost: 40 };
+
+  it("Epic+ starts with floor(baseMana × starManaMult); specials consume it", () => {
+    const e = unit("e", { rarity: "epic", star: 1, baseMana: 100, moves: [STRIKE, special] });
+    const battle = new Battle([e], [unit("b")], 4n, { firstTurn: "A" });
+    expect(battle.unitState(0, 0).mana).toBe(100);
+    battle.act(0, { type: "move", moveIndex: 1 });
+    expect(battle.unitState(0, 0).mana).toBe(60);
+  });
+
+  it("a special is not a legal action without enough mana", () => {
+    const e = unit("e", { rarity: "epic", baseMana: 39, moves: [STRIKE, special] });
+    const battle = new Battle([e], [unit("b")], 4n, { firstTurn: "A" });
+    const legal = battle.legalActions(0);
+    expect(legal.some((a) => a.type === "move" && a.moveIndex === 1)).toBe(false);
+  });
+
+  it("sub-Epic monsters never see a special", () => {
+    const c = unit("c", { rarity: "rare", baseMana: 200, moves: [STRIKE, special] });
+    const battle = new Battle([c], [unit("b")], 4n, { firstTurn: "A" });
+    expect(battle.unitState(0, 0).mana).toBe(0);
+    expect(battle.legalActions(0).some((a) => a.type === "move" && a.moveIndex === 1)).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Anti-stall
+// ---------------------------------------------------------------------------
+
+describe("battle engine — anti-stall", () => {
+  it("turn limit resolves by remaining monster count first", () => {
+    // A has two fainted already; B is at full. Stall to the cap → B wins.
+    const battle = new Battle(
+      squadOf("a", 3),
+      squadOf("b", 3),
+      1n,
+      { firstTurn: "A", maxTurns: 4, carryHPA: [1, 0, 0] }
+    );
+    const noop: BattleAction = { type: "move", moveIndex: 0 };
+    // Zero-power moves only → nobody faints, turn cap hits.
+    const zero = { id: "z", name: "Z", kind: "standard", power: 0, accuracy: 100, manaCost: 0 } as MoveSpec;
+    // rebuild with zero-power moves
+    const b2 = new Battle(
+      squadOf("a", 3, { moves: [zero] }),
+      squadOf("b", 3, { moves: [zero] }),
+      1n,
+      { firstTurn: "A", maxTurns: 4, carryHPA: [1, 0, 0] }
+    );
+    const r = b2.runToCompletion();
+    expect(r.reason).toBe("turnLimit");
+    expect(r.winner).toBe("B"); // B has 3 alive, A has 1
+    void battle;
+    void noop;
+  });
+
+  it("equal counts resolve by total HP share", () => {
+    const zero: MoveSpec = { id: "z", name: "Z", kind: "standard", power: 0, accuracy: 100, manaCost: 0 };
+    const battle = new Battle(
+      squadOf("a", 1, { moves: [zero] }),
+      squadOf("b", 1, { moves: [zero] }),
+      1n,
+      { firstTurn: "A", maxTurns: 2, carryHPA: [0.9], carryHPB: [0.5] }
+    );
+    const r = battle.runToCompletion();
+    expect(r.reason).toBe("turnLimit");
+    expect(r.winner).toBe("A"); // 90% > 50% HP share
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Snapshot semantics
+// ---------------------------------------------------------------------------
+
+describe("battle engine — snapshot isolation", () => {
+  it("mutating the input specs after construction cannot affect the match", () => {
+    const a = squadOf("a");
+    const b = squadOf("b");
+    const battle = new Battle(a, b, 8n, { firstTurn: "A" });
+    const pristine = new Battle(squadOf("a"), squadOf("b"), 8n, { firstTurn: "A" });
+    // Corrupt the inputs post-construction.
+    a[0].baseAttack = 99999;
+    a[0].moves = [];
+    b[0].baseHealth = 1;
+    const r1 = battle.runToCompletion();
+    const r2 = pristine.runToCompletion();
+    expect(r1.events).toEqual(r2.events);
+    expect(r1.winner).toBe(r2.winner);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Canonical seeds — baked for the Swift↔TS parity contract.
+//
+// These are the recorded outcomes of THIS implementation. The identical
+// table is asserted in ios/Tests/BattleKitTests: if either port drifts, one
+// side's assertion fails. Do not "fix" a mismatch by editing the table —
+// fix the port that moved.
+// ---------------------------------------------------------------------------
+
+const CANONICAL: Record<string, { winner: "A" | "B"; turns: number }> = {
+  "0": { winner: "B", turns: 66 },
+  "1": { winner: "A", turns: 72 },
+  "42": { winner: "A", turns: 84 },
+  "100": { winner: "B", turns: 88 },
+  "9999": { winner: "B", turns: 66 }
+};
+
+describe("battle engine — canonical seed table (Swift parity)", () => {
+  // Mixed-rarity squads matching the canonical fixtures in BattleKitTests.
+  const strike: MoveSpec = { id: "strike", name: "Strike", kind: "standard", power: 3.5, accuracy: 95, manaCost: 0 };
+  const guard: MoveSpec = { id: "guard", name: "Guard", kind: "standard", power: 0, accuracy: 100, statusEffect: "guard_up", statusChance: 100, duration: 2, manaCost: 0 };
+  const blast: MoveSpec = { id: "blast", name: "Blast", kind: "special", power: 8, accuracy: 85, manaCost: 40 };
+
+  const canonicalA: BattleUnitSpec[] = [
+    { id: "a0", name: "A0", baseHealth: 100, baseAttack: 50, rarity: "common", star: 1, moves: [strike, guard] },
+    { id: "a1", name: "A1", baseHealth: 110, baseAttack: 55, rarity: "rare", star: 2, moves: [strike, guard] },
+    { id: "a2", name: "A2", baseHealth: 95, baseAttack: 60, rarity: "epic", star: 3, baseMana: 90, moves: [strike, guard, blast] }
+  ];
+  const canonicalB: BattleUnitSpec[] = [
+    { id: "b0", name: "B0", baseHealth: 105, baseAttack: 45, rarity: "uncommon", star: 1, moves: [strike, guard] },
+    { id: "b1", name: "B1", baseHealth: 120, baseAttack: 50, rarity: "epic", star: 2, baseMana: 120, moves: [strike, guard, blast] },
+    { id: "b2", name: "B2", baseHealth: 90, baseAttack: 55, rarity: "rare", star: 3, moves: [strike, guard] }
+  ];
+
+  for (const [seed, expected] of Object.entries(CANONICAL)) {
+    it(`seed ${seed}: winner=${expected.winner} turns=${expected.turns}`, () => {
+      const r = simulateBattle(canonicalA, canonicalB, BigInt(seed));
       expect(r.winner).toBe(expected.winner);
-      expect(r.rounds).toBe(expected.rounds);
+      expect(r.turns).toBe(expected.turns);
     });
   }
 
-  it("attack events include move name and typeMod (parity with Swift)", () => {
-    const r = simulate(squadA, squadB, 42n);
-    const attacks = r.events.filter((e) => (e as { event: string }).event === "attack");
-    expect(attacks.length).toBeGreaterThan(0);
-    for (const a of attacks) {
-      // Swift emits: attackerID, defenderID, move, damage, crit, typeMod.
-      // TS currently emits only: attacker, defender, damage, crit (B-004).
-      expect(a).toHaveProperty("move");
-      expect(a).toHaveProperty("typeMod");
+  it("constants match the spec contract", () => {
+    expect(CRIT_CHANCE).toBe(1 / 24);
+    expect(CRIT_MULT).toBe(1.5);
+    expect(VARIANCE_MIN).toBe(0.85);
+    expect(VARIANCE_MAX).toBe(1.0);
+    expect(MIN_DAMAGE).toBe(1);
+    expect(RARITY_COMBAT_MULT.secret).toBe(1.7);
+    expect(DAMAGE_SCALE).toBeGreaterThan(0);
+    expect(MAX_TURNS).toBeGreaterThan(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Route adapter (routes/battle.ts simulate()) — thin contract check.
+//
+// Importing routes/battle pulls in the DB layer, so the adapter tests point
+// the DB at memory before dynamically importing the module.
+// ---------------------------------------------------------------------------
+
+describe("route adapter", () => {
+  let simulate: typeof import("./battle").simulate;
+
+  beforeAll(async () => {
+    process.env.NUTRIQUEST_DB = "memory";
+    ({ simulate } = await import("./battle"));
+  });
+
+  it("simulate() wraps the engine and returns the legacy response shape", () => {
+    const a: SimUnit[] = [{ id: "x1", name: "X", baseHealth: 100, baseAttack: 50, star: 1, rarity: "common" }];
+    const b: SimUnit[] = [{ id: "y1", name: "Y", baseHealth: 100, baseAttack: 50, star: 1, rarity: "common" }];
+    const r = simulate(a, b, 42n);
+    expect(["A", "B"]).toContain(r.winner);
+    expect(r.rounds).toBeGreaterThan(0);
+    expect(r.events[0]).toMatchObject({ event: "battleStart" });
+    expect(r.hpLeftA).toHaveLength(1);
+  });
+
+  it("roster ids resolve authored movesets", () => {
+    const a: SimUnit[] = [{ id: "broccoli-bud", name: "Broc", baseHealth: 100, baseAttack: 50, star: 1, rarity: "common", characterKey: "broccoli-bud" }];
+    const b: SimUnit[] = [{ id: "y1", name: "Y", baseHealth: 100, baseAttack: 50, star: 1, rarity: "common" }];
+    const r = simulate(a, b, 42n);
+    const moves = new Set(
+      r.events
+        .filter((e) => (e as { event: string }).event === "attack")
+        .map((e) => (e as { moveId?: string }).moveId)
+    );
+    expect([...moves].some((m) => m?.startsWith("broccoli-bud-"))).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Interactive replay (runScripted) — spec §4 player-driven battles.
+//
+// The client plays locally and submits its decisions; the server replays
+// them against the parked seed/squads. Anything illegal or missing rejects
+// the script — a fallback would diverge from what the client displayed.
+// ---------------------------------------------------------------------------
+
+describe("runScripted — interactive battle replay", () => {
+  const seed = 4242n;
+
+  function scriptedBattle(script: import("../services/battleEngine").ScriptedAction[]) {
+    const b = new Battle(squadOf("a"), squadOf("b"), seed, {
+      firstTurn: "coinFlip",
+      manualReplacement: 0
+    });
+    return { battle: b, outcome: b.runScripted(script) };
+  }
+
+  /** Drive a battle interactively (side A always picks move 0) and return
+   *  the script of decisions it made — what an honest client would submit. */
+  function recordScript(s: bigint): { script: import("../services/battleEngine").ScriptedAction[]; live: Battle } {
+    const live = new Battle(squadOf("a"), squadOf("b"), s, { firstTurn: "coinFlip", manualReplacement: 0 });
+    const script: import("../services/battleEngine").ScriptedAction[] = [];
+    while (!live.finished && live.turn < MAX_TURNS) {
+      if (live.needsReplacement(0)) {
+        const idx = live.sideState(0).findIndex((u, i) => !u.fainted && i !== live.activeIndex(0));
+        script.push({ type: "choose", unitIndex: idx });
+        live.chooseReplacement(0, idx);
+        continue;
+      }
+      if (live.currentSide === "A") {
+        script.push({ type: "move", moveIndex: 0 });
+        live.act(0, { type: "move", moveIndex: 0 });
+      } else {
+        live.act(1, Battle.defaultPolicy(live, 1));
+      }
+    }
+    return { script, live };
+  }
+
+  it("replays a recorded script deterministically", () => {
+    const { script, live } = recordScript(seed);
+    const first = scriptedBattle(script);
+    const second = scriptedBattle(script);
+    expect(first.outcome.ok).toBe(true);
+    expect(second.outcome.ok).toBe(true);
+    if (first.outcome.ok && second.outcome.ok) {
+      expect(first.battle.events).toEqual(live.events);
+      expect(second.battle.events).toEqual(live.events);
+      expect(first.outcome.result.winner).toBe(live.winner);
     }
   });
 
-  it("uses both basic and signature moves (parity with Swift 50/50 pick)", () => {
-    // Swift picks basic vs signature with 50% chance (BattleEngine.swift:108).
-    // TS always uses signature move power 1.45 (battle.ts:102) — B-003.
-    const r = simulate(squadA, squadB, 42n);
-    const attacks = r.events.filter((e) => (e as { event: string }).event === "attack");
-    const moveNames = new Set(attacks.map((a) => (a as { move?: string }).move).filter(Boolean));
-    // Swift would produce both "Strike" (basic) and "<name> Special" (signature).
-    expect(moveNames.has("Strike")).toBe(true);
+  it("player-scripted match equals a client-driven match with same decisions", () => {
+    // Drive an identical battle interactively: side 0 picks move 0 whenever
+    // legal, side 1 uses the default policy. The recorded script must replay
+    // to an identical event stream.
+    const live = new Battle(squadOf("a"), squadOf("b"), seed, {
+      firstTurn: "coinFlip",
+      manualReplacement: 0
+    });
+    const script: import("../services/battleEngine").ScriptedAction[] = [];
+    while (!live.finished && live.turn < MAX_TURNS) {
+      if (live.needsReplacement(0)) {
+        const idx = live.sideState(0).findIndex((u, i) => !u.fainted && i !== live.activeIndex(0));
+        script.push({ type: "choose", unitIndex: idx });
+        live.chooseReplacement(0, idx);
+        continue;
+      }
+      const side = live.currentSide;
+      if (side === "A") {
+        script.push({ type: "move", moveIndex: 0 });
+        live.act(0, { type: "move", moveIndex: 0 });
+      } else {
+        live.act(1, Battle.defaultPolicy(live, 1));
+      }
+    }
+    const replayed = scriptedBattle(script);
+    expect(replayed.outcome.ok).toBe(true);
+    if (replayed.outcome.ok) {
+      expect(replayed.battle.events).toEqual(live.events);
+      expect(replayed.outcome.result.winner).toBe(live.winner);
+    }
+  });
+
+  it("rejects an illegal move index", () => {
+    const { outcome } = scriptedBattle([{ type: "move", moveIndex: 7 }]);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toContain("illegal action");
+  });
+
+  it("rejects a script that stops early", () => {
+    const { outcome } = scriptedBattle([{ type: "move", moveIndex: 0 }]);
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toContain("expected");
+  });
+
+  it("requires a choose entry when the player's monster faints", () => {
+    // A1 is paper-thin: it dies on the first hit it takes. Side B hits hard
+    // enough that the faint is guaranteed whenever B acts.
+    const fragile = [
+      unit("a0", { baseHealth: 1, baseAttack: 1 }),
+      unit("a1"), unit("a2")
+    ];
+    const strong = squadOf("b", 3, { baseAttack: 500 });
+
+    // Find a seed where B moves first so the faint happens on B's turn.
+    let chosen = 1n;
+    for (let s = 1n; s < 40n; s++) {
+      const probe = new Battle(fragile, strong, s, { firstTurn: "coinFlip" });
+      if (probe.currentSide === 1) { chosen = s; break; }
+    }
+
+    const battle = new Battle(fragile, strong, chosen, { firstTurn: "coinFlip", manualReplacement: 0 });
+    battle.act(1, { type: "move", moveIndex: 0 }); // B's turn: a0 faints
+    expect(battle.needsReplacement(0)).toBe(true);
+
+    const noChoose = battle.runScripted([{ type: "move", moveIndex: 0 }]);
+    // runScripted starts fresh state-wise? No — it continues on this battle.
+    expect(noChoose.ok).toBe(false);
+  });
+
+  it("choose picks the player's replacement and stays deterministic", () => {
+    const fragile = [unit("a0", { baseHealth: 1, baseAttack: 1 }), unit("a1"), unit("a2")];
+    const strong = squadOf("b", 3, { baseAttack: 500 });
+    let chosen = 1n;
+    for (let s = 1n; s < 40n; s++) {
+      const probe = new Battle(fragile, strong, s, { firstTurn: "coinFlip" });
+      if (probe.currentSide === 1) { chosen = s; break; }
+    }
+    const battle = new Battle(fragile, strong, chosen, { firstTurn: "coinFlip", manualReplacement: 0 });
+    battle.act(1, { type: "move", moveIndex: 0 });
+    const outcome = battle.runScripted([{ type: "choose", unitIndex: 2 }]);
+    expect(battle.activeIndex(0)).toBe(2);
+    // Continuation fails only because the script ends — the choose applied.
+    expect(outcome.ok).toBe(false);
   });
 });

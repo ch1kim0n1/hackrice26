@@ -1,105 +1,108 @@
 import { describe, it, expect } from "vitest";
-import { ROSTER, ROSTER_SIZE, rosterByRarity, rosterCharacter, rosterCharacterSchema } from "./roster";
-import { CHARACTERS } from "./lootTable";
+import { ROSTER, ROSTER_SIZE, rosterCharacter, rosterCharacterSchema, asCharacter, rosterFor } from "./roster";
+import { attacksFor } from "./attacks";
 import { RARITY_ORDER } from "./lootTable";
-import { STAT_KEYS } from "../schemas/gameSchemas";
 
 // ============================================================================
-// The MVP roster (#92).
+// The master catalog (spec §2 checklist).
 //
 // The file is authored by hand, so these are the checks a human editing JSON
-// at 3am will actually trip over: a missing tier, a stat that contradicts the
-// element, an id that no longer matches the art it points at.
+// at 3am will actually trip over: a 15th character, a reused or renamed id,
+// a missing special, a stat outside the design envelope — and the fields the
+// spec removed (element, baseStats, statType) creeping back in.
 // ============================================================================
 
-describe("roster", () => {
-  it("has exactly 14 characters with unique ids", () => {
-    expect(ROSTER).toHaveLength(ROSTER_SIZE);
-    expect(new Set(ROSTER.map((c) => c.id)).size).toBe(ROSTER_SIZE);
-  });
-
-  it("spreads across every rarity tier", () => {
-    // Acceptance criterion on #92 — a roster that skips Mythic would leave a
-    // reward bracket with nothing to award.
-    for (const rarity of RARITY_ORDER) {
-      expect(rosterByRarity(rarity).length).toBeGreaterThan(0);
+describe("master catalog", () => {
+  it("has 14 standard-pool + secret-only designs with unique permanent ids", () => {
+    expect(ROSTER_SIZE).toBe(ROSTER.length);
+    expect(new Set(ROSTER.map((c) => c.id)).size).toBe(ROSTER.length);
+    // The 14 food designs mint common..mythic; Secret pulls only brainrot.
+    expect(rosterFor("common")).toHaveLength(14);
+    expect(rosterFor("secret").length).toBeGreaterThan(0);
+    expect(rosterFor("secret").every((c) => c.rarityEligibility?.includes("secret"))).toBe(true);
+    expect(rosterFor("secret").some((c) => c.rarityEligibility === undefined)).toBe(false);
+    for (const c of ROSTER) {
+      // Lower-kebab, never derived from the display name.
+      expect(c.id).toMatch(/^[a-z][a-z0-9-]{2,39}$/);
+      expect(rosterCharacter(c.id)).toBe(c);
     }
   });
 
-  it("gives every character a complete Pokédex entry", () => {
-    for (const character of ROSTER) {
-      expect(rosterCharacterSchema.safeParse(character).success).toBe(true);
-      expect(character.bio.length).toBeGreaterThan(40);
-      expect(character.tagline.endsWith(".")).toBe(true);
+  it("gives every character the complete spec record", () => {
+    for (const c of ROSTER) {
+      expect(rosterCharacterSchema.safeParse(c).success).toBe(true);
+      expect(c.baseHealth).toBeGreaterThanOrEqual(40);
+      expect(c.baseHealth).toBeLessThanOrEqual(200);
+      expect(c.baseAttack).toBeGreaterThanOrEqual(20);
+      expect(c.baseAttack).toBeLessThanOrEqual(100);
+      expect(c.baseMana).toBeGreaterThan(0);
+      expect(c.tagline.length).toBeGreaterThan(0);
+      expect(c.bio.length).toBeGreaterThanOrEqual(10);
+      expect(c.imageKey).toBeTruthy();
+      expect(c.colorHex).toMatch(/^#[0-9a-fA-F]{6}$/);
     }
   });
 
-  it("keeps every stat inside the canonical 10..100 range", () => {
-    for (const character of ROSTER) {
-      for (const key of STAT_KEYS) {
-        expect(character.baseStats[key]).toBeGreaterThanOrEqual(10);
-        expect(character.baseStats[key]).toBeLessThanOrEqual(100);
-        expect(Number.isInteger(character.baseStats[key])).toBe(true);
+  it("carries no legacy fields — no element, no baseStats blob, no statType, no intrinsic rarity", () => {
+    for (const c of ROSTER) {
+      const raw = c as unknown as Record<string, unknown>;
+      expect(raw).not.toHaveProperty("element");
+      expect(raw).not.toHaveProperty("baseStats");
+      expect(raw).not.toHaveProperty("statType");
+      // Rarity is rolled per instance at mint; the design itself has none.
+      expect(raw).not.toHaveProperty("rarity");
+    }
+  });
+
+  it("authors exactly 3 standard moves + 1 Mana Special per character", () => {
+    for (const c of ROSTER) {
+      expect(c.moves).toHaveLength(3);
+      for (const move of c.moves) {
+        expect(move.manaCost).toBe(0);
+        expect(move.accuracy).toBeGreaterThanOrEqual(1);
+        expect(move.accuracy).toBeLessThanOrEqual(100);
+        expect(move.id.startsWith(`${c.id}-`)).toBe(true);
+        if (move.statusChance !== undefined) expect(move.statusEffect).toBeDefined();
+      }
+      expect(c.special).toBeDefined();
+      expect(c.special!.manaCost).toBeGreaterThan(0);
+      expect(c.special!.id.startsWith(`${c.id}-`)).toBe(true);
+    }
+  });
+
+  it("attacksFor returns 3 standards for everyone, +1 Special at Epic and above", () => {
+    for (const c of ROSTER) {
+      for (const rarity of RARITY_ORDER) {
+        const legal = attacksFor(c.id, rarity);
+        const epicPlus = ["epic", "legendary", "mythic", "secret"].includes(rarity);
+        expect(legal).toHaveLength(epicPlus ? 4 : 3);
+        expect(legal.some((m) => m.kind === "special")).toBe(epicPlus);
+        expect(legal.filter((m) => m.kind === "standard")).toHaveLength(3);
       }
     }
   });
 
-  it("makes each character's element match its own strongest stat", () => {
-    // loadRoster() throws on import if this is violated, so reaching this test
-    // at all is most of the proof; assert it explicitly anyway.
-    const expected: Record<string, string> = {
-      power: "protein",
-      guard: "fiber",
-      vitality: "vitamin",
-      tempo: "hydration"
-    };
-    for (const character of ROSTER) {
-      const dominant = STAT_KEYS.reduce((best, key) =>
-        character.baseStats[key] > character.baseStats[best] ? key : best
-      );
-      expect(expected[dominant]).toBe(character.element);
-    }
+  it("has globally unique move ids across the catalog", () => {
+    const ids = ROSTER.flatMap((c) => [...c.moves.map((m) => m.id), c.special!.id]);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
-  it("gets stronger as rarity climbs", () => {
-    // Base stats are pre-rarity-multiplier, but a Secret should still read as
-    // a better creature than a Common before any scaling is applied.
-    const totalFor = (rarity: string) => {
-      const members = ROSTER.filter((c) => c.rarity === rarity);
-      const sum = members.reduce(
-        (acc, c) => acc + STAT_KEYS.reduce((s, k) => s + c.baseStats[k], 0),
-        0
-      );
-      return sum / members.length;
-    };
-    let previous = 0;
-    for (const rarity of RARITY_ORDER) {
-      const average = totalFor(rarity);
-      expect(average).toBeGreaterThan(previous);
-      previous = average;
-    }
-  });
+  it("asCharacter stamps the rolled rarity onto the instance and keeps Mana Epic+-only", () => {
+    const bud = rosterCharacter("broccoli-bud")!;
+    const common = asCharacter(bud, "common");
+    expect(common.rarity).toBe("common");
+    expect(common.baseHealth).toBe(bud.baseHealth);
+    expect(common.baseMana).toBeUndefined();
+    expect(common.special).toBeUndefined();
+    expect(common.moves).toHaveLength(3);
 
-  it("points every image key at its own id", () => {
-    // #93 checks art in under these keys; a mismatch is a silently missing
-    // picture rather than a crash, so pin it here.
-    for (const character of ROSTER) {
-      expect(character.imageKey).toBe(character.id);
-    }
-  });
+    const epic = asCharacter(bud, "epic");
+    expect(epic.baseMana).toBe(bud.baseMana);
+    expect(epic.special).toBe(bud.special!.id);
 
-  it("names only characters the loot table already knows", () => {
-    // The roster curates the existing catalogue rather than forking it, so
-    // crates, art seeds and flavour text all keep working.
-    for (const character of ROSTER) {
-      expect(CHARACTERS[character.id]).toBeDefined();
-      expect(CHARACTERS[character.id].rarity).toBe(character.rarity);
-      expect(CHARACTERS[character.id].statType).toBe(character.element);
-    }
-  });
-
-  it("looks up by id", () => {
-    expect(rosterCharacter("the-first-seed")?.rarity).toBe("secret");
-    expect(rosterCharacter("not-a-character")).toBeUndefined();
+    // A generated combat base overrides the catalog's (scan mints).
+    const generated = asCharacter(bud, "rare", { baseHealth: 140, baseAttack: 70 });
+    expect(generated.baseHealth).toBe(140);
+    expect(generated.baseAttack).toBe(70);
   });
 });

@@ -85,6 +85,9 @@ export const migration: Migration = {
 
     // Seed the 14 established characters. INSERT OR IGNORE so a database that
     // was partially seeded by something else converges instead of failing.
+    // The element/base_rarity/base_stats columns belong to the old stat model
+    // this table predates; the catalog dropped them, so they carry inert
+    // placeholders until a later migration reshapes the table.
     const insert = db.prepare(
       `INSERT OR IGNORE INTO character_catalog
          (slug, name, tagline, bio, element, base_rarity, color_hex, base_stats)
@@ -96,10 +99,10 @@ export const migration: Migration = {
         c.name,
         c.tagline,
         c.bio,
-        c.element,
-        c.rarity,
+        "none",
+        "common",
         c.colorHex,
-        JSON.stringify(c.baseStats)
+        JSON.stringify({ health: c.baseHealth, attack: c.baseAttack, mana: c.baseMana })
       );
     }
   }

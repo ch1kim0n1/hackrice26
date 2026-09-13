@@ -63,8 +63,12 @@ export function buildApp(): express.Express {
   app.use("/auth", authRouter);
   app.use("/human-gate", humanGateRouter);
   app.use("/demo", demoRouter);
-  // Pre-generated character art (game-assets/) — catalog/image routes point here.
-  app.use("/assets", express.static(join(__dirname, "..", "..", "game-assets")));
+  // Pre-generated character art (backend/game-assets/) — catalog/image routes
+  // point here. Lives inside the service root so Railway's deploy includes it.
+  app.use("/assets", express.static(join(__dirname, "..", "game-assets")));
+  // "Prove You're Human" signup gate — same origin as the API, so the web
+  // app defaults apiBase to the server that served it (no ?api= needed).
+  app.use("/gate", express.static(join(__dirname, "..", "public", "human-gate")));
   app.use("/characters", charactersRouter);
   app.use("/scan", scanRouter);
   app.use("/battle", battleRouter);

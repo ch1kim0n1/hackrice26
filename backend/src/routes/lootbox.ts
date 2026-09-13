@@ -1,26 +1,34 @@
 import { Router } from "express";
 import {
-  CHARACTERS,
-  CHARACTER_FLAVOR,
-  CRATES,
+  COOKBOOKS,
   RARITY_ORDER,
-  RARITY_TIERS,
-  RARITY_TOTAL,
-  SHOP_CASES,
-  ShopCase
+  RARITY_TIERS
 } from "../data/lootTable";
+import { ROSTER, asCharacter, rosterCharacter } from "../data/roster";
 import { db } from "../db";
 import { hasDatabaseUrl } from "../db/pg";
 import * as engine from "../services/lootboxEngine";
-import { publicSeedPair, resetPlayer, stateFor } from "../services/lootboxState";
+import {
+  consumeCase,
+  pendingCases,
+  publicSeedPair,
+  resetPlayer,
+  stateFor
+} from "../services/lootboxState";
 import * as promo from "../services/promoCodes";
 import { PlayerRequest, requirePlayerId } from "../middleware/player";
 import { rateLimitByPlayer, requireAdminToken } from "../middleware/security";
-import { Character, Crate, LootDrop } from "../types";
-import { getOrCreate } from "./user";
-import { tierForPoints } from "../game/rankTiers";
+import { Character, Cookbook, Rarity } from "../types";
 import { enqueueMirror } from "../services/mirrorQueue";
-import { COIN_ERRORS, coinBalance, recordCoins } from "../services/coins";
+import { COIN_ERRORS, coinBalance, recordCoinsInTransaction } from "../services/coins";
+import { consumeCookbookBoost } from "./user";
+import { BOOST_EXEMPT } from "../game/spec";
+import { ledger, transact } from "../services/characterMutations";
+import {
+  clientSeedBodySchema,
+  mailboxClaimSchema,
+  verifyOpenSchema
+} from "../schemas/gameSchemas";
 
 export const lootboxRouter = Router();
 
@@ -28,7 +36,7 @@ export const lootboxRouter = Router();
 lootboxRouter.use(requirePlayerId);
 
 /**
- * Character plus the presentational bits the crate UI needs.
+ * Character plus the presentational bits the case UI needs.
  *
  * `fallback` covers a character that isn't in the gacha catalog at all — the
  * starter roster (lootboxState.ts seedStarterRoster) is a real owned drop
@@ -38,43 +46,31 @@ lootboxRouter.use(requirePlayerId);
  * degrades instead of throwing on an id the catalog has never heard of.
  */
 export function characterPayload(id: string, fallback?: Character) {
-  const character = CHARACTERS[id] ?? fallback;
+  const character = fallback ?? (rosterCharacter(id) ? asCharacter(rosterCharacter(id)!, "common") : undefined);
   if (!character) throw new Error(`Unknown character '${id}'`);
   const tier = RARITY_TIERS[character.rarity];
   return {
     ...character,
     rarityLabel: tier.label,
     rarityColorHex: tier.colorHex,
-    flavor: CHARACTER_FLAVOR[id] ?? ""
+    flavor: rosterCharacter(id)?.tagline ?? character.tagline ?? ""
   };
 }
 
-function cratePayload(crate: Crate, includeContents = false, playerId?: string) {
+function cookbookPayload(book: Cookbook, includeContents = false) {
   const payload: Record<string, unknown> = {
-    id: crate.id,
-    name: crate.name,
-    description: crate.description,
-    keyCost: crate.keyCost,
-    characterCount: crate.characterIds.length,
-    odds: engine.crateOdds(crate)
+    id: book.id,
+    name: book.name,
+    description: book.description,
+    price: book.price,
+    odds: engine.cookbookOdds(book)
   };
-  if (playerId) {
-    const s = stateFor(playerId);
-    payload.pity = {
-      sinceEpic: s.sinceEpic,
-      sinceLegendary: s.sinceLegendary,
-      epicIn: Math.max(0, engine.EPIC_PITY - s.sinceEpic),
-      legendaryIn: Math.max(0, engine.LEGENDARY_PITY - s.sinceLegendary)
-    };
-  }
   if (includeContents) {
-    payload.contents = crate.characterIds
-      .map((c) => characterPayload(c))
-      .sort(
-        (a, b) =>
-          RARITY_TIERS[a.rarity].order - RARITY_TIERS[b.rarity].order ||
-          a.name.localeCompare(b.name)
-      );
+    // The whole catalog is in every book — rarity is rolled per instance, so
+    // "contents" is the 14 designs, not a per-tier slice. The odds table is
+    // what differs between books.
+    payload.contents = ROSTER.map((c) => characterPayload(c.id, asCharacter(c, "common")))
+      .sort((a, b) => a.name.localeCompare(b.name));
   }
   return payload;
 }
@@ -85,279 +81,247 @@ lootboxRouter.get("/rarities", (_req, res) => {
     rarities: RARITY_ORDER.map((id) => ({
       id,
       label: RARITY_TIERS[id].label,
-      colorHex: RARITY_TIERS[id].colorHex,
-      chance: RARITY_TIERS[id].weight / RARITY_TOTAL,
-      oneIn: Math.round(RARITY_TOTAL / RARITY_TIERS[id].weight)
+      colorHex: RARITY_TIERS[id].colorHex
     }))
   });
 });
 
-// GET /lootbox/crates -- every crate with its published drop rates + pity.
-lootboxRouter.get("/crates", (req, res) => {
-  const pid = (req as PlayerRequest).playerId!;
-  res.json({ crates: Object.values(CRATES).map((c) => cratePayload(c, false, pid)) });
+// GET /lootbox/cookbooks -- the Cookbooks with price + published odds.
+lootboxRouter.get("/cookbooks", (_req, res) => {
+  res.json({ cookbooks: COOKBOOKS.map((b) => cookbookPayload(b)) });
 });
 
-// GET /lootbox/crates/:id -- one crate, including its full contents.
-lootboxRouter.get("/crates/:id", (req, res) => {
-  const crate = CRATES[req.params.id];
-  if (!crate) return res.status(404).json({ error: `No crate '${req.params.id}'.` });
-  return res.json(cratePayload(crate, true));
+// GET /lootbox/cookbooks/:id -- one Cookbook, including its full contents.
+lootboxRouter.get("/cookbooks/:id", (req, res) => {
+  const book = engine.cookbookFor(req.params.id);
+  if (!book) return res.status(404).json({ error: `No cookbook '${req.params.id}'.` });
+  return res.json(cookbookPayload(book));
 });
+
+/** The response shape every mint-producing open shares. */
+function openResponse(
+  playerId: string,
+  outcome: engine.OpenOutcome,
+  stored: { id: string },
+  extra: Record<string, unknown> = {}
+) {
+  return {
+    ...stored,
+    character: characterPayload(outcome.character.id, outcome.character),
+    caseRarity: outcome.caseRarity,
+    reel: outcome.reel.map((c) => characterPayload(c.id, c)),
+    reelWinnerIndex: outcome.reelWinnerIndex,
+    coinBalance: coinBalance(playerId),
+    ...extra
+  };
+}
 
 /**
- * One key-crate open: the roll with rank-scaled odds and the pity ladder.
- * Shop cases do not come through here — see the shop routes below.
+ * Mirror a mint into the TigerData hypertables — best-effort, and kept out of
+ * the open transaction on purpose: the mirror is a queue, not part of the
+ * atomic commit.
  */
-function resolveCrateOpen(playerId: string, crate: Crate, clientSeed?: string) {
-  if (clientSeed !== undefined) {
-    stateFor(playerId).setClientSeed(clientSeed);
-  }
-
-  const session = stateFor(playerId);
-  const pair = session.current;
-  const nonce = session.consumeNonce();
-  // Higher consistency rank = better odds on non-common pulls (#86). Pity
-  // still applies after scaling, so guarantees are unaffected.
-  const rankTier = tierForPoints(getOrCreate(playerId).rankPoints ?? 0);
-  const outcome = engine.openCrate(crate, pair.serverSeed, pair.clientSeed, nonce, {
-    sinceEpic: session.sinceEpic,
-    sinceLegendary: session.sinceLegendary
-  }, rankTier);
-
-  // Pity counters advance on the resolved tier (a pity-forced pull resets them).
-  const next = engine.advancePity(
-    { sinceEpic: session.sinceEpic, sinceLegendary: session.sinceLegendary },
-    outcome.character.rarity
-  );
-  session.sinceEpic = next.sinceEpic;
-  session.sinceLegendary = next.sinceLegendary;
-
-  const drop: LootDrop = {
-    crateId: crate.id,
-    character: outcome.character,
-    // Every monster instance carries its mastery, so the planned fusion
-    // system is never handed an inventory where half the rows have no
-    // stars at all. A fresh pull is always 1 star.
-    stars: 1,
-    power: outcome.power,
-    powerLabel: outcome.powerLabel,
-    shiny: outcome.shiny,
-    value: outcome.value,
-    rolls: outcome.rolls,
-    pityForced: outcome.pityForced,
-    fairness: session.fairnessFor(pair, nonce),
-    openedAt: outcome.openedAt
-  };
-
-  // The reel is animation data; it does not belong in stored history.
-  // `record` mints this drop's real per-instance id — the client needs it
-  // back (not just the character/pity summary) to ever sell what it just
-  // pulled, so `stored` (not `drop`) is what the routes below respond with.
-  const stored = session.record(drop);
-
-  // Best-effort gameplay-event mirror into the TigerData hypertable.
-  if (hasDatabaseUrl()) {
-    enqueueMirror("gameplay_event", `open:${stored.id}`, {
-      playerId,
-      type: "open",
-      detail: {
-        crateId: crate.id, characterId: outcome.character.id, rarity: outcome.character.rarity,
-      },
-    });
-    // The pull itself, for analytics.acquisition_hourly -- "has my luck been
-    // good lately" is a different question from "what did I open".
-    enqueueMirror("acquisition_event", stored.id, {
-      playerId,
-      sourceKind: "lootbox",
-      rarity: outcome.character.rarity,
-      netWorth: stored.value,
-      starLevel: stored.stars ?? 1,
-      characterRef: stored.id,
-    });
-  }
-
-  return { session, drop: stored, outcome };
-}
-
-// POST /lootbox/crates/:id/open -- spend keys, resolve one drop.
-lootboxRouter.post("/crates/:id/open", rateLimitByPlayer({ windowMs: 60_000, max: 30, keyPrefix: "crate", message: "Too many crate opens. Try again later." }), (req, res) => {
-  const crate = CRATES[req.params.id];
-  if (!crate) return res.status(404).json({ error: `No crate '${req.params.id}'.` });
-
-  const clientSeedRaw = req.body?.clientSeed;
-  let clientSeed: string | undefined;
-  if (clientSeedRaw !== undefined && clientSeedRaw !== null) {
-    if (typeof clientSeedRaw !== "string" || clientSeedRaw.length < 6 || clientSeedRaw.length > 64) {
-      return res.status(400).json({ error: "clientSeed must be a string of 6-64 characters." });
-    }
-    clientSeed = clientSeedRaw;
-  }
-
-  const playerId = (req as PlayerRequest).playerId!;
-  if (!stateFor(playerId).spendKeys(crate.keyCost)) {
-    return res.status(402).json({
-      error: `Not enough keys: ${crate.name} costs ${crate.keyCost}, you have ${stateFor(playerId).keys}.`
-    });
-  }
-
-  const { session, drop, outcome } = resolveCrateOpen(playerId, crate, clientSeed);
-
-  return res.json({
-    ...drop,
-    character: characterPayload(outcome.character.id),
-    reel: outcome.reel.map((c) => characterPayload(c)),
-    reelWinnerIndex: outcome.reelWinnerIndex,
-    keysRemaining: session.keys,
-    pity: {
-      sinceEpic: session.sinceEpic,
-      sinceLegendary: session.sinceLegendary,
-      epicIn: Math.max(0, engine.EPIC_PITY - session.sinceEpic),
-      legendaryIn: Math.max(0, engine.LEGENDARY_PITY - session.sinceLegendary)
+function mirrorMint(playerId: string, sourceKind: string, sourceId: string, stored: { id: string; value: number; stars?: number }, outcome: engine.OpenOutcome) {
+  if (!hasDatabaseUrl()) return;
+  enqueueMirror("gameplay_event", `open:${stored.id}`, {
+    playerId,
+    type: "open",
+    detail: {
+      crateId: sourceId, characterId: outcome.character.id, rarity: outcome.character.rarity
     }
   });
-});
-
-// ===== Shop cases ===========================================================
-//
-// The coin shop: one case per rarity (data/lootTable.ts SHOP_CASES). The roll
-// is the plain weighted draw over the tiers a case stocks, no rank boost, no
-// pity -- so a pricier case is better only because it stocks rarer tiers.
-// Drops are priced off BASE_VALUES (engine.openShopCase). Key crates, rank
-// odds and pity above are untouched by anything here.
-
-function shopCasePayload(shopCase: ShopCase) {
-  return {
-    id: shopCase.id,
-    name: shopCase.name,
-    description: shopCase.description,
-    coinCost: engine.shopCaseCoinCost(shopCase),
-    characterCount: shopCase.characterIds.length,
-    odds: engine.crateOdds(shopCase)
-  };
+  enqueueMirror("acquisition_event", stored.id, {
+    playerId,
+    sourceKind,
+    rarity: outcome.character.rarity,
+    netWorth: stored.value,
+    starLevel: stored.stars ?? 1,
+    characterRef: stored.id
+  });
 }
 
-// GET /lootbox/shop-cases -- every shop case, cheapest first, with price and odds.
-lootboxRouter.get("/shop-cases", (_req, res) => {
-  res.json({ cases: Object.values(SHOP_CASES).map(shopCasePayload) });
-});
+// POST /lootbox/cookbooks/:id/open — spec §3 atomic open:
+// coin debit + rarity RNG + monster mint + both ledgers, one transaction.
+lootboxRouter.post(
+  "/cookbooks/:id/open",
+  rateLimitByPlayer({ windowMs: 60_000, max: 30, keyPrefix: "cookbook", message: "Too many cookbook opens. Try again later." }),
+  (req, res) => {
+    const book = engine.cookbookFor(req.params.id);
+    if (!book) return res.status(404).json({ error: `No cookbook '${req.params.id}'.` });
 
-// POST /lootbox/shop-cases/:id/open -- pay the case's coin price, resolve one drop.
-lootboxRouter.post("/shop-cases/:id/open", rateLimitByPlayer({ windowMs: 60_000, max: 30, keyPrefix: "shop-case", message: "Too many case opens. Try again later." }), (req, res) => {
-  const shopCase = SHOP_CASES[req.params.id];
-  if (!shopCase) return res.status(404).json({ error: `No case '${req.params.id}'.` });
-
-  const clientSeedRaw = req.body?.clientSeed;
-  let clientSeed: string | undefined;
-  if (clientSeedRaw !== undefined && clientSeedRaw !== null) {
-    if (typeof clientSeedRaw !== "string" || clientSeedRaw.length < 6 || clientSeedRaw.length > 64) {
+    const parsed = clientSeedBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
       return res.status(400).json({ error: "clientSeed must be a string of 6-64 characters." });
     }
-    clientSeed = clientSeedRaw;
-  }
+    const playerId = (req as PlayerRequest).playerId!;
 
-  const playerId = (req as PlayerRequest).playerId!;
-  const cost = engine.shopCaseCoinCost(shopCase);
-  try {
-    recordCoins(playerId, -cost, "case_open", shopCase.id);
-  } catch (err) {
-    if (err instanceof Error && err.message === COIN_ERRORS.INSUFFICIENT) {
-      return res.status(402).json({
-        error: `Not enough coins: ${shopCase.name} costs ${cost}, you have ${coinBalance(playerId)}.`
+    try {
+      const { outcome, stored, overflowed, boosted } = transact(() => {
+        const session = stateFor(playerId);
+        if (parsed.data.clientSeed !== undefined) session.setClientSeed(parsed.data.clientSeed);
+        const pair = session.current;
+        const nonce = session.consumeNonce();
+        // The debit first: insufficient coins throws and rolls the nonce
+        // increment back too, so a failed open never burns a roll.
+        recordCoinsInTransaction(playerId, -book.price, "case_open", book.id);
+        // Cookbook Boost (spec §6): the player asks, the store decrements one
+        // held boost, and the rarity roll runs on the ×1.15 Rare+ table —
+        // all inside this transaction, so a failed open refunds the boost.
+        // A book with no Rare+ mass (super-simple) would burn the boost for
+        // zero effect — don't consume it.
+        const boostable = RARITY_ORDER.some(
+          (r) => !BOOST_EXEMPT.includes(r) && (book.odds[r] ?? 0) > 0
+        );
+        const boosted = parsed.data.useBoost === true && boostable && consumeCookbookBoost(playerId);
+        const odds = boosted ? engine.boostedOdds(book.odds) : book.odds;
+        const outcome = engine.openCookbook(book, pair.serverSeed, pair.clientSeed, nonce, odds);
+        const { drop: stored, overflowed } = session.record({
+          crateId: book.id,
+          character: outcome.character,
+          stars: 1,
+          baseMintValue: outcome.baseMintValue,
+          value: outcome.value,
+          rolls: outcome.rolls,
+          caseRarity: outcome.caseRarity,
+          boosted,
+          fairness: session.fairnessFor(pair, nonce),
+          openedAt: outcome.openedAt
+        });
+        ledger(playerId, "cookbook_open", [stored.id], {
+          bookId: book.id,
+          price: book.price,
+          caseRarity: outcome.caseRarity,
+          value: outcome.value,
+          boosted,
+          overflowed
+        });
+        return { outcome, stored, overflowed, boosted };
       });
+
+      mirrorMint(playerId, "cookbook", book.id, stored, outcome);
+      return res.json(openResponse(playerId, outcome, stored, {
+        coinsSpent: book.price,
+        overflowed,
+        boostApplied: boosted
+      }));
+    } catch (err) {
+      if (err instanceof Error && err.message === COIN_ERRORS.INSUFFICIENT) {
+        return res.status(402).json({
+          error: `Not enough coins: ${book.name} costs ${book.price}, you have ${coinBalance(playerId)}.`
+        });
+      }
+      throw err;
     }
-    throw err;
   }
+);
 
-  const session = stateFor(playerId);
-  if (clientSeed !== undefined) session.setClientSeed(clientSeed);
-  const pair = session.current;
-  const nonce = session.consumeNonce();
-  const outcome = engine.openShopCase(shopCase, pair.serverSeed, pair.clientSeed, nonce);
+// ===== Granted Cases =======================================================
+//
+// Ranked wins and promos hand out a Case of a fixed rarity (spec §3/§5).
+// Opening one is the same mint path a Cookbook's rolled case takes — no coin
+// cost, since the case itself was the reward.
 
-  const stored = session.record({
-    crateId: shopCase.id,
-    character: outcome.character,
-    stars: 1,
-    power: outcome.power,
-    powerLabel: outcome.powerLabel,
-    shiny: outcome.shiny,
-    value: outcome.value,
-    rolls: outcome.rolls,
-    pityForced: null,
-    fairness: session.fairnessFor(pair, nonce),
-    openedAt: outcome.openedAt
-  });
-
-  if (hasDatabaseUrl()) {
-    enqueueMirror("gameplay_event", `open:${stored.id}`, {
-      playerId,
-      type: "open",
-      detail: {
-        crateId: shopCase.id, characterId: outcome.character.id, rarity: outcome.character.rarity,
-      },
-    });
-    // A shop pull mints a monster, same as a crate pull — keep it in the
-    // pull-luck series.
-    enqueueMirror("acquisition_event", stored.id, {
-      playerId,
-      sourceKind: "shop_case",
-      rarity: outcome.character.rarity,
-      netWorth: stored.value,
-      starLevel: stored.stars ?? 1,
-      characterRef: stored.id,
-    });
-  }
-
-  return res.json({
-    ...stored,
-    character: characterPayload(outcome.character.id),
-    reel: outcome.reel.map((c) => characterPayload(c)),
-    reelWinnerIndex: outcome.reelWinnerIndex,
-    coinsSpent: cost,
-    coinBalance: coinBalance(playerId)
-  });
+// GET /lootbox/cases — this player's unopened Cases.
+lootboxRouter.get("/cases", (req: PlayerRequest, res) => {
+  res.json({ cases: pendingCases(req.playerId!) });
 });
 
-// GET /lootbox/inventory -- what this session has pulled, newest first.
+// POST /lootbox/cases/:caseId/open — consume the case, mint its rarity.
+lootboxRouter.post(
+  "/cases/:caseId/open",
+  rateLimitByPlayer({ windowMs: 60_000, max: 30, keyPrefix: "case", message: "Too many case opens. Try again later." }),
+  (req, res) => {
+    const parsed = clientSeedBodySchema.safeParse(req.body ?? {});
+    if (!parsed.success) {
+      return res.status(400).json({ error: "clientSeed must be a string of 6-64 characters." });
+    }
+    const playerId = (req as PlayerRequest).playerId!;
+
+    const { outcome, stored, overflowed } = transact(() => {
+      const session = stateFor(playerId);
+      // Consuming the row inside the transaction is what makes a double-open
+      // impossible: a racing second request sees no case and 404s.
+      const pending = consumeCase(playerId, req.params.caseId);
+      if (!pending) return { outcome: null, stored: null, overflowed: false };
+      if (parsed.data.clientSeed !== undefined) session.setClientSeed(parsed.data.clientSeed);
+      const pair = session.current;
+      const nonce = session.consumeNonce();
+      const outcome = engine.openCaseRarity(pending.rarity, pair.serverSeed, pair.clientSeed, nonce);
+      const { drop: stored, overflowed } = session.record({
+        crateId: `case:${pending.rarity}`,
+        character: outcome.character,
+        stars: 1,
+        baseMintValue: outcome.baseMintValue,
+        value: outcome.value,
+        rolls: outcome.rolls,
+        caseRarity: outcome.caseRarity,
+        fairness: session.fairnessFor(pair, nonce),
+        openedAt: outcome.openedAt
+      });
+      ledger(playerId, "case_open", [stored.id], {
+        caseId: pending.caseId,
+        source: pending.source,
+        caseRarity: pending.rarity,
+        value: outcome.value,
+        overflowed
+      });
+      return { outcome, stored, overflowed };
+    });
+
+    if (!outcome || !stored) {
+      return res.status(404).json({ error: `No pending case '${req.params.caseId}'.` });
+    }
+
+    mirrorMint(playerId, "case", `case:${stored.caseRarity ?? outcome.caseRarity}`, stored, outcome);
+    return res.json(openResponse(playerId, outcome, stored, { overflowed }));
+  }
+);
+
+// GET /lootbox/inventory — what this player owns, newest first, plus mailbox.
 lootboxRouter.get("/inventory", (req, res) => {
   const requested = Number(req.query.limit ?? 50);
   if (!Number.isFinite(requested) || requested < 1 || requested > 200) {
     return res.status(400).json({ error: "limit must be a number between 1 and 200." });
   }
   const limit = Math.max(1, Math.min(Number.isFinite(requested) ? requested : 50, 200));
-  const items = stateFor((req as PlayerRequest).playerId!).inventory.slice(-limit).reverse();
-
   const session = stateFor((req as PlayerRequest).playerId!);
+  const items = session.inventory.slice(-limit).reverse();
+
   res.json({
-    keys: session.keys,
     count: session.inventory.length,
     totalValue: session.inventory.reduce((sum, d) => sum + d.value, 0),
     items: items.map((d) => ({ ...d, character: characterPayload(d.character.id, d.character) })),
-    pity: {
-      sinceEpic: session.sinceEpic,
-      sinceLegendary: session.sinceLegendary,
-      epicIn: Math.max(0, engine.EPIC_PITY - session.sinceEpic),
-      legendaryIn: Math.max(0, engine.LEGENDARY_PITY - session.sinceLegendary)
-    }
+    mailbox: {
+      count: session.mailbox.length,
+      items: session.mailbox.slice(-50).reverse().map((d) => ({
+        ...d,
+        character: characterPayload(d.character.id, d.character)
+      }))
+    },
+    cases: pendingCases((req as PlayerRequest).playerId!)
   });
 });
 
-// POST /lootbox/keys/grant -- award keys. This is where the rest of the game pays out.
-// Admin-only: clients must not be able to mint keys for themselves.
-lootboxRouter.post("/keys/grant", requireAdminToken, (req, res) => {
-  const amount = Number(req.body?.amount);
-  if (!Number.isInteger(amount) || amount < 1 || amount > 1000) {
-    return res.status(400).json({ error: "amount must be an integer between 1 and 1000." });
+// POST /lootbox/mailbox/claim — move overflow drops into the inventory.
+lootboxRouter.post("/mailbox/claim", (req: PlayerRequest, res) => {
+  const parsed = mailboxClaimSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "dropIds must be a non-empty array of drop ids." });
   }
-  const reason = typeof req.body?.reason === "string" ? req.body.reason.slice(0, 120) : "granted";
-  return res.json({ keys: stateFor((req as PlayerRequest).playerId!).grantKeys(amount), reason });
+  const session = stateFor(req.playerId!);
+  const { claimed, remaining } = session.claimMailbox(parsed.data.dropIds);
+  res.json({
+    claimed,
+    remaining,
+    count: session.inventory.length,
+    mailboxCount: session.mailbox.length
+  });
 });
 
 // POST /lootbox/reset -- clear the session. Admin-only.
 lootboxRouter.post("/reset", requireAdminToken, (req: PlayerRequest, res) => {
-  stateFor((req as PlayerRequest).playerId!).reset();
-  res.json({ reset: true, keys: stateFor((req as PlayerRequest).playerId!).keys });
+  resetPlayer(req.playerId!);
+  res.json({ reset: true });
 });
 
 // GET /lootbox/fairness -- the current commitment, plus every revealed seed.
@@ -375,11 +339,11 @@ lootboxRouter.get("/fairness", (req: PlayerRequest, res) => {
 
 // POST /lootbox/fairness/client-seed -- players supply their own entropy.
 lootboxRouter.post("/fairness/client-seed", (req, res) => {
-  const clientSeed = req.body?.clientSeed;
-  if (typeof clientSeed !== "string" || clientSeed.length < 6 || clientSeed.length > 64) {
+  const parsed = clientSeedBodySchema.safeParse(req.body ?? {});
+  if (!parsed.success || parsed.data.clientSeed === undefined) {
     return res.status(400).json({ error: "clientSeed must be a string of 6-64 characters." });
   }
-  stateFor((req as PlayerRequest).playerId!).setClientSeed(clientSeed);
+  stateFor((req as PlayerRequest).playerId!).setClientSeed(parsed.data.clientSeed);
   return res.json({ current: publicSeedPair(stateFor((req as PlayerRequest).playerId!).current) });
 });
 
@@ -395,7 +359,7 @@ lootboxRouter.post("/fairness/rotate", (req: PlayerRequest, res) => {
 // ===== Promo codes =========================================================
 
 // POST /lootbox/promos -- create a promo code (admin only).
-// body: { code: "BIGCHEESE", reward: "keys:50" | "crate:starter-crate", usesLimit?: number, expiresAt?: ISO }
+// body: { code: "BIGCHEESE", reward: "coins:500" | "case:epic", usesLimit?: number, expiresAt?: ISO }
 lootboxRouter.post("/promos", requireAdminToken, (req, res) => {
   const { code, reward, usesLimit, expiresAt } = req.body ?? {};
   if (typeof code !== "string" || typeof reward !== "string") {
@@ -448,39 +412,34 @@ lootboxRouter.post(
         PROMO_NOT_FOUND: 404,
         PROMO_EXPIRED: 410,
         PROMO_FULLY_REDEEMED: 410,
-        PROMO_ALREADY_REDEEMED: 409,
-        PROMO_CRATE_NOT_FOUND: 500
+        PROMO_ALREADY_REDEEMED: 409
       };
       return res.status(status[code] ?? 400).json({ error: { code, message: code } });
     }
   }
 );
 
-// POST /lootbox/verify -- recompute a past open from its published inputs.
+// POST /lootbox/verify -- recompute a past cookbook open from published inputs.
 lootboxRouter.post("/verify", (req, res) => {
-  const { crateId, serverSeed, clientSeed, nonce } = req.body ?? {};
-  const crate = typeof crateId === "string" ? CRATES[crateId] : undefined;
+  const parsed = verifyOpenSchema.safeParse(req.body ?? {});
+  if (!parsed.success) {
+    return res.status(400).json({ error: "bookId, serverSeed, clientSeed and a non-negative integer nonce are required." });
+  }
+  const { bookId, serverSeed, clientSeed, nonce, boosted } = parsed.data;
+  const book = engine.cookbookFor(bookId);
+  if (!book) return res.status(404).json({ error: `No cookbook '${bookId}'.` });
 
-  if (!crate) return res.status(404).json({ error: `No crate '${crateId}'.` });
-  if (typeof serverSeed !== "string" || !serverSeed.length) {
-    return res.status(400).json({ error: "serverSeed is required." });
-  }
-  if (typeof clientSeed !== "string" || !clientSeed.length) {
-    return res.status(400).json({ error: "clientSeed is required." });
-  }
-  if (!Number.isInteger(nonce) || nonce < 0) {
-    return res.status(400).json({ error: "nonce must be a non-negative integer." });
-  }
-
-  const outcome = engine.openCrate(crate, serverSeed, clientSeed, nonce);
+  const outcome = engine.openCookbook(
+    book, serverSeed, clientSeed, nonce,
+    boosted ? engine.boostedOdds(book.odds) : book.odds
+  );
   return res.json({
     serverSeedHash: engine.hashSeed(serverSeed),
     result: {
-      crateId: crate.id,
+      bookId: book.id,
       character: characterPayload(outcome.character.id),
-      power: outcome.power,
-      powerLabel: outcome.powerLabel,
-      shiny: outcome.shiny,
+      caseRarity: outcome.caseRarity,
+      baseMintValue: outcome.baseMintValue,
       value: outcome.value,
       rolls: outcome.rolls,
       fairness: { serverSeedHash: engine.hashSeed(serverSeed), clientSeed, nonce }

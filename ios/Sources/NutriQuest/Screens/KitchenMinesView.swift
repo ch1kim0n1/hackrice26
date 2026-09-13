@@ -182,9 +182,7 @@ struct KitchenMinesView: View {
                         id: monster.character.id,
                         name: monster.character.name,
                         colorHex: monster.character.colorHex,
-                        rarity: rarity,
-                        statType: StatType(rawValue: monster.character.statType) ?? .fiber,
-                        isShiny: monster.shiny
+                        rarity: rarity
                     )
                 )
                 .frame(width: 64, height: 64)
@@ -201,7 +199,7 @@ struct KitchenMinesView: View {
                         .foregroundStyle(rarity.badgeText)
                         .nqPadding(.badge)
                         .background(rarity.badgeBackground)
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                     Text(String(repeating: "★", count: max(1, monster.stars)))
                         .font(NQText.microS.font)
                         .foregroundStyle(NQTheme.gold)
@@ -276,7 +274,7 @@ struct KitchenMinesView: View {
                             .frame(maxWidth: .infinity)
                             .nqPadding(.chip)
                             .background(mines == preset ? accent.accent : NQTheme.surface)
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(preset) burnt dishes")
@@ -509,24 +507,36 @@ struct KitchenMinesView: View {
     private func dish(tile: Int, round: MinesRoundDTO) -> some View {
         let safeHere = uncovered[tile]
         let isBurnt = burntTile == tile
-        let lifted = safeHere != nil || isBurnt
+        // Once the round is over the server publishes the full layout —
+        // show every mine so a loss reads as "here's where they were" (#17).
+        let revealedMine = !round.isActive && (round.layout?.contains(tile) ?? false)
+        let lifted = safeHere != nil || isBurnt || revealedMine
 
         return Button {
             Task { await lift(tile: tile, round: round) }
         } label: {
             ZStack {
                 RoundedRectangle(cornerRadius: NQTheme.radiusM, style: .continuous)
-                    .fill(lifted ? (isBurnt ? NQTheme.warning.opacity(0.22) : NQTheme.success.opacity(0.18)) : NQTheme.surface)
+                    .fill(lifted ? (isBurnt ? NQTheme.warning.opacity(0.22)
+                                         : revealedMine ? NQTheme.warning.opacity(0.08)
+                                         : NQTheme.success.opacity(0.18)) : NQTheme.surface)
                     .overlay {
                         RoundedRectangle(cornerRadius: NQTheme.radiusM, style: .continuous)
                             .strokeBorder(
-                                isBurnt ? NQTheme.warning : (lifted ? NQTheme.success.opacity(0.5) : NQTheme.inkDeep.opacity(0.12)),
+                                isBurnt ? NQTheme.warning
+                                    : (revealedMine ? NQTheme.warning.opacity(0.4)
+                                       : lifted ? NQTheme.success.opacity(0.5)
+                                       : NQTheme.inkDeep.opacity(0.12)),
                                 lineWidth: isBurnt ? 2.5 : 1.5
                             )
                     }
 
                 if isBurnt {
                     Text("🔥").font(.system(size: 26))
+                } else if revealedMine {
+                    // The mine that was hiding here — dimmer than the one
+                    // that actually burnt the dish so the losing tile pops.
+                    Text("💣").font(.system(size: 22))
                 } else if safeHere != nil {
                     Text(ingredient(for: tile)).font(.system(size: 24))
                 } else {
@@ -544,6 +554,7 @@ struct KitchenMinesView: View {
         .disabled(lifted || gameState.minesBusy || !round.isActive)
         .accessibilityLabel(
             isBurnt ? "Burnt dish"
+                : revealedMine ? "Hidden mine"
                 : safeHere != nil ? "Safe ingredient"
                 : "Covered dish \(tile + 1)"
         )
@@ -744,9 +755,7 @@ struct MinesResultView: View {
                     id: reward.character.id,
                     name: reward.character.name,
                     colorHex: reward.character.colorHex,
-                    rarity: rarity,
-                    statType: StatType(rawValue: reward.character.statType) ?? .fiber,
-                    isShiny: reward.shiny
+                    rarity: rarity
                 )
             )
             .frame(width: 140, height: 140)
@@ -821,7 +830,7 @@ struct MinesRulesView: View {
             VStack(alignment: .leading, spacing: NQTheme.spaceL) {
                 section("How it works") {
                     ruleLine("25 covered dishes. You choose how many are burnt, from 1 to 24.")
-                    ruleLine("More burnt dishes means more danger — and a bigger ladder.")
+                    ruleLine("More burnt dishes means more danger: and a bigger ladder.")
                     ruleLine("Every safe dish you lift raises the multiplier.")
                     ruleLine("Hit a burnt dish and the wagered monster is gone.")
                     ruleLine("Cash out whenever you like; your final net worth buys a new random monster.")

@@ -39,6 +39,6 @@ enum CharacterBios {
     /// actually known rather than inventing a history.
     private static func summonedBio(for character: Character) -> String {
         "A \(character.rarity.label.lowercased()) \(character.statType.label.lowercased()) type you summoned yourself. "
-            + "No field notes on this one yet — take it into a battle and write some."
+            + "No field notes on this one yet: take it into a battle and write some."
     }
 }

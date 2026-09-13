@@ -3,7 +3,7 @@
 // rateLimitByPlayer store so limits are per authenticated player. Mount these
 // on the corresponding routes; each returns 429 with Retry-After when tripped.
 //
-//   60 req/min global · /scan 30/day · /gym-check 1/day
+//   60 req/min global · /scan 30/day
 //   /capsules/open 10/day · /battles/ranked 20/day
 
 import { rateLimitByPlayer } from "../middleware/security";
@@ -23,13 +23,6 @@ export const scanLimit = rateLimitByPlayer({
   max: 30,
   keyPrefix: "scan",
   message: "Daily scan limit reached (30/day)"
-});
-
-export const gymCheckLimit = rateLimitByPlayer({
-  windowMs: DAY,
-  max: 1,
-  keyPrefix: "gym",
-  message: "Gym check already used today (1/day)"
 });
 
 export const capsuleOpenLimit = rateLimitByPlayer({

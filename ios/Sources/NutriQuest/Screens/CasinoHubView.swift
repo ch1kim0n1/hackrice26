@@ -9,8 +9,8 @@ struct CasinoHubView: View {
     @ObservedObject var gameState: GameState
 
     @Environment(\.nqAccent) private var accent
-    /// QA hook, matching RootTabView's `-uiTab`: `-uiSection battle` lands on
-    /// the far half of the switch, so a screenshot can reach it without a tap.
+    /// QA hook, matching RootTabView's `-uiTab`: `-uiSection casino|cases|battle`
+    /// lands directly on that pane, so a screenshot can reach it without a tap.
     @State private var section: CasinoSection = {
         let args = ProcessInfo.processInfo.arguments
         guard let i = args.firstIndex(of: "-uiSection"), args.count > i + 1 else { return .casino }
@@ -32,10 +32,11 @@ struct CasinoHubView: View {
     }
     @Namespace private var switcher
 
-    /// The two halves of this tab.
+    /// The three panes of this tab: the house games, the player's granted
+    /// Cases (sell/history/promo live there too), and the battle modes.
     enum CasinoSection: String, CaseIterable, Identifiable {
         case casino
-        case shop
+        case cases
         case battle
 
         var id: String { rawValue }
@@ -43,7 +44,7 @@ struct CasinoHubView: View {
         var title: String {
             switch self {
             case .casino: return "Casino"
-            case .shop: return "Shop"
+            case .cases: return "Cases"
             case .battle: return "Battle"
             }
         }
@@ -51,7 +52,7 @@ struct CasinoHubView: View {
         var icon: NQIcon {
             switch self {
             case .casino: return .cauldron
-            case .shop: return .crown
+            case .cases: return .crown
             case .battle: return .battle
             }
         }
@@ -59,11 +60,6 @@ struct CasinoHubView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NQCoinBalance(balance: gameState.coinBalance)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-                .padding(.horizontal, NQTheme.spaceL)
-                .padding(.top, NQTheme.spaceS)
-
             shopButton
                 .padding(.horizontal, NQTheme.spaceL)
                 .padding(.top, NQTheme.spaceS)
@@ -76,13 +72,25 @@ struct CasinoHubView: View {
             switch section {
             case .casino:
                 gamesFloor
-            case .shop:
+            case .cases:
                 CrateOpeningView(gameState: gameState, accentContext: accent, embedded: true, onDismiss: {})
             case .battle:
                 BattleHubView(gameState: gameState)
             }
         }
         .nqSceneBackground(GameArt.scene("casino"))
+        .navigationTitle(section.title)
+        .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle(section.title)
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                NQCoinBalance(balance: gameState.coinBalance)
+            }
+            .nqHideGlass()
+        }
         .navigationDestination(isPresented: $showShop) {
             ShopView(gameState: gameState)
         }
@@ -131,10 +139,10 @@ struct CasinoHubView: View {
                     }
                     .foregroundStyle(isSelected ? accent.accent.readableTextColor() : NQTheme.inkMuted)
                     .frame(maxWidth: .infinity)
-                    .frame(minHeight: 40)
+                    .frame(minHeight: NQLayout.controlMinHeight)
                     .background {
                         if isSelected {
-                            Capsule()
+                            NQPanelShape(cut: NQTheme.radiusS)
                                 .fill(
                                     LinearGradient(
                                         colors: [accent.accent, accent.accentDark],
@@ -142,9 +150,6 @@ struct CasinoHubView: View {
                                         endPoint: .bottom
                                     )
                                 )
-                                // One capsule that slides, rather than two that
-                                // cross-fade — the movement is what says these
-                                // are two halves of one control.
                                 .matchedGeometryEffect(id: "selected-section", in: switcher)
                         }
                     }
@@ -154,10 +159,8 @@ struct CasinoHubView: View {
                 .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
             }
         }
-        .padding(4)
-        .background(NQTheme.surface)
-        .clipShape(Capsule())
-        .overlay { Capsule().strokeBorder(NQTheme.hairline, lineWidth: 1) }
+        .padding(NQTheme.spaceXS)
+        .nqPlate(NQPanelShape(cut: NQTheme.radiusM), fill: NQTheme.surface, elevation: .soft, inkStroke: true, lineWidth: 2)
     }
 
     // MARK: - Shop entry
@@ -174,13 +177,11 @@ struct CasinoHubView: View {
             HStack(spacing: NQTheme.spaceM) {
                 NQIconView(icon: .crown, tint: NQTheme.gold)
                     .frame(width: NQLayout.iconXL, height: NQLayout.iconXL)
-                Text("Coin shop")
+                Text("Shop")
                     .font(NQText.headingL.font.weight(.heavy))
                     .foregroundStyle(NQTheme.ink)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: NQLayout.iconM, weight: .bold))
-                    .foregroundStyle(NQTheme.inkFaint)
+                NQChevron()
             }
             .nqPadding(.card)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,8 +190,8 @@ struct CasinoHubView: View {
                 NQPanelShape().strokeBorder(NQTheme.gold.opacity(0.5), lineWidth: NQLayout.hairlineWidth)
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityHint("Opens the coin shop")
+        .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
+        .accessibilityHint("Opens the shop")
     }
 
     // MARK: - Games floor
@@ -214,10 +215,10 @@ struct CasinoHubView: View {
                             icon: .cauldron,
                             tint: NQTheme.warning,
                             game: "cauldron",
-                            badge: gameState.cauldronRound != nil ? "LIVE" : nil
+                            live: gameState.cauldronRound != nil
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
 
                     NavigationLink {
                         KitchenMinesView(gameState: gameState)
@@ -228,10 +229,10 @@ struct CasinoHubView: View {
                             icon: .flame,
                             tint: NQTheme.flame,
                             game: "mines",
-                            badge: gameState.minesRound != nil ? "LIVE" : nil
+                            live: gameState.minesRound != nil
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
 
                     NavigationLink {
                         PlinkoView(gameState: gameState)
@@ -244,7 +245,7 @@ struct CasinoHubView: View {
                             game: "plinko"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
 
                     NavigationLink {
                         PortalWheelView(gameState: gameState)
@@ -257,7 +258,7 @@ struct CasinoHubView: View {
                             game: "wheel"
                         )
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
                 }
 
                 // Straight off analytics.gamble_hourly. Sits under the
@@ -269,14 +270,13 @@ struct CasinoHubView: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Monster casino")
-                .font(NQText.microXS.font)
-                .tracking(0.6)
-                .foregroundStyle(accent.accentDark)
+        VStack(alignment: .leading, spacing: NQTheme.spaceXS) {
             Text("Risk a monster, win a better one")
                 .font(NQText.headingL.font.weight(.heavy))
                 .foregroundStyle(NQTheme.ink)
+            Text("Wager from your squad. Cash out: or lose the pot.")
+                .font(NQText.captionS.font)
+                .foregroundStyle(NQTheme.inkMuted)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -289,7 +289,7 @@ struct CasinoHubView: View {
         icon: NQIcon,
         tint: Color,
         game: String,
-        badge: String? = nil
+        live: Bool = false
     ) -> some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
             HStack(alignment: .top) {
@@ -307,13 +307,8 @@ struct CasinoHubView: View {
                     }
                 }
                 Spacer()
-                if let badge {
-                    Text(badge)
-                        .font(NQText.microS.font.weight(.heavy))
-                        .foregroundStyle(tint)
-                        .nqPadding(.badge)
-                        .background(tint.opacity(0.16))
-                        .clipShape(Capsule())
+                if live {
+                    NQLiveBadge(tint: tint)
                 }
             }
 
@@ -333,9 +328,7 @@ struct CasinoHubView: View {
         .nqPadding(.card)
         .frame(maxWidth: .infinity, alignment: .leading)
         .aspectRatio(1, contentMode: .fit)
-        .background(NQTheme.background)
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusL + 2))
-        .nqElevation(.card)
+        .nqSurface(.sticker)
         .accessibilityElement(children: .combine)
     }
 
@@ -410,7 +403,7 @@ struct CauldronOddsView: View {
         .navigationTitle("House rules")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
+            ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Done") { dismiss() }
             }
         }
@@ -424,8 +417,6 @@ struct CauldronOddsView: View {
         }
         .nqPadding(.card)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(NQTheme.background)
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusL + 2))
-        .nqElevation(.card)
+        .nqSurface(.sticker)
     }
 }
