@@ -169,6 +169,13 @@ export interface CookbookSpec {
 
 export const COOKBOOKS: CookbookSpec[] = [
   {
+    id: "super-simple-cookbook",
+    name: "Super Simple Cookbook",
+    price: 100,
+    odds: { common: 1.0, uncommon: 0.0, rare: 0.0, epic: 0.0,
+            legendary: 0.0, mythic: 0.0, secret: 0.0 }
+  },
+  {
     id: "home-cookbook",
     name: "Home Cookbook",
     price: 1_600,
@@ -195,6 +202,13 @@ export const COOKBOOKS: CookbookSpec[] = [
     price: 33_500,
     odds: { common: 0.0, uncommon: 0.10, rare: 0.25, epic: 0.35,
             legendary: 0.20, mythic: 0.095, secret: 0.005 }
+  },
+  {
+    id: "secret-cookbook",
+    name: "Secret Cookbook",
+    price: 100_000,
+    odds: { common: 0.0, uncommon: 0.08, rare: 0.17, epic: 0.25,
+            legendary: 0.25, mythic: 0.15, secret: 0.10 }
   }
 ];
 

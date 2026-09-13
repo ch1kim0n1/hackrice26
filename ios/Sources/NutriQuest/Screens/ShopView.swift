@@ -44,6 +44,7 @@ struct ShopView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 NQCoinBalance(balance: gameState.coinBalance)
             }
+            .nqHideGlass()
         }
         // isPresented, not item: — `item:` needs iOS 17 and a Hashable
         // payload; the deployment target is 16.
@@ -153,10 +154,12 @@ extension CookbookDTO {
     /// One identity colour per book so the shop row isn't four identical blues.
     var shopTint: Color {
         switch id {
+        case "super-simple-cookbook": return NQTheme.inkMuted
         case "home-cookbook": return NQTheme.sky
         case "chefs-cookbook": return NQTheme.gold
         case "master-cookbook": return NQTheme.leaf
         case "forbidden-cookbook": return NQTheme.plum
+        case "secret-cookbook": return NQRarity.secret.outline
         default:
             return (Rarity(rawValue: odds.first?.rarity ?? "") ?? .common).ringColor
         }

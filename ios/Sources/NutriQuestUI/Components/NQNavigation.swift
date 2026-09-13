@@ -104,7 +104,7 @@ public struct NQBottomNav: View {
     }
 
     public var body: some View {
-        HStack {
+        HStack(alignment: .bottom, spacing: 0) {
             navItem(.home)
             navItem(.collection)
             scanButton
@@ -162,25 +162,25 @@ public struct NQBottomNav: View {
             NQJuice.tap()
             withAnimation(NQMotion.snappy) { selection = .scan }
         } label: {
-            VStack(spacing: NQTheme.spaceXS) {
+            VStack(spacing: 2) {
                 ZStack {
-                    NQPanelShape(cut: NQTheme.radiusM)
+                    NQTicketShape()
                         .fill(LinearGradient(colors: [accent.accentDark, NQTheme.accentPress],
                                              startPoint: .top, endPoint: .bottom))
-                    NQPanelShape(cut: NQTheme.radiusM)
-                        .strokeBorder(NQTheme.inkDeep, lineWidth: 2)
+                    NQTicketShape()
+                        .strokeBorder(NQTheme.inkDeep, lineWidth: 2.5)
                     NQIconView(icon: .scan, tint: NQTheme.inkDeep)
-                        .frame(width: 28, height: 28)
+                        .frame(width: 22, height: 22)
                 }
-                .frame(width: 56, height: 50)
+                .frame(width: 44, height: 44)
                 .shadow(color: NQTheme.inkDeep, radius: 0, y: isSelected ? 1 : 4)
+                .offset(y: inviteScan && !isSelected && scanHop && !reduceMotion ? -16 : -12)
                 Text(NQTab.scan.title)
                     .font(NQText.captionS.font.weight(.heavy))
                     .foregroundStyle(accent.accent)
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: NQLayout.controlMinHeight)
-            .offset(y: inviteScan && !isSelected && scanHop && !reduceMotion ? -10 : -6)
             .animation(NQMotion.snappy, value: isSelected)
         }
         .buttonStyle(NQPressableStyle(scale: 0.9, haptic: false, ledge: 4))
@@ -211,6 +211,19 @@ public struct NQTransparentNav: ViewModifier {
 public extension View {
     func nqTransparentNav() -> some View {
         modifier(NQTransparentNav())
+    }
+}
+
+public extension ToolbarContent {
+    /// iOS 26 wraps trailing items in a glass capsule. That reads as a pill
+    /// on top of our own chrome — hide it when the OS offers the control.
+    @ToolbarContentBuilder
+    func nqHideGlass() -> some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
     }
 }
 

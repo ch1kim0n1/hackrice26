@@ -609,6 +609,7 @@ private struct AccountSheet: View {
                     .buttonStyle(NQPressableStyle(scale: 0.94, haptic: false, ledge: 3))
                     .accessibilityLabel("Done")
                 }
+                .nqHideGlass()
             }
         }
     }

@@ -30,7 +30,12 @@ struct CaseOpeningView: View {
 
     private var affordable: Bool { gameState.coinBalance >= cookbook.price }
     private var boostsHeld: Int { gameState.streak?.boosts ?? 0 }
-    private var boostActive: Bool { useBoost && boostsHeld > 0 }
+    /// A book with no Rare+ mass can't benefit from a boost — the server
+    /// wouldn't spend one anyway, so don't offer the toggle.
+    private var boostable: Bool {
+        cookbook.odds.contains { $0.tierChance > 0 && $0.rarity != "common" && $0.rarity != "uncommon" }
+    }
+    private var boostActive: Bool { useBoost && boostsHeld > 0 && boostable }
     private var busy: Bool {
         if case .idle = phase { return false }
         return true
@@ -43,7 +48,7 @@ struct CaseOpeningView: View {
 
                 oddsCard
 
-                if boostsHeld > 0 { boostRow }
+                if boostsHeld > 0 && boostable { boostRow }
 
                 if case .spinning(let drop) = phase, let reel = drop.reel, let winnerIndex = drop.reelWinnerIndex {
                     CaseRouletteStrip(reel: reel, winnerIndex: winnerIndex) {

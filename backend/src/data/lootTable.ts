@@ -1,4 +1,4 @@
-// Loot catalogue: the rarity ladder and the four Cookbooks.
+// Loot catalogue: the rarity ladder and the Cookbooks.
 //
 // Character designs live in the master authored catalog (characters.json,
 // loaded+validated by roster.ts) — a design has NO rarity; rarity is rolled
@@ -67,14 +67,16 @@ export function mintPool(rarity?: Rarity): RosterCharacter[] {
 // ---------------------------------------------------------------------------
 
 const COOKBOOK_DESCRIPTIONS: Record<string, string> = {
+  "super-simple-cookbook": "Recipes on the back of the box. Commons only — a hundred coins, no surprises.",
   "home-cookbook": "Weeknight staples. Every tier is reachable, even Secret, but the odds favour the everyday.",
   "chefs-cookbook": "A working kitchen's shelf. Better table, better pulls.",
   "master-cookbook": "Technique and patience. Epic and Legendary are realistic goals here.",
-  "forbidden-cookbook": "No Commons at all. The book nobody was supposed to publish."
+  "forbidden-cookbook": "No Commons at all. The book nobody was supposed to publish.",
+  "secret-cookbook": "One hundred thousand coins for a one-in-ten shot at a Secret. The table the Gatekeeper doesn't talk about."
 };
 
 /**
- * The four Cookbooks, cheapest first — the only loot containers that exist
+ * The Cookbooks, cheapest first — the only loot containers that exist
  * (spec §3). Opening one is: pay price, roll a rarity Case off the published
  * odds, mint a ★1 monster of that rarity. No keys, no pity.
  */

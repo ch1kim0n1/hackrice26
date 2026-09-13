@@ -85,6 +85,7 @@ struct CollectionView: View {
                     sellModeButton
                 }
             }
+            .nqHideGlass()
         }
         .safeAreaInset(edge: .bottom) {
             if sellMode && !sellSelection.isEmpty { sellBar }
@@ -159,7 +160,7 @@ struct CollectionView: View {
                     .lineLimit(1)
             }
             .foregroundStyle(fill.readableTextColor())
-            .frame(width: 48, height: 48)
+            .frame(width: 56, height: 44)
             .background(NQTicketShape().fill(fill))
             .overlay { NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2.5) }
         }

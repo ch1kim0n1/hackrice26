@@ -62,6 +62,7 @@ struct HomeView: View {
                     NQCoinBalance(balance: gameState.coinBalance)
                 }
             }
+            .nqHideGlass()
         }
         .task {
             await gameState.refreshTasks()

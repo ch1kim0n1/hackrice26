@@ -83,7 +83,7 @@ interface OpenBody {
 }
 
 describe("cookbooks", () => {
-  it("offers the four spec books at their spec prices", async () => {
+  it("offers the spec books at their spec prices", async () => {
     await withPlayer(0, async (call) => {
       const body = (await (await call("GET", "/lootbox/cookbooks")).json()) as {
         cookbooks: CookbookSummary[];
@@ -94,12 +94,16 @@ describe("cookbooks", () => {
         "chefs-cookbook",
         "forbidden-cookbook",
         "home-cookbook",
-        "master-cookbook"
+        "master-cookbook",
+        "secret-cookbook",
+        "super-simple-cookbook"
       ]);
+      expect(byId["super-simple-cookbook"].price).toBe(100);
       expect(byId["home-cookbook"].price).toBe(1_600);
       expect(byId["chefs-cookbook"].price).toBe(3_300);
       expect(byId["master-cookbook"].price).toBe(9_200);
       expect(byId["forbidden-cookbook"].price).toBe(33_500);
+      expect(byId["secret-cookbook"].price).toBe(100_000);
     });
   });
 

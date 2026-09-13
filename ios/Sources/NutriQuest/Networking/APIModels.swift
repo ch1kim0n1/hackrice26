@@ -452,9 +452,9 @@ struct CrateOddsDTO: Decodable, Sendable {
     let perCharacterChance: Double?
 }
 
-/// `GET /lootbox/cookbooks` — the four Cookbooks, the only purchasable loot
+/// `GET /lootbox/cookbooks` — the Cookbooks, the only purchasable loot
 /// containers (spec §3). `price` is in coins; `contents` is included by the
-/// single-cookbook endpoint (all 14 designs — rarity is rolled per mint).
+/// single-cookbook endpoint (rarity is rolled per mint).
 struct CookbookDTO: Decodable, Sendable, Identifiable {
     let id: String
     let name: String

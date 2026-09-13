@@ -89,6 +89,7 @@ struct CasinoHubView: View {
             ToolbarItem(placement: .navigationBarTrailing) {
                 NQCoinBalance(balance: gameState.coinBalance)
             }
+            .nqHideGlass()
         }
         .navigationDestination(isPresented: $showShop) {
             ShopView(gameState: gameState)
