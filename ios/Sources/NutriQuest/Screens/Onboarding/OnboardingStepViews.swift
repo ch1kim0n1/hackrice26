@@ -197,6 +197,32 @@ struct OBBirthdateStep: View {
     }
 }
 
+// MARK: - Activity
+
+/// "How much do you exercise?" — sets the multiplier that turns resting burn
+/// into the daily calorie budget.
+struct OBActivityStep: View {
+    @Binding var selection: ActivityLevel?
+    let onContinue: () -> Void
+
+    var body: some View {
+        OBStepScaffold(
+            title: "How much do you exercise?",
+            subtitle: "This sets how many calories you burn in a day.",
+            buttonEnabled: selection != nil,
+            onContinue: onContinue
+        ) {
+            VStack(spacing: 14) {
+                ForEach(ActivityLevel.allCases) { level in
+                    OBOptionCard(title: level.title, subtitle: level.detail, selected: selection == level) {
+                        selection = level
+                    }
+                }
+            }
+        }
+    }
+}
+
 // MARK: - Goal
 
 /// "What is your goal?" single-select step.
@@ -227,8 +253,17 @@ struct WeightGoalStep: View {
 /// Ruler-slider step for picking a target weight.
 struct OBDesiredWeightStep: View {
     let goal: WeightGoal
+    let isMetric: Bool
     @Binding var desiredWeightKg: Double
     let onContinue: () -> Void
+
+    /// The ruler moves in the unit the player chose; the answer stays in kg.
+    private var displayWeight: Binding<Double> {
+        Binding(
+            get: { isMetric ? desiredWeightKg : desiredWeightKg * BodyUnits.poundsPerKg },
+            set: { desiredWeightKg = isMetric ? $0 : $0 / BodyUnits.poundsPerKg }
+        )
+    }
 
     var body: some View {
         OBStepScaffold(title: "What is your desired weight?", onContinue: onContinue) {
@@ -236,11 +271,13 @@ struct OBDesiredWeightStep: View {
                 Text(goal.title)
                     .font(NQFont.body.font(15))
                     .foregroundStyle(OBTheme.subtitle)
-                Text(String(format: "%.1f kg", desiredWeightKg))
+                Text(isMetric
+                     ? String(format: "%.1f kg", desiredWeightKg)
+                     : String(format: "%.0f lb", desiredWeightKg * BodyUnits.poundsPerKg))
                     .font(NQFont.display.font(34))
                     .foregroundStyle(OBTheme.ink)
                     .monospacedDigit()
-                OBRulerSlider(value: $desiredWeightKg)
+                OBRulerSlider(value: displayWeight, range: isMetric ? 30...200 : 66...440)
                     .padding(.horizontal, -OBTheme.screenInset)
             }
         }
@@ -249,40 +286,60 @@ struct OBDesiredWeightStep: View {
 
 // MARK: - Motivation
 
-/// Interstitial reassurance screen: "Losing X kg is a realistic target."
+/// Interstitial after the target weight: an honest read on the goal, scaled
+/// to its size rather than a blanket "it's easy".
 struct OBMotivationStep: View {
     let goal: WeightGoal
-    /// Absolute difference between current and desired weight, in kg.
-    let deltaKg: Double
+    let isMetric: Bool
+    let currentWeightKg: Double
+    let desiredWeightKg: Double
+    let heightCm: Double
     let onContinue: () -> Void
+
+    private var deltaKg: Double { abs(currentWeightKg - desiredWeightKg) }
+
+    /// Size of the change as a share of current body weight.
+    private var share: Double { currentWeightKg > 0 ? deltaKg / currentWeightKg : 0 }
+
+    /// BMI at the target weight; under 18.5 is below a healthy weight.
+    private var targetBMI: Double {
+        let metres = heightCm / 100
+        return metres > 0 ? desiredWeightKg / (metres * metres) : 0
+    }
 
     var body: some View {
         OBStepScaffold(title: "", buttonTitle: "Continue", onContinue: onContinue) {
-            VStack(spacing: 22) {
-                headline
-                    .font(NQFont.display.font(26))
-                    .multilineTextAlignment(.center)
-                Text("90% of users say that the change is obvious after using hackrice and it is not easy to rebound.")
-                    .font(NQFont.body.font(14))
-                    .foregroundStyle(OBTheme.subtitle)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, 12)
-            }
-            .frame(maxWidth: .infinity)
+            headline
+                .font(NQFont.display.font(26))
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
         }
     }
 
-    /// Headline with the kg delta highlighted in orange, matching the design.
+    private var amount: String {
+        isMetric
+            ? String(format: deltaKg.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f kg" : "%.1f kg", deltaKg)
+            : "\(BodyUnits.pounds(fromKg: deltaKg)) lb"
+    }
+
+    /// Headline with the amount highlighted in orange, matching the design.
     private var headline: Text {
         if goal == .maintain || deltaKg < 0.5 {
-            return Text("Maintaining your weight is a realistic target. It's not hard at all!")
-                .foregroundColor(OBTheme.ink)
+            return Text("Maintaining your weight is a realistic target.").foregroundColor(OBTheme.ink)
         }
         let verb = goal == .lose ? "Losing " : "Gaining "
-        let amount = String(format: deltaKg.truncatingRemainder(dividingBy: 1) == 0 ? "%.0f kg" : "%.1f kg", deltaKg)
-        return Text(verb).foregroundColor(OBTheme.ink)
-            + Text(amount).foregroundColor(OBTheme.accent)
-            + Text(" is a realistic target. It's not hard at all!").foregroundColor(OBTheme.ink)
+        let lead = Text(verb).foregroundColor(OBTheme.ink) + Text(amount).foregroundColor(OBTheme.accent)
+        if goal == .lose && targetBMI > 0 && targetBMI < 18.5 {
+            return lead + Text(" would put you below a healthy weight for your height. Consider a higher target, and talk to a doctor.")
+                .foregroundColor(OBTheme.ink)
+        }
+        let verdict: String
+        switch share {
+        case ..<0.10: verdict = " is a realistic target."
+        case ..<0.25: verdict = " is an ambitious goal, reachable with a steady plan."
+        default: verdict = " is a big goal. Take it in stages, and check in with a doctor along the way."
+        }
+        return lead + Text(verdict).foregroundColor(OBTheme.ink)
     }
 }
 
@@ -291,11 +348,20 @@ struct OBMotivationStep: View {
 /// "How fast do you want to reach your goal?" slider with pace mascots.
 struct OBSpeedStep: View {
     let goal: WeightGoal
+    let isMetric: Bool
     @Binding var speedKgPerWeek: Double
     let onContinue: () -> Void
 
     /// Recommended pace band, kg per week.
     private let recommended: ClosedRange<Double> = 0.5...1.1
+
+    /// The slider moves in the unit the player chose; the answer stays in kg.
+    private var displaySpeed: Binding<Double> {
+        Binding(
+            get: { isMetric ? speedKgPerWeek : speedKgPerWeek * BodyUnits.poundsPerKg },
+            set: { speedKgPerWeek = isMetric ? $0 : $0 / BodyUnits.poundsPerKg }
+        )
+    }
 
     var body: some View {
         OBStepScaffold(title: "How fast do you want to reach your goal?", onContinue: onContinue) {
@@ -303,7 +369,9 @@ struct OBSpeedStep: View {
                 Text(goal == .gain ? "Gain weight speed per week" : "Loss weight speed per week")
                     .font(NQFont.body.font(15))
                     .foregroundStyle(OBTheme.subtitle)
-                Text(String(format: "%.1f kg", speedKgPerWeek))
+                Text(isMetric
+                     ? String(format: "%.1f kg", speedKgPerWeek)
+                     : String(format: "%.1f lb", speedKgPerWeek * BodyUnits.poundsPerKg))
                     .font(NQFont.display.font(30))
                     .foregroundStyle(OBTheme.ink)
                     .monospacedDigit()
@@ -317,15 +385,15 @@ struct OBSpeedStep: View {
                 }
                 .padding(.horizontal, 6)
 
-                Slider(value: $speedKgPerWeek, in: 0.1...1.5, step: 0.1)
+                Slider(value: displaySpeed, in: isMetric ? 0.1...1.5 : 0.2...3.3, step: 0.1)
                     .tint(OBTheme.accent)
 
                 HStack {
-                    Text("0.1 kg")
+                    Text(isMetric ? "0.1 kg" : "0.2 lb")
                     Spacer()
-                    Text("0.8 kg")
+                    Text(isMetric ? "0.8 kg" : "1.8 lb")
                     Spacer()
-                    Text("1.5 kg")
+                    Text(isMetric ? "1.5 kg" : "3.3 lb")
                 }
                 .font(NQFont.body.font(14))
                 .foregroundStyle(OBTheme.subtitle)

@@ -66,6 +66,7 @@ struct OBAnswers {
     var heightCm = 170
     var weightKg = 65
     var birthdate = Calendar.current.date(byAdding: .year, value: -22, to: Date()) ?? Date()
+    var activity: ActivityLevel?
     var goal: WeightGoal?
     var desiredWeightKg = 65.0
     var speedKgPerWeek = 1.0
@@ -97,16 +98,15 @@ struct OBAnswers {
         return Calendar.current.date(byAdding: .day, value: Int(weeks * 7), to: Date()) ?? Date()
     }
 
-    /// The answers as the app's shared body-metrics model. Onboarding has no
-    /// activity question, so it assumes `.light`; the Body & goals editor is
-    /// where a player refines that.
+    /// The answers as the app's shared body-metrics model. The activity step
+    /// can't be skipped, so the `.light` fallback only covers an unset answer.
     var bodyMetrics: BodyMetrics {
         BodyMetrics(
             sex: gender ?? .other,
             heightCm: currentHeightCm,
             weightKg: currentWeightKg,
             birthdate: birthdate,
-            activity: .light,
+            activity: activity ?? .light,
             goal: goal ?? .maintain,
             paceKgPerWeek: speedKgPerWeek,
             usesMetric: isMetric
@@ -131,7 +131,7 @@ struct OBAnswers {
 
 /// hackrice onboarding flow, implemented from the Figma reference:
 /// welcome, a calibration questionnaire (gender, height and
-/// weight, birthdate, goal, desired weight, pace), Apple Health connect,
+/// weight, birthdate, activity, goal, desired weight, pace), Apple Health connect,
 /// and the plan-ready celebration.
 struct OnboardingView: View {
     var onFinish: () -> Void
@@ -139,7 +139,7 @@ struct OnboardingView: View {
 
     /// Ordered steps of the flow. Raw value doubles as progress index.
     enum Step: Int, CaseIterable {
-        case welcome, gender, heightWeight, birthdate, goal
+        case welcome, gender, heightWeight, birthdate, activity, goal
         case desiredWeight, motivation, speed, appleHealth, planReady
     }
 
@@ -191,22 +191,34 @@ struct OnboardingView: View {
                 weightKg: $answers.weightKg
             ) { advance(to: .birthdate) }
         case .birthdate:
-            OBBirthdateStep(birthdate: $answers.birthdate) { advance(to: .goal) }
+            OBBirthdateStep(birthdate: $answers.birthdate) { advance(to: .activity) }
+        case .activity:
+            OBActivityStep(selection: $answers.activity) { advance(to: .goal) }
         case .goal:
             WeightGoalStep(selection: $answers.goal) {
                 seedDesiredWeight()
                 advance(to: .desiredWeight)
             }
         case .desiredWeight:
-            OBDesiredWeightStep(goal: answers.goal ?? .maintain, desiredWeightKg: $answers.desiredWeightKg) {
+            OBDesiredWeightStep(
+                goal: answers.goal ?? .maintain,
+                isMetric: answers.isMetric,
+                desiredWeightKg: $answers.desiredWeightKg
+            ) {
                 advance(to: answers.goal == .maintain ? .speed : .motivation)
             }
         case .motivation:
-            OBMotivationStep(goal: answers.goal ?? .maintain, deltaKg: answers.deltaKg) {
+            OBMotivationStep(
+                goal: answers.goal ?? .maintain,
+                isMetric: answers.isMetric,
+                currentWeightKg: answers.currentWeightKg,
+                desiredWeightKg: answers.desiredWeightKg,
+                heightCm: answers.currentHeightCm
+            ) {
                 advance(to: .speed)
             }
         case .speed:
-            OBSpeedStep(goal: answers.goal ?? .maintain, speedKgPerWeek: $answers.speedKgPerWeek) {
+            OBSpeedStep(goal: answers.goal ?? .maintain, isMetric: answers.isMetric, speedKgPerWeek: $answers.speedKgPerWeek) {
                 advance(to: .appleHealth)
             }
         case .appleHealth:
@@ -261,10 +273,17 @@ struct OnboardingView: View {
     /// ruler starts from a sensible position for the chosen goal.
     private func seedDesiredWeight() {
         let current = answers.currentWeightKg
+        // Offset in the chosen unit (5 kg or 10 lb) and land on a whole value
+        // of that unit, so an Imperial ruler never starts on a converted kg.
+        let offset = answers.isMetric ? 5.0 : 10.0 / BodyUnits.poundsPerKg
+        let target: Double
         switch answers.goal {
-        case .lose: answers.desiredWeightKg = (current - 5).rounded()
-        case .gain: answers.desiredWeightKg = (current + 5).rounded()
-        default: answers.desiredWeightKg = current.rounded()
+        case .lose: target = current - offset
+        case .gain: target = current + offset
+        default: target = current
         }
+        answers.desiredWeightKg = answers.isMetric
+            ? target.rounded()
+            : BodyUnits.kg(fromPounds: BodyUnits.pounds(fromKg: target))
     }
 }
