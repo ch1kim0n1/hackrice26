@@ -116,7 +116,11 @@ public struct NQCoverFlowCarousel<Item: Identifiable, Content: View>: View {
             .opacity(magnitude < 1.5 ? 1 : max(0, 1 - (magnitude - 1.5) * 2))
             .offset(x: distance * step)
             .zIndex(-magnitude)
-            .animation(.spring(response: 0.38, dampingFraction: 0.82), value: selection)
+            // The scale/offset/rotation above are layout — they place the
+            // strip, so Reduce Motion can't drop them without collapsing the
+            // cover flow into a stack. What it does drop is the travel
+            // between selections: the card snaps to its new place instead.
+            .animation(reduceMotion ? nil : NQMotion.carousel, value: selection)
     }
 
     /// Drag gesture that tracks the strip live and snaps on release.

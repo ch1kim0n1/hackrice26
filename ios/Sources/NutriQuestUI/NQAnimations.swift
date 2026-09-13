@@ -23,6 +23,8 @@ public enum NQMotion {
     public static let faintDroop = Animation.easeOut(duration: 0.5)
     /// Crit flash — one frame of white-out, gone before it registers as a fade.
     public static let critFlash = Animation.easeOut(duration: 0.08)
+    /// Card strip settling on a new selection (cover flow, Collection).
+    public static let carousel = Animation.spring(response: 0.38, dampingFraction: 0.82)
 
     /// Spring with custom response/damping.
     public static func spring(response: Double, damping: Double) -> Animation {

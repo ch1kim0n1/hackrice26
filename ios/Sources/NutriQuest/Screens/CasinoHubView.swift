@@ -9,6 +9,7 @@ struct CasinoHubView: View {
     @ObservedObject var gameState: GameState
 
     @Environment(\.nqAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     /// QA hook, matching RootTabView's `-uiTab`: `-uiSection battle` lands on
     /// the far half of the switch, so a screenshot can reach it without a tap.
     @State private var section: CasinoSection = {
@@ -119,7 +120,9 @@ struct CasinoHubView: View {
                 let isSelected = section == option
                 Button {
                     NQSound.play(.tapAlt)
-                    withAnimation(NQMotion.snappy) { section = option }
+                    // The sliding capsule is the animation; with Reduce Motion
+                    // on it changes halves without travelling between them.
+                    withAnimation(reduceMotion ? nil : NQMotion.snappy) { section = option }
                 } label: {
                     HStack(spacing: NQTheme.spaceXS) {
                         option.icon.view

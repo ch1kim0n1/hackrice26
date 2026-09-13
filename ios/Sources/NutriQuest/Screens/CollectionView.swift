@@ -52,7 +52,7 @@ struct CollectionView: View {
         .onAppear(perform: applyLaunchSelection)
         .onChange(of: selectedFilter) { _ in
             // Each collection starts at its first card.
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+            withAnimation(NQMotion.carousel) {
                 carouselIndex = 0
             }
         }
@@ -217,7 +217,7 @@ struct CollectionView: View {
 
     private func scrollTo(_ index: Int) {
         NQHaptic.selection()
-        withAnimation(.spring(response: 0.38, dampingFraction: 0.82)) {
+        withAnimation(NQMotion.carousel) {
             carouselIndex = index
         }
     }
