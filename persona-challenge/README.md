@@ -7,18 +7,20 @@ gate run attached.
 
 ## Run
 
-No build step. Serve the directory (ES modules need http, not file://) and
-have the backend up:
+No build step. The runtime files live in `backend/public/human-gate/` and the
+backend serves them at `/gate` in production — same origin as the API. For
+local development serve that directory (ES modules need http, not file://)
+and have the backend up:
 
 ```sh
-cd persona-challenge
-python3 -m http.server 8123
+python3 -m http.server 8123 -d ../backend/public/human-gate
 # backend: cd ../backend && npm run dev   (http://localhost:4000)
 # open http://localhost:8123
 ```
 
 API base resolution: `?api=` query param > `window.NQ_API_BASE` >
-`http://localhost:4000`. Inside the iOS WKWebView, set
+same origin (or `http://localhost:4000` on the :8123 dev server). Inside the
+iOS WKWebView, set
 `AppConfig.humanGateURL` — successful registration is posted back to the app
 via `webkit.messageHandlers.nutriquest`.
 
