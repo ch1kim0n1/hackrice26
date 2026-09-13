@@ -786,6 +786,8 @@ struct ScanMintDTO: Decodable, Sendable {
 struct ScanResultDTO: Decodable, Sendable {
     let barcode: String
     let foodName: String
+    /// Open Food Facts brand string ("Ferrero"), when the product has one.
+    let brands: String?
     /// 0–100 holistic NutritionScore; tilts the rarity roll.
     let nutritionScore: Double?
     /// The minted catalog instance — present only on the first-ever scan.

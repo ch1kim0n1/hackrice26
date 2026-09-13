@@ -87,6 +87,7 @@
 		D46BC08A405AD317016E0EF9 /* SquadPickerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F941A4022E72AD7BEC6DB964 /* SquadPickerView.swift */; };
 		D5D7EED529F03A9576289678 /* HealthKitSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = C822A50B46EBDCFD6D0A406A /* HealthKitSnapshot.swift */; };
 		D63454F9FF40922A4939FBC0 /* APIModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 137936CDB011C5B7E6FE06BD /* APIModels.swift */; };
+		D64641F01F7AC55D87DC6C5F /* BarcodeUtilsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4B92B92027BB76739FE31D5 /* BarcodeUtilsTests.swift */; };
 		DCAAA79A9A71F0D07380BEBF /* BodyMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C030FB0134776A73A42C9F1B /* BodyMetricsTests.swift */; };
 		DDB78FA7CDA51160C6DB0E89 /* game-assets in Resources */ = {isa = PBXBuildFile; fileRef = 93A470DD2ACD7130B1C43577 /* game-assets */; };
 		E08A2EE722652550140909CD /* LANSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2A8F56ABF6DD4934679CE67 /* LANSession.swift */; };
@@ -174,6 +175,7 @@
 		AD52285DC114B6B2660F977D /* BattleHubView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BattleHubView.swift; sourceTree = "<group>"; };
 		AD6E67C745E454F1A74AFDFF /* NQNotifications.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NQNotifications.swift; sourceTree = "<group>"; };
 		B49A99726C1DC2C5DF944B0B /* DesignTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesignTokens.swift; sourceTree = "<group>"; };
+		B4B92B92027BB76739FE31D5 /* BarcodeUtilsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BarcodeUtilsTests.swift; sourceTree = "<group>"; };
 		B6558DD7BAB6A544FF3565A6 /* NutriQuest.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NutriQuest.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B7EF8099151DFFA30CE3943C /* LANTournament.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LANTournament.swift; sourceTree = "<group>"; };
 		BBB319994EBB87A6BAA41508 /* LaunchGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchGateView.swift; sourceTree = "<group>"; };
@@ -398,6 +400,7 @@
 			isa = PBXGroup;
 			children = (
 				3695D833EDA8B023BFEC62A9 /* APIErrorTests.swift */,
+				B4B92B92027BB76739FE31D5 /* BarcodeUtilsTests.swift */,
 				C030FB0134776A73A42C9F1B /* BodyMetricsTests.swift */,
 				BE25C65283FB213EE72D1B3A /* CauldronCashOutTests.swift */,
 				ED14063699D4A328F1173D67 /* GameArtTests.swift */,
@@ -607,6 +610,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5B5652062290FDE3A5688C47 /* APIErrorTests.swift in Sources */,
+				D64641F01F7AC55D87DC6C5F /* BarcodeUtilsTests.swift in Sources */,
 				DCAAA79A9A71F0D07380BEBF /* BodyMetricsTests.swift in Sources */,
 				444DAF3851E02D2D49C02C6E /* CauldronCashOutTests.swift in Sources */,
 				9124D0F77A75B6F43BF1941D /* GameArtTests.swift in Sources */,

@@ -43,18 +43,22 @@ import { enqueueMirror } from "../services/mirrorQueue";
 import { mintCollectionDrop } from "../services/lootboxState";
 import { scanSchema, manualMealSchema, mealEditSchema } from "../schemas/gameSchemas";
 
+// OFF is community-entered: the per-100g fields are usually numbers but
+// arrive as numeric strings often enough that the feed must accept both.
+type OFFNumber = number | string;
+
 interface OFFNutriments {
-  "energy-kcal_100g"?: number;
-  energy_100g?: number;
-  proteins_100g?: number;
-  carbohydrates_100g?: number;
-  fat_100g?: number;
-  "fiber_100g"?: number;
-  sugars_100g?: number;
-  sodium_100g?: number;
-  salt_100g?: number;
-  "saturated-fat_100g"?: number;
-  [key: string]: number | string | undefined;
+  "energy-kcal_100g"?: OFFNumber;
+  energy_100g?: OFFNumber;
+  proteins_100g?: OFFNumber;
+  carbohydrates_100g?: OFFNumber;
+  fat_100g?: OFFNumber;
+  "fiber_100g"?: OFFNumber;
+  sugars_100g?: OFFNumber;
+  sodium_100g?: OFFNumber;
+  salt_100g?: OFFNumber;
+  "saturated-fat_100g"?: OFFNumber;
+  [key: string]: OFFNumber | undefined;
 }
 
 export interface OFFProduct {
@@ -82,8 +86,16 @@ const unit = () => randomBytes(4).readUInt32BE(0) / 0x1_0000_0000;
  */
 function nutritionFromOFF(product: OFFProduct["product"]): NutritionInput {
   const n = (product?.nutriments ?? {}) as OFFNutriments;
-  const num = (v: unknown): number | undefined =>
-    typeof v === "number" && Number.isFinite(v) ? v : undefined;
+  // Numeric strings count; an empty string does not (Number("") is 0, which
+  // would log a 0 kcal product as fact).
+  const num = (v: unknown): number | undefined => {
+    if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+    if (typeof v === "string" && v.trim() !== "") {
+      const parsed = Number(v);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    }
+    return undefined;
+  };
   const sodiumG = num(n.sodium_100g) ?? (num(n.salt_100g) !== undefined ? num(n.salt_100g)! / 2.5 : undefined);
   const kcal = num(n["energy-kcal_100g"]) ?? (num(n.energy_100g) !== undefined ? num(n.energy_100g)! / 4.184 : undefined);
   return {
@@ -278,6 +290,7 @@ scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "
 
   const key = req.playerId!;
   const name = off.product.product_name_en ?? off.product.product_name ?? "Unknown food";
+  const brands = off.product.brands?.trim();
   const nutrition = nutritionFromOFF(off.product);
 
   // Reject impossible/outlier nutrition before it can mint anything
@@ -285,6 +298,9 @@ scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "
   // fact — the meal log is a ledger, not a scratchpad.
   const plausibility = checkPlausibility(nutrition);
   if (!plausibility.plausible) {
+    // Community-entered OFF rows fail this often enough that the barcode and
+    // the rule that fired need to be visible server-side.
+    console.warn(`[scan] rejected ${barcode} (${name}): ${plausibility.reasons.join("; ")}`);
     return res.status(422).json({
       error: {
         code: "IMPLAUSIBLE_NUTRITION",
@@ -350,6 +366,7 @@ scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "
   const result: ScanResult & { mealId: string; mint?: typeof mint } = {
     barcode,
     foodName: name,
+    ...(brands ? { brands } : {}),
     nutritionScore: Math.round(score * 10) / 10,
     summonedCharacter: character,
     nutrition: asScanNutrition(nutrition),

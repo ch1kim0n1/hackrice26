@@ -43,15 +43,16 @@ public enum BarcodeUtils {
         let ns = String(d[0])
         let a = d[1], b = d[2], c = d[3], dd = d[4], e = d[5], m = d[6], check = String(d[7])
 
+        // GS1 expansion table, keyed on the last data digit.
         switch m {
         case 0...2:
-            return "\(ns)\(a)\(b)\(m)00" + "000\(dd)\(e)" + check
+            return "\(ns)\(a)\(b)\(m)" + "0000" + "\(c)\(dd)\(e)" + check
         case 3:
-            return "\(ns)\(a)\(b)\(c)00" + "0000\(e)" + check
+            return "\(ns)\(a)\(b)\(c)" + "00000" + "\(dd)\(e)" + check
         case 4:
-            return "\(ns)\(a)\(b)\(c)\(dd)0" + "0000\(e)" + check
+            return "\(ns)\(a)\(b)\(c)\(dd)" + "00000" + "\(e)" + check
         default:
-            return "\(ns)\(a)\(b)\(c)\(dd)\(e)" + "0000\(m)" + check
+            return "\(ns)\(a)\(b)\(c)\(dd)\(e)" + "0000" + "\(m)" + check
         }
     }
 

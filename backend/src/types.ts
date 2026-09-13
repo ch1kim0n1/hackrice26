@@ -64,6 +64,8 @@ export interface ScanNutrition {
 export interface ScanResult {
   barcode: string;
   foodName: string;
+  /** Open Food Facts brand string, when the product carries one. */
+  brands?: string;
   /** 0..100 — the holistic quality score the rarity roll tilted on. */
   nutritionScore?: number;
   /** Set when this scan minted a new ★1 monster (first-ever scan of this
