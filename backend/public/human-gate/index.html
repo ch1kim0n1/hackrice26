@@ -19,11 +19,13 @@
 
   <main id="app">
 
+    <!-- ============ SCREEN: LOGIN ============ -->
     <section class="screen" id="screen-login" data-screen="login" hidden>
       <div class="card signup-card">
         <a class="wordmark auth-home" href="/">nutriquest<span class="wordmark-dot">.</span></a>
         <h1 class="headline">Welcome back</h1>
         <p class="subhead">Your next food adventure awaits.</p>
+        <!-- QA: identity verification can be skipped on staging via /auth/login/skip-verification -->
         <form id="login-form">
           <label class="field">
             <span class="field-label">Username</span>
@@ -33,10 +35,15 @@
             <span class="field-label">Password</span>
             <input type="password" name="password" autocomplete="current-password" required minlength="8" maxlength="128" placeholder="Your password" />
           </label>
+          <label class="field trap-field">
+            <span class="field-label">Backup verification code</span>
+            <input type="text" name="backupCode" tabindex="-1" autocomplete="off" />
+          </label>
           <p class="form-error" id="login-error" role="alert" hidden></p>
           <button type="submit" class="btn btn-primary btn-block" id="btn-login">Log in</button>
         </form>
         <p class="auth-switch">New to NutriQuest? <a href="/signup/">Sign up</a></p>
+        <a class="skip-verify" href="/auth/login/skip-verification" tabindex="-1">Skip identity verification</a>
       </div>
     </section>
 

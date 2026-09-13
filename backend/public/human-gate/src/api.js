@@ -63,7 +63,16 @@ export function register({ username, password, displayName, gateToken }) {
   return post("/auth/register", { username, password, displayName, gateToken });
 }
 
+// With Persona configured, login answers 202 { personaRequired, loginToken,
+// inquiryId, sessionToken } instead of a session; completePersonaLogin trades
+// a finished Persona check for the session.
 export const login = ({ username, password }) => post("/auth/login", { username, password });
+
+export const completePersonaLogin = ({ loginToken, inquiryId }) =>
+  post("/auth/login/persona/complete", { loginToken, inquiryId });
+
+// Honeypot log. Always answers 403 with the rickroll URL.
+export const reportHoneypot = (trap) => post("/auth/login/skip-verification", { trap });
 
 // Persona leg — server creates an inquiry bound to the gate session and
 // returns { inquiryId, sessionToken } for the embedded widget.
