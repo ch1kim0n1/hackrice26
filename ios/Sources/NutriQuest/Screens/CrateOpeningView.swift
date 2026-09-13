@@ -23,6 +23,7 @@ struct CrateOpeningView: View {
 
     @Environment(\.nqAccent) private var accent
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var crates: [CrateSummaryDTO] = []
     @State private var loadingCrates = true
     @State private var opening = false
@@ -964,6 +965,14 @@ struct CrateOpeningView: View {
         // Suspense scales with rarity: a legendary should feel earned.
         let tier = suspenseTier(for: drop.character.rarity)
 
+        // Under Reduce Motion the whole build — bounce, hold, shake, crack —
+        // is the motion being opted out of, so it collapses to the payoff.
+        // The reward, sounds and haptics are unchanged; only the theatre goes.
+        guard !reduceMotion else {
+            playReducedMotionReveal(for: drop)
+            return
+        }
+
         // Drop in
         withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
             capsuleStage = .dropping
@@ -971,16 +980,13 @@ struct CrateOpeningView: View {
         NQSound.play(.crateCreak)
         try? await Task.sleep(nanoseconds: 600_000_000)
 
-        // Hold-to-charge: the player builds the crack. Skipped under
-        // Reduce Motion — the capsule should never gate opening on a hold.
-        if !UIAccessibility.isReduceMotionEnabled {
-            chargeProgress = 0
-            capsuleStage = .charging
-            await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
-                chargeContinuation = cont
-            }
-            chargeContinuation = nil
+        // Hold-to-charge: the player builds the crack.
+        chargeProgress = 0
+        capsuleStage = .charging
+        await withCheckedContinuation { (cont: CheckedContinuation<Void, Never>) in
+            chargeContinuation = cont
         }
+        chargeContinuation = nil
 
         // Shake — longer, with extra haptic beats for high tiers.
         withAnimation(NQMotion.quick) {
@@ -1019,6 +1025,25 @@ struct CrateOpeningView: View {
             confettiTrigger += 1
         }
 
+        opening = false
+    }
+
+    /// Reduce Motion path: land straight on the opened capsule. No bounce, no
+    /// hold gate, no shake, no rarity-scaled suspense — but the same reward,
+    /// the same sounds, and the same haptic payoff, so nothing about *what*
+    /// was pulled is lost. Confetti self-gates in `NQConfetti`.
+    @MainActor
+    private func playReducedMotionReveal(for drop: CrateOpenResponse) {
+        capsuleStage = .open
+        NQSound.play(.crateOpen)
+        NQSound.play(.crateReveal)
+        if drop.character.rarity == "secret" {
+            NQSound.play(.revealAlt)
+        }
+        NQJuice.success()
+        if ["legendary", "mythic", "secret"].contains(drop.character.rarity) {
+            confettiTrigger += 1
+        }
         opening = false
     }
 

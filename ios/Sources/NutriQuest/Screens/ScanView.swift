@@ -25,6 +25,7 @@ struct ScanView: View {
     }
 
     @Environment(\.nqAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let service = FoodDataService.shared
     private let factory = CharacterFactory()
@@ -202,10 +203,19 @@ struct ScanView: View {
     }
 
     /// Staged reveal: lock (haptic) → silhouette → rarity burst → full reveal.
+    ///
+    /// Under Reduce Motion the staging is the whole point of what gets
+    /// skipped — the suspense is the motion. The character still arrives, and
+    /// still with its haptic/sound cue (those have their own setting), just
+    /// without the 1.9s build.
     private func playSummonSequence() {
-        summonStage = .lock
         NQJuice.reveal()
-        withAnimation(.easeOut(duration: 0.25)) {}
+        guard !reduceMotion else {
+            summonStage = .reveal
+            NQJuice.success()
+            return
+        }
+        summonStage = .lock
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) {
             withAnimation(.spring(response: 0.45, dampingFraction: 0.7)) { summonStage = .silhouette }
         }
@@ -363,7 +373,7 @@ struct SummonRevealOverlay: View {
                 if stage == .reveal {
                     NQButton("Added to squad, let's go", icon: .checkCircle) { onDismiss() }
                         .padding(.horizontal, NQTheme.spaceXL)
-                        .transition(.move(edge: .bottom).combined(with: .opacity))
+                        .transition(reduceMotion ? .opacity : .move(edge: .bottom).combined(with: .opacity))
                 }
             }
             .padding(.vertical, NQTheme.spaceXL)
@@ -378,6 +388,12 @@ struct SummonRevealOverlay: View {
         .onTapGesture { if stage == .reveal { onDismiss() } }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Character summoned: \(character.name)")
+    }
+
+    /// Stages scale in normally; under Reduce Motion they cross-fade, so the
+    /// reveal still reads as a distinct beat without the zoom.
+    private func stageTransition(scale: CGFloat) -> AnyTransition {
+        reduceMotion ? .opacity : .scale(scale: scale).combined(with: .opacity)
     }
 
     @ViewBuilder private var stageContent: some View {
@@ -407,7 +423,7 @@ struct SummonRevealOverlay: View {
                 .tracking(0.8)
                 .foregroundStyle(.white)
         }
-        .transition(.scale(scale: 1.6).combined(with: .opacity))
+        .transition(stageTransition(scale: 1.6))
     }
 
     private var silhouette: some View {
@@ -418,7 +434,7 @@ struct SummonRevealOverlay: View {
                 .font(NQText.caption.font.weight(.bold))
                 .foregroundStyle(.white.opacity(0.85))
         }
-        .transition(.scale(scale: 0.4).combined(with: .opacity))
+        .transition(stageTransition(scale: 0.4))
     }
 
     private var rarityBurst: some View {
@@ -435,7 +451,7 @@ struct SummonRevealOverlay: View {
                 .font(NQText.headingL.font.weight(.heavy))
                 .tracking(1.2)
                 .foregroundStyle(rarityColor)
-                .transition(.scale(scale: 0.4).combined(with: .opacity))
+                .transition(stageTransition(scale: 0.4))
         }
     }
 
@@ -457,7 +473,7 @@ struct SummonRevealOverlay: View {
                 NQChip(character.statType.label, icon: .leaf)
             }
         }
-        .transition(.scale(scale: 0.7).combined(with: .opacity))
+        .transition(stageTransition(scale: 0.7))
     }
 
     private var rarityLabel: String { character.rarity.label.uppercased() }
