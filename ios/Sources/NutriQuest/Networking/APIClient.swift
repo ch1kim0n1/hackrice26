@@ -121,7 +121,7 @@ final class APIClient {
             method: "POST",
             path: "scan/photo/analyze",
             body: DishAnalyzeBody(image: jpegBase64),
-            timeout: 60
+            timeout: 120
         )
         return envelope.analysis
     }

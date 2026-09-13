@@ -369,7 +369,10 @@ struct ScanView: View {
         isAnalyzingMeal = true
         Task {
             do {
-                guard let jpeg = image.jpegData(compressionQuality: 0.55) else {
+                // The server rejects payloads over ~9MB base64; a full-res
+                // camera shot blows past that, so shrink the long edge first.
+                let scaled = Self.downscale(image, maxDimension: 1280)
+                guard let jpeg = scaled.jpegData(compressionQuality: 0.55) else {
                     throw APIError.invalidURL("image encoding")
                 }
                 dishAnalysis = try await APIClient.shared.analyzeDishPhoto(
@@ -380,6 +383,17 @@ struct ScanView: View {
             }
             isAnalyzingMeal = false
         }
+    }
+
+    /// Long-edge clamp for upload; keeps aspect ratio, no-op when already small.
+    private static func downscale(_ image: UIImage, maxDimension: CGFloat) -> UIImage {
+        let size = image.size
+        let longest = max(size.width, size.height)
+        guard longest > maxDimension else { return image }
+        let scale = maxDimension / longest
+        let target = CGSize(width: size.width * scale, height: size.height * scale)
+        let renderer = UIGraphicsImageRenderer(size: target)
+        return renderer.image { _ in image.draw(in: CGRect(origin: .zero, size: target)) }
     }
 
     /// Step 2: the user confirmed (possibly after corrections). The server
