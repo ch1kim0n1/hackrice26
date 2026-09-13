@@ -3,3 +3,5 @@
 !.env.example
 .DS_Store
 backend/data/
+test-results/
+playwright-report/
