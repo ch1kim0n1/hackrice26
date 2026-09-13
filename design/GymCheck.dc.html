@@ -1,0 +1,170 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width:390px;height:844px;background:{{tone.accentBg}};font-family:'Quicksand', ui-rounded, system-ui, sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+
+  <!-- top bar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:22px 20px 0;position:relative;z-index:2;">
+    <div style="width:34px;height:34px;border-radius:50%;background:#FFFFFF;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#3A342E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:16px;color:#3A342E;">AI Training Check</span>
+    <div style="width:34px;height:34px;"></div>
+  </div>
+
+  <sc-if value="{{isCapture}}" hint-placeholder-val="{{true}}">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:1;padding:0 24px;">
+      <div style="width:280px;height:340px;border-radius:32px;background:linear-gradient(160deg, #423C36, #221E19);position:relative;overflow:hidden;box-shadow:0 14px 28px -10px {{tone.accent}}, 0 10px 24px rgba(58,52,46,0.18);">
+        <div style="position:absolute;top:16px;left:16px;width:26px;height:26px;border-top:4px solid {{tone.accent}};border-left:4px solid {{tone.accent}};border-radius:10px 0 0 0;"></div>
+        <div style="position:absolute;top:16px;right:16px;width:26px;height:26px;border-top:4px solid {{tone.accent}};border-right:4px solid {{tone.accent}};border-radius:0 10px 0 0;"></div>
+        <div style="position:absolute;bottom:16px;left:16px;width:26px;height:26px;border-bottom:4px solid {{tone.accent}};border-left:4px solid {{tone.accent}};border-radius:0 0 0 10px;"></div>
+        <div style="position:absolute;bottom:16px;right:16px;width:26px;height:26px;border-bottom:4px solid {{tone.accent}};border-right:4px solid {{tone.accent}};border-radius:0 0 10px 0;"></div>
+        <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);opacity:0.55;">
+          <svg width="60" height="60" viewBox="0 0 24 24" fill="none"><path d="M6.5 8h-2a1 1 0 00-1 1v6a1 1 0 001 1h2M17.5 8h2a1 1 0 011 1v6a1 1 0 01-1 1h-2M8 6v12M16 6v12M4 11h1M4 13h1M19 11h1M19 13h1" stroke="white" stroke-width="1.6" stroke-linecap="round"/></svg>
+        </div>
+        <div style="position:absolute;bottom:-24px;right:-12px;">
+          <svg width="80" height="100" viewBox="0 0 100 130">
+            <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/>
+            <circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/><circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/>
+            <circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/>
+            <path d="M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z" fill="{{tone.accentDark}}"/>
+            <circle cx="39" cy="53" r="4.5" fill="#2B2620"/><circle cx="63" cy="53" r="4.5" fill="#2B2620"/>
+            <path d="M42 64 Q50 70 58 64" stroke="#2B2620" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+      </div>
+
+      <div style="margin-top:22px;display:flex;flex-direction:column;gap:10px;width:100%;max-width:280px;">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="{{tone.accent}}" stroke-width="2"/><path d="M9 12.5l2 2 4-4.5" stroke="{{tone.accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span style="font-size:12px;font-weight:600;color:#5B564E;">At a gym or workout space</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="{{tone.accent}}" stroke-width="2"/><path d="M9 12.5l2 2 4-4.5" stroke="{{tone.accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span style="font-size:12px;font-weight:600;color:#5B564E;">Equipment or workout gear visible</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="{{tone.accent}}" stroke-width="2"/><path d="M9 12.5l2 2 4-4.5" stroke="{{tone.accent}}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span style="font-size:12px;font-weight:600;color:#5B564E;">Good lighting helps verification</span>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:14px 20px 26px;position:relative;z-index:2;">
+      <div style="display:flex;align-items:center;justify-content:center;gap:8px;background:linear-gradient(180deg, {{tone.accent}}, {{tone.accentDark}});padding:15px 0;border-radius:20px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.35), 0 4px 10px rgba(58,52,46,0.16);">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" stroke="white" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="13" r="3.4" stroke="white" stroke-width="2"/></svg>
+        <span style="font-size:14px;font-weight:700;color:white;">Take Photo</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isVerifying}}" hint-placeholder-val="{{false}}">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:1;padding:0 24px;">
+      <div style="width:280px;height:340px;border-radius:32px;background:linear-gradient(160deg, #423C36, #221E19);position:relative;overflow:hidden;box-shadow:0 14px 28px -10px {{tone.accent}}, 0 10px 24px rgba(58,52,46,0.18);">
+        <div style="position:absolute;left:30px;right:30px;top:160px;height:3px;border-radius:3px;background:{{tone.accent}};box-shadow:0 0 10px 2px {{tone.accent}};"></div>
+        <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:200px;height:120px;border-radius:20px;background:rgba(255,255,255,0.08);"></div>
+      </div>
+      <div style="margin-top:22px;display:flex;align-items:center;gap:8px;">
+        <div style="width:7px;height:7px;border-radius:50%;background:{{tone.accentDark}};"></div>
+        <div style="width:7px;height:7px;border-radius:50%;background:{{tone.accentDark}};opacity:0.6;"></div>
+        <div style="width:7px;height:7px;border-radius:50%;background:{{tone.accentDark}};opacity:0.3;"></div>
+        <span style="font-size:13px;font-weight:600;color:#8A857C;margin-left:6px;">Checking your form…</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <sc-if value="{{isVerified}}" hint-placeholder-val="{{false}}">
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:1;padding:0 30px;">
+      <div style="width:96px;height:96px;border-radius:50%;background:{{tone.accentSoft}};display:flex;align-items:center;justify-content:center;margin-bottom:18px;">
+        <svg width="46" height="46" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" fill="{{tone.accent}}"/><path d="M8 12.5l2.5 2.5L16 9.5" stroke="white" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:21px;color:#3A342E;text-align:center;">Training Buff Activated!</div>
+      <div style="font-size:12.5px;font-weight:600;color:#8A857C;text-align:center;margin-top:6px;">Nice work — your squad feels the burn.</div>
+
+      <div style="margin-top:20px;width:100%;background:#FFFFFF;border-radius:20px;padding:16px;display:flex;align-items:center;gap:12px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+        <div style="width:44px;height:44px;border-radius:14px;background:{{tone.accentSoft}};display:flex;align-items:center;justify-content:center;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="{{tone.accentDark}}"/></svg>
+        </div>
+        <div>
+          <div style="font-size:14px;font-weight:800;color:#3A342E;">+25% capsule drop rate</div>
+          <div style="font-size:11px;font-weight:600;color:#8A857C;">Active for the next 24 hours</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="padding:14px 20px 26px;position:relative;z-index:2;">
+      <div style="display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, {{tone.accent}}, {{tone.accentDark}});padding:15px 0;border-radius:20px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.35), 0 4px 10px rgba(58,52,46,0.16);">
+        <span style="font-size:14px;font-weight:700;color:white;">Nice!</span>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF","#8FE3A0"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]},
+  "stage": {"editor":"enum","default":"capture","options":["capture","verifying","verified"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    var stage = this.props.stage || 'capture';
+    return {
+      tone: getTone(accentColor, colorMode),
+      isCapture: stage === 'capture',
+      isVerifying: stage === 'verifying',
+      isVerified: stage === 'verified'
+    };
+  }
+}
+</script>
+</body>
+</html>

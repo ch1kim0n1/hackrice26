@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <title>NutriQuest hydration droplet</title>
+  <defs>
+    <mask id="droplet-cutout">
+      <rect width="24" height="24" fill="#000000"/>
+      <path fill="#FFFFFF" d="M12 2.15C10.55 4.15 6.05 9.55 6.05 14.25C6.05 17.83 8.72 20.75 12 20.75C15.28 20.75 17.95 17.83 17.95 14.25C17.95 9.55 13.45 4.15 12 2.15Z"/>
+      <path d="M9.18 10.78C8.70 11.64 8.47 12.55 8.53 13.48" stroke="#000000" stroke-width="1.45" stroke-linecap="round"/>
+    </mask>
+  </defs>
+  <rect width="24" height="24" fill="#FFFFFF" mask="url(#droplet-cutout)"/>
+</svg>

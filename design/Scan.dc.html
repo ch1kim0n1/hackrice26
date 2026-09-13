@@ -1,0 +1,176 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+    @keyframes nq-scan-sweep { 0% { top: 60px; opacity: 0.5; } 50% { opacity: 1; } 100% { top: 300px; opacity: 0.5; } }
+    @keyframes nq-corner-breathe { 0%, 100% { opacity: 0.65; } 50% { opacity: 1; } }
+    .nq-scanline-idle { animation: nq-scan-sweep 3.2s ease-in-out infinite; }
+    .nq-corner { animation: nq-corner-breathe 2.6s ease-in-out infinite; }
+  </style>
+</helmet>
+<div style="width:390px;height:844px;background:{{tone.accentBg}};font-family:'Quicksand', ui-rounded, system-ui, sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+
+  <!-- top bar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:22px 20px 0;position:relative;z-index:2;">
+    <div style="width:34px;height:34px;border-radius:50%;background:#FFFFFF;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(58,52,46,0.08);">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#3A342E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:700;font-size:16px;color:#3A342E;">Scan Food</span>
+    <span style="font-size:12px;font-weight:700;color:{{tone.accentDark}};">Manual</span>
+  </div>
+
+  <sc-if value="{{scanning}}" hint-placeholder-val="{{false}}">
+    <div style="display:flex;justify-content:center;margin:12px 20px 0;">
+      <div style="display:flex;align-items:center;gap:7px;background:{{tone.accentBg}};padding:6px 14px;border-radius:14px;">
+        <div style="width:7px;height:7px;border-radius:50%;background:{{tone.accent}};box-shadow:0 0 0 4px {{tone.accentBg}}, 0 0 8px 2px {{tone.accent}};"></div>
+        <span style="font-size:11.5px;font-weight:700;color:{{tone.accentDark}};">Detecting barcode…</span>
+      </div>
+    </div>
+  </sc-if>
+
+  <!-- viewfinder -->
+  <div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;position:relative;z-index:1;">
+    <div style="width:300px;height:380px;border-radius:32px;background:linear-gradient(160deg, #423C36, #221E19);position:relative;overflow:hidden;box-shadow:0 16px 32px -10px {{tone.accent}}, 0 10px 24px rgba(58,52,46,0.2);">
+
+      <!-- corner brackets: a slow breathing opacity says "live camera," not a static graphic -->
+      <div class="nq-corner" style="position:absolute;top:18px;left:18px;width:30px;height:30px;border-top:4px solid {{tone.accent}};border-left:4px solid {{tone.accent}};border-radius:10px 0 0 0;"></div>
+      <div class="nq-corner" style="position:absolute;top:18px;right:18px;width:30px;height:30px;border-top:4px solid {{tone.accent}};border-right:4px solid {{tone.accent}};border-radius:0 10px 0 0;"></div>
+      <div class="nq-corner" style="position:absolute;bottom:18px;left:18px;width:30px;height:30px;border-bottom:4px solid {{tone.accent}};border-left:4px solid {{tone.accent}};border-radius:0 0 0 10px;"></div>
+      <div class="nq-corner" style="position:absolute;bottom:18px;right:18px;width:30px;height:30px;border-bottom:4px solid {{tone.accent}};border-right:4px solid {{tone.accent}};border-radius:0 0 10px 0;"></div>
+
+      <!-- scan line: sweeps continuously at idle, locks and intensifies once a barcode is being read -->
+      <div class="{{scanLine.animClass}}" style="position:absolute;left:30px;right:30px;top:{{scanLine.top}};height:{{scanLine.height}};border-radius:3px;background:{{tone.accent}};box-shadow:{{scanLine.shadow}};"></div>
+
+      <!-- barcode glyph -->
+      <div style="position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;gap:2.5px;opacity:0.5;">
+        <div style="width:3px;height:56px;background:white;"></div>
+        <div style="width:2px;height:56px;background:white;"></div>
+        <div style="width:5px;height:56px;background:white;"></div>
+        <div style="width:2px;height:56px;background:white;"></div>
+        <div style="width:3px;height:56px;background:white;"></div>
+        <div style="width:2px;height:56px;background:white;"></div>
+        <div style="width:4px;height:56px;background:white;"></div>
+      </div>
+
+      <!-- mascot peeking -->
+      <div style="position:absolute;bottom:-26px;right:-14px;">
+        <svg width="90" height="90" viewBox="0 0 100 100">
+          <circle cx="33" cy="18" r="7" fill="{{tone.accentDark}}"/>
+          <circle cx="67" cy="18" r="7" fill="{{tone.accentDark}}"/>
+          <path d="M50 14 C74 14 88 32 88 56 C88 82 70 96 50 96 C30 96 12 82 12 56 C12 32 26 14 50 14 Z" fill="{{tone.accent}}"/>
+          <circle cx="39" cy="55" r="4" fill="#2B2620"/>
+          <circle cx="61" cy="55" r="4" fill="#2B2620"/>
+          <path d="M42 66 Q50 74 58 66" stroke="#2B2620" stroke-width="3" fill="none" stroke-linecap="round"/>
+        </svg>
+      </div>
+    </div>
+
+    <div style="font-size:12.5px;font-weight:600;color:#8A857C;margin-top:18px;">{{captionText}}</div>
+  </div>
+
+  <!-- recent scans + nav -->
+  <div style="background:#FFFFFF;border-top-left-radius:26px;border-top-right-radius:26px;padding:16px 20px 20px;position:relative;z-index:2;">
+    <div style="font-size:12px;font-weight:700;color:#8A857C;margin-bottom:10px;">Recent Scans</div>
+    <div style="display:flex;gap:10px;margin-bottom:16px;">
+      <div style="flex:1;background:{{tone.accentBg}};border-radius:14px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 10px -6px rgba(58,52,46,0.18);">
+        <svg width="30" height="30" viewBox="0 0 100 100"><path d="M50 14 C74 14 88 32 88 56 C88 82 70 96 50 96 C30 96 12 82 12 56 C12 32 26 14 50 14 Z" fill="{{tone.accent}}"/></svg>
+        <span style="font-size:10px;font-weight:700;color:#3A342E;">+40 XP</span>
+      </div>
+      <div style="flex:1;background:{{tone.accentBg}};border-radius:14px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 10px -6px rgba(58,52,46,0.18);">
+        <svg width="30" height="30" viewBox="0 0 100 100"><path d="M50 14 C74 14 88 32 88 56 C88 82 70 96 50 96 C30 96 12 82 12 56 C12 32 26 14 50 14 Z" fill="#F78FB3"/></svg>
+        <span style="font-size:10px;font-weight:700;color:#3A342E;">+25 XP</span>
+      </div>
+      <div style="flex:1;background:{{tone.accentBg}};border-radius:14px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:4px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 4px 10px -6px rgba(58,52,46,0.18);">
+        <svg width="30" height="30" viewBox="0 0 100 100"><path d="M50 14 C74 14 88 32 88 56 C88 82 70 96 50 96 C30 96 12 82 12 56 C12 32 26 14 50 14 Z" fill="#FFB86B"/></svg>
+        <span style="font-size:10px;font-weight:700;color:#3A342E;">+30 XP</span>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;justify-content:space-around;">
+      <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v9a1 1 0 01-1 1h-4v-6h-6v6H5a1 1 0 01-1-1v-9z" stroke="#C9C4BB" stroke-width="1.8" fill="none"/></svg>
+      </div>
+      <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/><rect x="13" y="4" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/><rect x="4" y="13" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/><rect x="13" y="13" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/></svg>
+      </div>
+      <div style="width:50px;height:50px;border-radius:50%;background:{{tone.accent}};display:flex;align-items:center;justify-content:center;margin-top:-22px;box-shadow:0 4px 10px rgba(58,52,46,0.2);border:4px solid #FFFFFF;">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="2" height="14" fill="white"/><rect x="7" y="5" width="1.4" height="14" fill="white"/><rect x="10.5" y="5" width="2.8" height="14" fill="white"/><rect x="15" y="5" width="1.4" height="14" fill="white"/><rect x="18" y="5" width="3" height="14" fill="white"/></svg>
+      </div>
+      <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 4l4 8-3 2 3 6 8-10h-5l3-6z" stroke="#C9C4BB" stroke-width="1.7" stroke-linejoin="round"/></svg>
+      </div>
+      <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="#C9C4BB" stroke-width="1.8"/><path d="M5 20c1.5-4 4.2-6 7-6s5.5 2 7 6" stroke="#C9C4BB" stroke-width="1.8" stroke-linecap="round"/></svg>
+      </div>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF","#8FE3A0"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]},
+  "stage": {"editor":"enum","default":"idle","options":["idle","scanning"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    var stage = this.props.stage || 'idle';
+    var scanning = stage === 'scanning';
+    var tone = getTone(accentColor, colorMode);
+    return {
+      tone: tone,
+      scanning: scanning,
+      captionText: scanning ? 'Hold steady — reading barcode' : 'Center the barcode inside the frame',
+      scanLine: scanning
+        ? { top: '190px', height: '4px', shadow: '0 0 22px 5px ' + tone.accent, animClass: '' }
+        : { top: '190px', height: '3px', shadow: '0 0 14px 2px ' + tone.accent, animClass: 'nq-scanline-idle' }
+    };
+  }
+}
+</script>
+</body>
+</html>

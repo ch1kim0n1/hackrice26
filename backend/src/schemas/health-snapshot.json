@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/health-snapshot.json",
+  "title": "Health Snapshot (HealthKit Reading)",
+  "description": "One point-in-time HealthKit reading posted by the iOS app. All metrics are optional (null) — the client sends what's available. Validated server-side against clinical sanity ranges. testerId is a project-local id, never a name or account.",
+  "type": "object",
+  "required": ["timestamp"],
+  "properties": {
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. Client timestamp when the snapshot was captured."
+    },
+    "testerId": {
+      "type": ["string", "null"],
+      "pattern": "^[A-Za-z0-9_.-]{1,64}$",
+      "description": "Random project-local tester id. Never a name or account identifier. Null if not provided."
+    },
+    "heartRateBpm": {
+      "type": ["number", "null"],
+      "minimum": 20,
+      "maximum": 250,
+      "description": "Current heart rate in beats per minute. Null if unavailable."
+    },
+    "restingHeartRateBpm": {
+      "type": ["number", "null"],
+      "minimum": 20,
+      "maximum": 150,
+      "description": "Resting heart rate in bpm. Null if unavailable."
+    },
+    "hrvMs": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 500,
+      "description": "Heart rate variability in milliseconds. Null if unavailable."
+    },
+    "stepsToday": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 200000,
+      "description": "Step count today. Null if unavailable."
+    },
+    "activeCaloriesToday": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 20000,
+      "description": "Active calories burned today (kcal). Null if unavailable."
+    },
+    "exerciseMinutesToday": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1440,
+      "description": "Exercise minutes today. Null if unavailable."
+    },
+    "exerciseGoalMinutes": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1440,
+      "description": "Daily exercise goal in minutes. Null if unavailable."
+    },
+    "standHoursToday": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 24,
+      "description": "Stand hours today (Apple Watch stand ring). Null if unavailable."
+    },
+    "standGoalHours": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 24,
+      "description": "Daily stand goal in hours. Null if unavailable."
+    },
+    "recentWorkouts": {
+      "type": "array",
+      "maxItems": 50,
+      "items": { "$ref": "workout-summary.json" },
+      "description": "Recent workouts from HealthKit. Empty array if none."
+    }
+  },
+  "additionalProperties": false
+}

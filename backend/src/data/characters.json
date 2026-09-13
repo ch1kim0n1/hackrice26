@@ -1,0 +1,160 @@
+{
+  "$comment": "MVP roster (issue #92). Pokedex entries for the 14 established characters. Schema + invariants: src/data/roster.ts. Base net worth is deliberately NOT here -- valuation logic is still to come; today a monster's worth is derived from its rarity band at mint time (game/rarityBands.ts).",
+  "version": 1,
+  "characters": [
+    {
+      "id": "broccoli-bud",
+      "name": "Broccoli Bud",
+      "rarity": "common",
+      "element": "fiber",
+      "colorHex": "#5FCB82",
+      "tagline": "Small, green, relentlessly wholesome.",
+      "bio": "Turns up to every meal early and leaves last. Bud has never won a fight quickly, but it has finished an awful lot of them.",
+      "imageKey": "broccoli-bud",
+      "baseStats": { "power": 28, "guard": 46, "vitality": 34, "tempo": 30 }
+    },
+    {
+      "id": "carrot-cadet",
+      "name": "Carrot Cadet",
+      "rarity": "common",
+      "element": "vitamin",
+      "colorHex": "#F2913D",
+      "tagline": "Claims to improve your eyesight.",
+      "bio": "Insists it can see in the dark and volunteers for every night patrol. Nobody has been able to prove otherwise, which Cadet considers proof.",
+      "imageKey": "carrot-cadet",
+      "baseStats": { "power": 30, "guard": 28, "vitality": 45, "tempo": 33 }
+    },
+    {
+      "id": "water-droplet",
+      "name": "Water Droplet",
+      "rarity": "common",
+      "element": "hydration",
+      "colorHex": "#7CC5E8",
+      "tagline": "Unremarkable until you go without.",
+      "bio": "The squadmate nobody picks and everybody misses. Droplet asks for nothing and quietly decides how long the rest of the team lasts.",
+      "imageKey": "water-droplet",
+      "baseStats": { "power": 22, "guard": 30, "vitality": 32, "tempo": 48 }
+    },
+    {
+      "id": "bean-sprout",
+      "name": "Bean Sprout",
+      "rarity": "common",
+      "element": "protein",
+      "colorHex": "#8FD16A",
+      "tagline": "Punches slightly above its weight.",
+      "bio": "Barely a week old and already picking fights with vegetables twice its size. Sprout wins more of them than the odds allow.",
+      "imageKey": "bean-sprout",
+      "baseStats": { "power": 44, "guard": 26, "vitality": 30, "tempo": 34 }
+    },
+    {
+      "id": "spinach-scout",
+      "name": "Spinach Scout",
+      "rarity": "uncommon",
+      "element": "vitamin",
+      "colorHex": "#3E9B5F",
+      "tagline": "Wilts dramatically, recovers instantly.",
+      "bio": "Collapses at the first sign of heat and is back on its feet before anyone can check on it. The team has stopped worrying; Scout has not stopped collapsing.",
+      "imageKey": "spinach-scout",
+      "baseStats": { "power": 38, "guard": 36, "vitality": 58, "tempo": 40 }
+    },
+    {
+      "id": "almond-knight",
+      "name": "Almond Knight",
+      "rarity": "uncommon",
+      "element": "protein",
+      "colorHex": "#C08A5E",
+      "tagline": "Armoured in its own shell.",
+      "bio": "Arrived already wearing the armour and has never taken it off. Whatever the Knight looks like underneath is a matter of speculation.",
+      "imageKey": "almond-knight",
+      "baseStats": { "power": 56, "guard": 48, "vitality": 34, "tempo": 30 }
+    },
+    {
+      "id": "salmon-striker",
+      "name": "Salmon Striker",
+      "rarity": "rare",
+      "element": "protein",
+      "colorHex": "#F08A70",
+      "tagline": "Swims upstream out of principle.",
+      "bio": "Chooses the hardest route available on every single occasion. Striker is not confused about which way the current runs; it simply disagrees.",
+      "imageKey": "salmon-striker",
+      "baseStats": { "power": 68, "guard": 40, "vitality": 46, "tempo": 52 }
+    },
+    {
+      "id": "avocado-aegis",
+      "name": "Avocado Aegis",
+      "rarity": "rare",
+      "element": "fiber",
+      "colorHex": "#6C9B4A",
+      "tagline": "Ready for exactly eleven minutes.",
+      "bio": "Spends most of its life not quite ready and then, briefly, is the best defender on the field. Timing the Aegis is the entire skill.",
+      "imageKey": "avocado-aegis",
+      "baseStats": { "power": 42, "guard": 70, "vitality": 50, "tempo": 36 }
+    },
+    {
+      "id": "kale-colossus",
+      "name": "Kale Colossus",
+      "rarity": "epic",
+      "element": "vitamin",
+      "colorHex": "#2F6B4F",
+      "tagline": "Nobody asked for it. It came anyway.",
+      "bio": "Appeared one season without invitation and simply would not leave. The Colossus is now the largest thing in the garden and mentions it often.",
+      "imageKey": "kale-colossus",
+      "baseStats": { "power": 58, "guard": 62, "vitality": 78, "tempo": 38 }
+    },
+    {
+      "id": "chia-chieftain",
+      "name": "Chia Chieftain",
+      "rarity": "epic",
+      "element": "fiber",
+      "colorHex": "#5B5B6E",
+      "tagline": "Expands to fill any vessel.",
+      "bio": "Small, patient, and considerably larger than it was an hour ago. The Chieftain has never lost a siege, only outlasted one.",
+      "imageKey": "chia-chieftain",
+      "baseStats": { "power": 50, "guard": 80, "vitality": 60, "tempo": 44 }
+    },
+    {
+      "id": "pomegranate-paladin",
+      "name": "Pomegranate Paladin",
+      "rarity": "legendary",
+      "element": "vitamin",
+      "colorHex": "#C0334D",
+      "tagline": "Guards a thousand small rubies.",
+      "bio": "Carries its entire treasury inside its own armour and will open for no one. Cracking the Paladin has ruined a great many kitchens.",
+      "imageKey": "pomegranate-paladin",
+      "baseStats": { "power": 66, "guard": 72, "vitality": 88, "tempo": 48 }
+    },
+    {
+      "id": "turmeric-titan",
+      "name": "Turmeric Titan",
+      "rarity": "legendary",
+      "element": "vitamin",
+      "colorHex": "#E3A008",
+      "tagline": "Stains everything it touches, permanently.",
+      "bio": "Every surface the Titan has ever crossed still bears the mark. It considers this a signature rather than a problem.",
+      "imageKey": "turmeric-titan",
+      "baseStats": { "power": 74, "guard": 58, "vitality": 90, "tempo": 52 }
+    },
+    {
+      "id": "spirulina-wyrm",
+      "name": "Spirulina Wyrm",
+      "rarity": "mythic",
+      "element": "protein",
+      "colorHex": "#1F7A6E",
+      "tagline": "Older than the lakes it sleeps in.",
+      "bio": "Was here before the water was, and will be here after. The Wyrm surfaces roughly once a generation and nobody agrees on why.",
+      "imageKey": "spirulina-wyrm",
+      "baseStats": { "power": 92, "guard": 70, "vitality": 84, "tempo": 66 }
+    },
+    {
+      "id": "the-first-seed",
+      "name": "The First Seed",
+      "rarity": "secret",
+      "element": "fiber",
+      "colorHex": "#22D3EE",
+      "tagline": "No record of where it came from.",
+      "bio": "There is no entry for the Seed in any almanac, no season it belongs to, and no second one. Only that it is yours now, and that everything else grew from something like it.",
+      "imageKey": "the-first-seed",
+      "baseStats": { "power": 88, "guard": 96, "vitality": 90, "tempo": 82 }
+    }
+  ]
+}

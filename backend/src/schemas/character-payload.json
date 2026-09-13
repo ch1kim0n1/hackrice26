@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/character-payload.json",
+  "title": "Character (Payload)",
+  "description": "A NutriQuest character. Stored as JSON payload inside scan_character.payload and lootbox_drop.payload. Mirrors Swift Character model 1:1.",
+  "type": "object",
+  "required": ["id", "name", "colorHex", "rarity", "statType", "isLocked"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Unique character id. Scan-minted: scan-{barcode}. Lootbox: from loot table."
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "Display name. From Open Food Facts product_name_en or loot table."
+    },
+    "colorHex": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$",
+      "description": "Hex color string, e.g. #5FCB82."
+    },
+    "rarity": {
+      "type": "string",
+      "enum": ["common", "uncommon", "rare", "epic", "legendary", "mythic", "secret"],
+      "description": "7-tier superset. Scans mint 4 core tiers (common/rare/epic/legendary). Lootbox uses all 7."
+    },
+    "statType": {
+      "type": "string",
+      "enum": ["protein", "fiber", "vitamin", "hydration"],
+      "description": "Which stat this character primarily boosts. Determines battle element."
+    },
+    "isLocked": {
+      "type": "boolean",
+      "description": "Whether the character is locked in the collection (not yet unlocked)."
+    }
+  },
+  "additionalProperties": false
+}

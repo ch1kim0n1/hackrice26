@@ -1,0 +1,225 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700&family=Quicksand:wght@600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+    @keyframes nq-card-shimmer { 0% { background-position: -120% 0; } 100% { background-position: 220% 0; } }
+    @keyframes nq-holo-shift { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+    .nq-shimmer { background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.75) 50%, transparent 70%); background-size: 200% 100%; animation: nq-card-shimmer 2.4s ease-in-out infinite; }
+    .nq-holo { background-size: 260% 260%; animation: nq-holo-shift 4.5s ease-in-out infinite alternate; }
+  </style>
+</helmet>
+
+<!-- LOADING: a skeleton stand-in, distinct from every other state — nothing to reveal yet, not even a silhouette. -->
+<sc-if value="{{loading}}" hint-placeholder-val="{{false}}">
+  <div style="width:158px;height:206px;background:#FFFFFF;border-radius:24px;padding:14px 10px 12px;position:relative;box-shadow:{{shadow.e1}};display:flex;flex-direction:column;align-items:center;overflow:hidden;">
+    <div class="nq-shimmer" style="width:80px;height:100px;margin-top:8px;border-radius:20px;background-color:#EFEDE9;"></div>
+    <div class="nq-shimmer" style="width:76px;height:14px;margin-top:14px;border-radius:7px;background-color:#EFEDE9;"></div>
+    <div class="nq-shimmer" style="width:52px;height:9px;margin-top:8px;border-radius:5px;background-color:#EFEDE9;"></div>
+  </div>
+</sc-if>
+
+<sc-if value="{{notLoading}}" hint-placeholder-val="{{true}}">
+<div style="width:158px;height:206px;border-radius:24px;position:relative;font-family:'Quicksand', ui-rounded, system-ui, sans-serif;">
+
+  <!-- LOCKED: deliberately the plainest state — a dashed outline and a ghost, nothing decorated. A slow shimmer says "not empty, just not yours yet" rather than reading as merely disabled. -->
+  <sc-if value="{{locked}}" hint-placeholder-val="{{false}}">
+    <div style="width:100%;height:100%;background:#FFFFFF;border-radius:24px;border:2px dashed #DCD8D1;box-shadow:{{shadow.e1}};display:flex;flex-direction:column;align-items:center;overflow:hidden;position:relative;">
+      <div class="nq-shimmer" style="position:absolute;inset:0;opacity:0.5;"></div>
+      <svg width="80" height="100" viewBox="0 0 100 130" style="margin-top:8px;opacity:0.9;position:relative;">
+        <ellipse cx="38" cy="122" rx="10" ry="6" fill="#E3E0DA"/>
+        <ellipse cx="62" cy="122" rx="10" ry="6" fill="#E3E0DA"/>
+        <ellipse cx="50" cy="100" rx="24" ry="22" fill="#EFEDE9"/>
+        <circle cx="18" cy="92" r="9" fill="#EFEDE9"/>
+        <circle cx="82" cy="92" r="9" fill="#EFEDE9"/>
+        <circle cx="50" cy="48" r="34" fill="#EFEDE9"/>
+      </svg>
+      <div style="width:26px;height:26px;border-radius:8px;background:#B9B4AC;position:absolute;top:82px;left:50%;transform:translateX(-50%);display:flex;align-items:center;justify-content:center;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" fill="white"/><path d="M8 11V8a4 4 0 018 0v3" stroke="white" stroke-width="2" fill="none"/></svg>
+      </div>
+      <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:700;font-size:14px;color:#B9B4AC;margin-top:24px;position:relative;">???</div>
+    </div>
+  </sc-if>
+
+  <!-- UNLOCKED: the ring is a filled band (padding + background), not a stroke — that's what gives rarity real weight instead of a hairline. Secret's ring is a slow-shifting holo gradient; every other tier is a flat fill. -->
+  <sc-if value="{{unlocked}}" hint-placeholder-val="{{true}}">
+    <div class="{{ring.animClass}}" style="width:100%;height:100%;border-radius:24px;padding:{{ring.width}};background:{{ring.fill}};box-shadow:{{shadow.combined}};position:relative;">
+      <div style="width:100%;height:100%;border-radius:{{ring.innerRadius}};background:#FFFFFF;display:flex;flex-direction:column;align-items:center;padding-top:8px;overflow:hidden;position:relative;">
+
+        <sc-if value="{{showBadge}}" hint-placeholder-val="{{false}}">
+          <div style="position:absolute;top:-9px;left:50%;transform:translateX(-50%);background:{{badge.bg}};color:{{badge.text}};font-size:9.5px;font-weight:800;letter-spacing:0.04em;padding:3px 10px;border-radius:10px;box-shadow:0 2px 4px rgba(58,52,46,0.18);white-space:nowrap;z-index:2;">{{badge.label}}</div>
+        </sc-if>
+
+        <div style="position:absolute;top:8px;right:8px;font-size:8.5px;font-weight:800;letter-spacing:0.03em;color:{{rarity.text}};background:{{rarity.bg}};padding:3px 7px;border-radius:8px;z-index:2;">{{rarity.label}}</div>
+
+        <svg width="80" height="100" viewBox="0 0 100 130">
+          <ellipse cx="38" cy="122" rx="10" ry="6" fill="{{tone.accentDark}}"/>
+          <ellipse cx="62" cy="122" rx="10" ry="6" fill="{{tone.accentDark}}"/>
+          <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/>
+          <circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/>
+          <circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/>
+          <rect x="41" y="92" width="18" height="18" rx="6" fill="{{tone.accentDark}}"/>
+          <path d="{{badgeIcon}}" fill="white"/>
+          <circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/>
+          <path d="M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z" fill="{{tone.accentDark}}"/>
+          <ellipse cx="38" cy="51" rx="7.5" ry="9.5" fill="white"/>
+          <ellipse cx="62" cy="51" rx="7.5" ry="9.5" fill="white"/>
+          <circle cx="39" cy="53" r="5" fill="#2B2620"/>
+          <circle cx="63" cy="53" r="5" fill="#2B2620"/>
+          <circle cx="37" cy="50" r="1.8" fill="white"/>
+          <circle cx="61" cy="50" r="1.8" fill="white"/>
+          <path d="M31 41 Q38 37 45 41" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <path d="M55 41 Q62 37 69 41" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+          <ellipse cx="28" cy="62" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.55"/>
+          <ellipse cx="72" cy="62" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.55"/>
+          <path d="M43 64 Q50 70 57 64" stroke="#2B2620" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:700;font-size:14px;color:#3A342E;margin-top:4px;">{{name}}</div>
+      </div>
+    </div>
+  </sc-if>
+
+</div>
+</sc-if>
+</x-dc>
+<script data-dc-script data-props='{
+  "$preview": {"width":158,"height":206},
+  "charName": {"editor":"text","default":"Berry Pip"},
+  "color": {"editor":"color","default":"#5FCB82"},
+  "rarity": {"editor":"enum","default":"common","options":["common","uncommon","rare","epic","legendary","mythic","secret"]},
+  "state": {"editor":"enum","default":"normal","options":["normal","active","suggested"]},
+  "locked": {"editor":"boolean","default":false},
+  "loading": {"editor":"boolean","default":false},
+  "statType": {"editor":"enum","default":"fiber","options":["protein","fiber","vitamin","hydration"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(hex) {
+  var hsl = hexToHsl(hex);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90)
+  };
+}
+
+/**
+ * Elevation. Three named levels, used the same way everywhere in the system:
+ * E1 resting (grid cards, list rows), E2 raised (active/featured pieces),
+ * E3 floating (hero moments). Each is a contact shadow + a softer ambient
+ * shadow, plus a barely-there inner top highlight — that pairing is what
+ * makes a white card read as lifted off a white page instead of merely
+ * outlined.
+ */
+var ELEVATION = {
+  e1: 'inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16)',
+  e2: 'inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px rgba(58,52,46,0.07), 0 14px 28px -12px rgba(58,52,46,0.22)',
+  // The one place E3 (documented on the Colors sheet as "hero character stage,
+  // celebratory moments") is actually spent: the card that's ACTIVE right now
+  // is the closest thing a grid has to that moment.
+  e3: 'inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 8px rgba(58,52,46,0.08), 0 24px 48px -16px rgba(58,52,46,0.26)'
+};
+
+// 7 tiers. uncommon reuses the brand's own (until now unused as a fill)
+// link-hover green so it doesn't invent a hue the system hasn't already
+// endorsed; mythic is a new rose-crimson chosen to sit clearly apart from
+// epic's purple, legendary's gold, and the existing danger/blush reds; secret
+// is the one deliberately holographic tier, reserved for the rarest pull.
+var RARITY = {
+  common:    { label: 'COMMON',    bg: '#EFEDE9', text: '#8A857C', fill: '#C9C4BB',  width: '3px',   glow: null },
+  uncommon:  { label: 'UNCOMMON',  bg: '#E4F7EC', text: '#2F9E5C', fill: '#6FCF97',  width: '3px',   glow: null },
+  rare:      { label: 'RARE',      bg: '#E3F2FD', text: '#2C7FBF', fill: '#56B8F5',  width: '3.5px', glow: null },
+  epic:      { label: 'EPIC',      bg: '#F1E9FD', text: '#8455D6', fill: '#B892FF',  width: '4px',   glow: '0 0 0 4px rgba(184,146,255,0.20), 0 0 18px 2px rgba(184,146,255,0.30)' },
+  legendary: { label: 'LEGENDARY', bg: '#FFF3D9', text: '#C98A1B', fill: '#FFC24B',  width: '4px',   glow: '0 0 0 4px rgba(255,194,75,0.24), 0 0 20px 3px rgba(255,194,75,0.34)' },
+  mythic:    { label: 'MYTHIC',    bg: '#FDE7EB', text: '#C23A57', fill: '#E8546B',  width: '4.5px', glow: '0 0 0 4px rgba(232,84,107,0.22), 0 0 22px 4px rgba(232,84,107,0.36)' },
+  secret:    { label: 'SECRET',    bg: '#2B2620', text: '#FFFFFF', fill: 'linear-gradient(120deg, #8B7FE8, #FFC24B, #E8546B, #56B8F5, #8B7FE8)', width: '5px', glow: '0 0 0 4px rgba(139,127,232,0.20), 0 0 26px 5px rgba(232,84,107,0.30)' }
+};
+
+var ICONS = {
+  protein: 'M52 92 L44 103 L49 103 L47 110 L56 99 L50 99 Z',
+  fiber: 'M50 92 C57 94 58 101 53 106 C48 110 44 107 45 101 C46 96 47 93 50 92 Z',
+  vitamin: 'M50 91 L52.4 98.6 L60 101 L52.4 103.4 L50 111 L47.6 103.4 L40 101 L47.6 98.6 Z',
+  hydration: 'M50 91 C55.5 98 57.5 102.5 53.5 106.5 C49.5 110.5 44.5 107.5 45.5 102.5 C46.5 97.5 48.5 94 50 91 Z'
+};
+
+class Component extends DCLogic {
+  renderVals() {
+    var color = this.props.color || '#5FCB82';
+    var name = this.props.charName || 'Berry Pip';
+    var rarityKey = this.props.rarity || 'common';
+    var state = this.props.state || 'normal';
+    var locked = !!this.props.locked;
+    var loading = !!this.props.loading;
+    var statType = this.props.statType || 'fiber';
+    var tone = getTone(color);
+    var rarityDef = RARITY[rarityKey] || RARITY.common;
+    var badgeIcon = ICONS[statType] || ICONS.fiber;
+    var innerRadius = (24 - parseFloat(rarityDef.width)).toFixed(1) + 'px';
+
+    var combinedShadow = ELEVATION.e1;
+    if (state === 'active') {
+      combinedShadow = ELEVATION.e3 + ', 0 0 24px -4px ' + tone.accent;
+    } else if (state === 'suggested') {
+      combinedShadow = ELEVATION.e1 + ', 0 0 16px -6px ' + tone.accent;
+    }
+    if (rarityDef.glow) {
+      combinedShadow = combinedShadow + ', ' + rarityDef.glow;
+    }
+
+    var showBadge = false;
+    var badge = { label: '', bg: '', text: '' };
+    if (!locked && state === 'active') {
+      showBadge = true;
+      badge = { label: 'ACTIVE', bg: tone.accent, text: '#FFFFFF' };
+    } else if (!locked && state === 'suggested') {
+      showBadge = true;
+      badge = { label: 'SUGGESTED', bg: tone.accentSoft, text: tone.accentDark };
+    }
+
+    return {
+      tone: tone,
+      name: name,
+      rarity: rarityDef,
+      locked: locked,
+      unlocked: !locked,
+      loading: loading,
+      notLoading: !loading,
+      ring: { width: rarityDef.width, fill: rarityDef.fill, innerRadius: innerRadius, animClass: rarityKey === 'secret' ? 'nq-holo' : '' },
+      shadow: { e1: ELEVATION.e1, e2: ELEVATION.e2, combined: combinedShadow },
+      showBadge: showBadge,
+      badge: badge,
+      badgeIcon: badgeIcon
+    };
+  }
+}
+</script>
+</body>
+</html>

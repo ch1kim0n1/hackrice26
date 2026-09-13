@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSHealthShareUsageDescription</key>
+	<string>This app reads health and fitness data from Apple Health for our hackathon health-analysis prototype.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>This app sends your health snapshot to the hackathon backend running on this Wi-Fi network.</string>
+	<key>BackendBaseURL</key>
+	<string>$(BACKEND_BASE_URL)</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
+</dict>
+</plist>

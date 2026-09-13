@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/scan-seen.json",
+  "title": "Scan Seen (Daily Barcode Log)",
+  "description": "Tracks which barcodes a player has scanned each day. Enforces one-barcode-per-day-per-player rule. Persisted in scan_seen table. Composite PK (player_id, barcode).",
+  "type": "object",
+  "required": ["player_id", "barcode", "seen_at"],
+  "properties": {
+    "player_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header."
+    },
+    "barcode": {
+      "type": "string",
+      "pattern": "^\\d{6,20}$",
+      "description": "EAN/UPC barcode. 6-20 digits."
+    },
+    "seen_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. When this barcode was last scanned by this player. Upserted on every scan; daily-reset filter uses date(seen_at) = date('now')."
+    }
+  },
+  "additionalProperties": false
+}

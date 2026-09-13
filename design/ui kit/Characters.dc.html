@@ -1,0 +1,174 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width:1240px;min-height:1080px;background:#FFFFFF;font-family:'Quicksand', ui-rounded, system-ui, sans-serif;padding:44px 56px;">
+
+  <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:28px;color:#3A342E;">Characters</div>
+  <div style="font-size:13px;font-weight:600;color:#8A857C;margin-top:4px;margin-bottom:32px;">Chibi-anime mascots built from one base shape — only color, stat badge and rarity ring change.</div>
+
+  <div style="display:flex;gap:56px;margin-bottom:40px;">
+
+    <!-- anatomy -->
+    <div style="display:flex;flex-direction:column;align-items:center;">
+      <svg width="132" height="172" viewBox="0 0 100 130">
+        <ellipse cx="38" cy="122" rx="10" ry="6" fill="{{tone.accentDark}}"/>
+        <ellipse cx="62" cy="122" rx="10" ry="6" fill="{{tone.accentDark}}"/>
+        <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/>
+        <circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/>
+        <circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/>
+        <rect x="41" y="92" width="18" height="18" rx="6" fill="{{tone.accentDark}}"/>
+        <path d="M50 92 C57 94 58 101 53 106 C48 110 44 107 45 101 C46 96 47 93 50 92 Z" fill="white"/>
+        <circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/>
+        <path d="M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z" fill="{{tone.accentDark}}"/>
+        <ellipse cx="38" cy="51" rx="7.5" ry="9.5" fill="white"/>
+        <ellipse cx="62" cy="51" rx="7.5" ry="9.5" fill="white"/>
+        <circle cx="39" cy="53" r="5" fill="#2B2620"/>
+        <circle cx="63" cy="53" r="5" fill="#2B2620"/>
+        <circle cx="37" cy="50" r="1.8" fill="white"/>
+        <circle cx="61" cy="50" r="1.8" fill="white"/>
+        <path d="M31 41 Q38 37 45 41" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <path d="M55 41 Q62 37 69 41" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+        <ellipse cx="28" cy="62" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.55"/>
+        <ellipse cx="72" cy="62" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.55"/>
+        <path d="M43 64 Q50 70 57 64" stroke="#2B2620" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+      </svg>
+      <div style="font-size:11px;font-weight:700;color:#8A857C;margin-top:8px;">Base anatomy</div>
+    </div>
+
+    <!-- legend -->
+    <div style="display:flex;flex-direction:column;gap:10px;justify-content:center;">
+      <div style="display:flex;align-items:center;gap:10px;"><div style="width:8px;height:8px;border-radius:50%;background:{{tone.accentDark}};"></div><span style="font-size:12.5px;font-weight:600;color:#5B564E;"><strong style="color:#3A342E;">Ahoge</strong> — signature cowlick, every character has one</span></div>
+      <div style="display:flex;align-items:center;gap:10px;"><div style="width:8px;height:8px;border-radius:50%;background:{{tone.accentDark}};"></div><span style="font-size:12.5px;font-weight:600;color:#5B564E;"><strong style="color:#3A342E;">Eyes</strong> — oversized, glossy, two-highlight anime style</span></div>
+      <div style="display:flex;align-items:center;gap:10px;"><div style="width:8px;height:8px;border-radius:50%;background:{{tone.accentDark}};"></div><span style="font-size:12.5px;font-weight:600;color:#5B564E;"><strong style="color:#3A342E;">Chest badge</strong> — icon changes with the character's dominant stat</span></div>
+      <div style="display:flex;align-items:center;gap:10px;"><div style="width:8px;height:8px;border-radius:50%;background:{{tone.accentDark}};"></div><span style="font-size:12.5px;font-weight:600;color:#5B564E;"><strong style="color:#3A342E;">Body + feet</strong> — big head, small body: the chibi ratio</span></div>
+      <div style="display:flex;align-items:center;gap:10px;"><div style="width:8px;height:8px;border-radius:50%;background:{{tone.accentDark}};"></div><span style="font-size:12.5px;font-weight:600;color:#5B564E;">Every part uses only two colors — <strong style="color:#3A342E;">accent</strong> and <strong style="color:#3A342E;">accent dark</strong></span></div>
+    </div>
+  </div>
+
+  <!-- stat badges -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">STAT BADGE VARIANTS</div>
+  <div style="display:flex;gap:28px;margin-bottom:40px;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+      <div style="width:44px;height:44px;border-radius:14px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="white"/></svg></div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Protein</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+      <div style="width:44px;height:44px;border-radius:14px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 4C15 5 16 9 13 12 C10 15 6 13 6 9 C6 6 8 4.5 12 4Z" fill="white"/></svg></div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Fiber</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+      <div style="width:44px;height:44px;border-radius:14px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9.2l-5.2 1.8L12 16.4l-1.8-5.4L5 9.2l5.2-1.8L12 2z" fill="white"/></svg></div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Vitamin</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+      <div style="width:44px;height:44px;border-radius:14px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M12 3c4 5 6 8 6 11a6 6 0 01-12 0c0-3 2-6 6-11z" fill="white"/></svg></div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Hydration</span>
+    </div>
+  </div>
+
+  <!-- rarity rings, real component, all 7 tiers -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:6px;">RARITY RINGS (LIVE CARD COMPONENT) — ALL 7 TIERS</div>
+  <div style="font-size:11.5px;font-weight:600;color:#8A857C;margin-bottom:14px;">Same 158×206 card component the Collection grid uses — the ring is a filled band, not a stroke, and the last two glow.</div>
+  <div style="display:flex;gap:14px;margin-bottom:40px;flex-wrap:wrap;">
+    <dc-import name="CharacterCard" char-name="Sprout Wisp" color="#8FE3A0" rarity="common" state="normal" locked="{{false}}" stat-type="fiber" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Spinach Scout" color="#6FCF97" rarity="uncommon" state="normal" locked="{{false}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Sushi Sam" color="#56B8F5" rarity="rare" state="normal" locked="{{false}}" stat-type="protein" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Berry Belle" color="#F78FB3" rarity="epic" state="normal" locked="{{false}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Grape Gus" color="#B892FF" rarity="legendary" state="normal" locked="{{false}}" stat-type="hydration" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Mango Monarch" color="#FFB86B" rarity="mythic" state="normal" locked="{{false}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="???" color="#B892FF" rarity="secret" state="normal" locked="{{false}}" stat-type="hydration" hint-size="158px,206px"></dc-import>
+  </div>
+
+  <!-- sizes -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">SIZE SCALE</div>
+  <div style="display:flex;align-items:flex-end;gap:36px;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+      <svg width="52" height="66" viewBox="0 0 100 130">
+        <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/><circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/><circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/><circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/><circle cx="39" cy="53" r="4" fill="#2B2620"/><circle cx="63" cy="53" r="4" fill="#2B2620"/>
+      </svg>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Avatar · 52px</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">Battle squad rows</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+      <svg width="80" height="100" viewBox="0 0 100 130">
+        <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/><circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/><circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/><rect x="41" y="92" width="18" height="18" rx="6" fill="{{tone.accentDark}}"/><circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/><path d="M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z" fill="{{tone.accentDark}}"/><circle cx="39" cy="53" r="4.5" fill="#2B2620"/><circle cx="63" cy="53" r="4.5" fill="#2B2620"/>
+      </svg>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Card · 80px</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">Collection grid</span>
+    </div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:6px;">
+      <svg width="176" height="228" viewBox="0 0 100 130">
+        <ellipse cx="38" cy="122" rx="10" ry="6" fill="{{tone.accentDark}}"/><ellipse cx="62" cy="122" rx="10" ry="6" fill="{{tone.accentDark}}"/>
+        <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/><circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/><circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/>
+        <rect x="41" y="92" width="18" height="18" rx="6" fill="{{tone.accentDark}}"/>
+        <circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/><path d="M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z" fill="{{tone.accentDark}}"/>
+        <ellipse cx="38" cy="51" rx="7.5" ry="9.5" fill="white"/><ellipse cx="62" cy="51" rx="7.5" ry="9.5" fill="white"/>
+        <circle cx="39" cy="53" r="5" fill="#2B2620"/><circle cx="63" cy="53" r="5" fill="#2B2620"/>
+      </svg>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Hero · 176px</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">Home stage, PFP</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    return { tone: getTone(accentColor, colorMode) };
+  }
+}
+</script>
+</body>
+</html>

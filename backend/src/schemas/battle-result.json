@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/battle-result.json",
+  "title": "Battle Result (PROPOSED — not yet persisted)",
+  "description": "One battle simulation outcome. Currently returned by POST /battle/simulate but NOT persisted. Proposed table: battle_result (seq INTEGER PK AUTOINCREMENT, player_id TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL). Would enable match history, win/loss tracking, replay review, and ELO/MMR. See backend/src/routes/battle.ts:116-217 for the simulation engine.",
+  "type": "object",
+  "required": ["seq", "player_id", "payload", "created_at"],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Auto-increment primary key. Global sequence."
+    },
+    "player_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header. The initiating player."
+    },
+    "payload": {
+      "type": "string",
+      "description": "JSON-encoded BattleOutcome object (see battle-outcome-payload.json)."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. When the battle was simulated."
+    }
+  },
+  "additionalProperties": false,
+  "$comment": "NOT YET IMPLEMENTED. Add to db.ts SCHEMA and persist in /battle/simulate route when ready."
+}

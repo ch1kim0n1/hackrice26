@@ -1,0 +1,268 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+    @keyframes nq-shimmer-sweep { 0% { background-position: -120% 0; } 100% { background-position: 220% 0; } }
+    @keyframes nq-breathe { 0%, 100% { transform: scale(1); opacity: 0.55; } 50% { transform: scale(1.08); opacity: 0.9; } }
+    @keyframes nq-pop-in { 0% { transform: scale(0.4); opacity: 0; } 65% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+    @keyframes nq-ring-out { 0% { transform: scale(0.7); opacity: 0.6; } 100% { transform: scale(1.6); opacity: 0; } }
+    .nq-shimmer-el { background: linear-gradient(100deg, transparent 30%, rgba(255,255,255,0.8) 50%, transparent 70%); background-size: 200% 100%; animation: nq-shimmer-sweep 2.2s ease-in-out infinite; }
+    .nq-breathe-el { animation: nq-breathe 2.4s ease-in-out infinite; }
+    .nq-pop-el { animation: nq-pop-in 0.5s cubic-bezier(0.34,1.56,0.64,1) both; }
+    .nq-ring-el { animation: nq-ring-out 1.6s ease-out infinite; }
+  </style>
+</helmet>
+<div style="width:1240px;min-height:1420px;background:#FFFFFF;font-family:'Quicksand', ui-rounded, system-ui, sans-serif;padding:44px 56px;">
+
+  <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:28px;color:#3A342E;">States</div>
+  <div style="font-size:13px;font-weight:600;color:#8A857C;margin-top:4px;margin-bottom:32px;">Every state variant a screen can be in, referenced together. Accent-mode states (active / best-unselected / none) live on the Colors sheet — this page covers per-screen states.</div>
+
+  <!-- Generic patterns: loading / empty / locked / success -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:6px;">LOADING / EMPTY / LOCKED / SUCCESS — GENERIC PATTERNS</div>
+  <div style="font-size:11.5px;font-weight:600;color:#8A857C;margin-bottom:14px;max-width:900px;">Four states every screen eventually shows, each with its own motion language rather than one shared spinner or a flat grey card. Reused everywhere: Collection's grid, Home's empty stage, GymCheck/WatchConnect's success badges.</div>
+  <div style="display:flex;gap:20px;margin-bottom:40px;flex-wrap:wrap;">
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:150px;border-radius:20px;background:#FFFFFF;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);padding:16px;display:flex;flex-direction:column;align-items:center;gap:10px;overflow:hidden;">
+        <div class="nq-shimmer-el" style="width:80px;height:76px;border-radius:16px;background-color:#EFEDE9;"></div>
+        <div class="nq-shimmer-el" style="width:70px;height:12px;border-radius:6px;background-color:#EFEDE9;"></div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Loading</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">skeleton shimmer, not a spinner</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:150px;border-radius:20px;background:{{tone.accentBg}};display:flex;align-items:center;justify-content:center;">
+        <div style="position:relative;width:70px;height:70px;display:flex;align-items:center;justify-content:center;">
+          <div class="nq-breathe-el" style="position:absolute;width:70px;height:70px;border-radius:50%;border:3px dashed {{tone.accent}};"></div>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M12 5v14M5 12h14" stroke="{{tone.accent}}" stroke-width="2.4" stroke-linecap="round"/></svg>
+        </div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Empty</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">breathing dashed ring — an invitation</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:150px;border-radius:20px;background:#FFFFFF;border:2px dashed #DCD8D1;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden;">
+        <div class="nq-shimmer-el" style="position:absolute;inset:0;opacity:0.5;"></div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:8px;position:relative;">
+          <div style="width:30px;height:30px;border-radius:9px;background:#B9B4AC;display:flex;align-items:center;justify-content:center;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="5" y="11" width="14" height="9" rx="2" fill="white"/><path d="M8 11V8a4 4 0 018 0v3" stroke="white" stroke-width="2" fill="none"/></svg>
+          </div>
+          <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:700;font-size:13px;color:#B9B4AC;">???</span>
+        </div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Locked</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">plain by design — flatter than everything unlocked</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:150px;border-radius:20px;background:{{tone.accentBg}};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;">
+        <div style="position:relative;width:58px;height:58px;display:flex;align-items:center;justify-content:center;">
+          <div class="nq-ring-el" style="position:absolute;width:58px;height:58px;border-radius:50%;border:2px solid {{tone.accent}};"></div>
+          <div class="nq-pop-el" style="width:46px;height:46px;border-radius:50%;background:{{tone.accent}};display:flex;align-items:center;justify-content:center;">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+        <span style="font-size:11.5px;font-weight:800;color:#3A342E;">Nice work!</span>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Success</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">pop-in badge + expanding ring, once</span>
+    </div>
+  </div>
+
+  <!-- Character Card states -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">CHARACTER CARD — NORMAL / ACTIVE / SUGGESTED / LOCKED / LOADING</div>
+  <div style="display:flex;gap:16px;margin-bottom:40px;flex-wrap:wrap;">
+    <dc-import name="CharacterCard" char-name="Berry Belle" color="#F78FB3" rarity="epic" state="normal" locked="{{false}}" loading="{{false}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Berry Belle" color="#F78FB3" rarity="epic" state="active" locked="{{false}}" loading="{{false}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Berry Belle" color="#F78FB3" rarity="epic" state="suggested" locked="{{false}}" loading="{{false}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="???" color="#F78FB3" rarity="epic" state="normal" locked="{{true}}" loading="{{false}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+    <dc-import name="CharacterCard" char-name="Berry Belle" color="#F78FB3" rarity="epic" state="normal" locked="{{false}}" loading="{{true}}" stat-type="vitamin" hint-size="158px,206px"></dc-import>
+  </div>
+
+  <!-- Scan states -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">SCAN — IDLE / SCANNING</div>
+  <div style="display:flex;gap:20px;margin-bottom:40px;">
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:130px;border-radius:20px;background:linear-gradient(160deg, #4A443D, #2B2620);position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 24px -8px {{tone.accent}};">
+        <div style="display:flex;gap:2px;opacity:0.5;">
+          <div style="width:2.5px;height:36px;background:white;"></div><div style="width:1.6px;height:36px;background:white;"></div><div style="width:4px;height:36px;background:white;"></div><div style="width:1.6px;height:36px;background:white;"></div><div style="width:2.5px;height:36px;background:white;"></div>
+        </div>
+        <div style="position:absolute;left:22px;right:22px;top:56px;height:3px;border-radius:3px;background:{{tone.accent}};box-shadow:0 0 14px 2px {{tone.accent}};"></div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Idle</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">stage: "idle"</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:130px;border-radius:20px;background:linear-gradient(160deg, #4A443D, #2B2620);position:relative;display:flex;align-items:center;justify-content:center;box-shadow:0 10px 26px -6px {{tone.accent}};">
+        <div style="display:flex;gap:2px;opacity:0.5;">
+          <div style="width:2.5px;height:36px;background:white;"></div><div style="width:1.6px;height:36px;background:white;"></div><div style="width:4px;height:36px;background:white;"></div><div style="width:1.6px;height:36px;background:white;"></div><div style="width:2.5px;height:36px;background:white;"></div>
+        </div>
+        <div style="position:absolute;left:22px;right:22px;top:56px;height:4px;border-radius:3px;background:{{tone.accent}};box-shadow:0 0 22px 5px {{tone.accent}};"></div>
+        <div style="position:absolute;top:10px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:5px;background:rgba(255,255,255,0.12);padding:4px 10px;border-radius:10px;">
+          <div class="nq-breathe-el" style="width:6px;height:6px;border-radius:50%;background:{{tone.accent}};box-shadow:0 0 8px 2px {{tone.accent}};"></div>
+          <span style="font-size:9.5px;font-weight:700;color:white;">Detecting…</span>
+        </div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Scanning</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">stage: "scanning"</span>
+    </div>
+  </div>
+
+  <!-- Gym Check states -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">GYM CHECK — CAPTURE / VERIFIED</div>
+  <div style="display:flex;gap:20px;margin-bottom:40px;">
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:150px;border-radius:20px;background:{{tone.accentBg}};padding:14px;display:flex;flex-direction:column;align-items:center;gap:10px;">
+        <div style="width:100%;flex:1;border-radius:14px;background:linear-gradient(180deg, #4A443D, #2B2620);display:flex;align-items:center;justify-content:center;">
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"><path d="M4 10h2v4H4zM18 10h2v4h-2zM7 8h1v8H7zM16 8h1v8h-1zM8 11.5h8v1H8z" fill="white" opacity="0.85"/></svg>
+        </div>
+        <div style="display:flex;gap:5px;">
+          <div style="width:5px;height:5px;border-radius:50%;background:{{tone.accent}};"></div>
+          <div style="width:5px;height:5px;border-radius:50%;background:{{tone.accent}};"></div>
+          <div style="width:5px;height:5px;border-radius:50%;background:{{tone.accent}};"></div>
+        </div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Capture</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">stage: "capture"</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:190px;height:150px;border-radius:20px;background:{{tone.accentBg}};padding:14px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;">
+        <div class="nq-pop-el" style="width:44px;height:44px;border-radius:50%;background:{{tone.accentSoft}};display:flex;align-items:center;justify-content:center;">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="{{tone.accentDark}}" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <span style="font-size:11.5px;font-weight:800;color:#3A342E;text-align:center;">Buff Activated!</span>
+        <span style="font-size:9.5px;font-weight:700;color:{{tone.accentDark}};">+25% drop rate · 24h</span>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Verified</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">stage: "verified"</span>
+    </div>
+  </div>
+
+  <!-- Battle states -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">BATTLE — NORMAL TURN / FATIGUED</div>
+  <div style="display:flex;gap:20px;margin-bottom:40px;">
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:280px;height:88px;border-radius:20px;background:{{tone.accentBg}};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;">
+        <div style="background:linear-gradient(180deg, {{tone.accent}}, {{tone.accentDark}});color:white;font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:11px;letter-spacing:0.03em;padding:5px 16px;border-radius:12px;box-shadow:0 0 16px -4px {{tone.accent}};">YOUR TURN</div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Normal turn</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">fatigued: false</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:280px;height:88px;border-radius:20px;background:{{tone.accentBg}};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;padding:0 14px;">
+        <div style="background:linear-gradient(180deg, {{tone.accent}}, {{tone.accentDark}});color:white;font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:11px;letter-spacing:0.03em;padding:5px 16px;border-radius:12px;">YOUR TURN</div>
+        <div style="width:100%;padding:6px 10px;border-radius:12px;background:#FFF1E0;display:flex;align-items:center;gap:6px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(58,52,46,0.06), 0 10px 20px -10px rgba(217,139,43,0.35);">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3z" stroke="#D98B2B" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v3.5" stroke="#D98B2B" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.5" r="0.9" fill="#D98B2B"/></svg>
+          <span style="font-size:9.5px;font-weight:700;color:#A66A1E;">Squad fatigued — recovers in 1h 42m</span>
+        </div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Fatigued</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">fatigued: true</span>
+    </div>
+  </div>
+
+  <!-- Watch Connect states -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">CONNECT APPLE WATCH — PROMPT / SEARCHING / CONNECTED</div>
+  <div style="display:flex;gap:20px;">
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:180px;height:160px;border-radius:20px;background:{{tone.accentBg}};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;">
+        <div style="width:46px;height:56px;border-radius:14px;background:#3A342E;"></div>
+        <span style="font-size:10.5px;font-weight:800;color:#3A342E;text-align:center;">Connect Apple<br/>Watch</span>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Prompt</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">step: "prompt"</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:180px;height:160px;border-radius:20px;background:{{tone.accentBg}};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;position:relative;">
+        <div style="position:absolute;width:70px;height:70px;border-radius:50%;border:2px solid {{tone.accent}};opacity:0.5;"></div>
+        <div style="position:absolute;width:96px;height:96px;border-radius:50%;border:2px solid {{tone.accent}};opacity:0.25;"></div>
+        <div style="width:46px;height:56px;border-radius:14px;background:#3A342E;position:relative;z-index:1;"></div>
+        <span style="font-size:10.5px;font-weight:800;color:#3A342E;position:relative;z-index:1;">Searching…</span>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Searching</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">step: "searching"</span>
+    </div>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+      <div style="width:180px;height:160px;border-radius:20px;background:{{tone.accentBg}};display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;position:relative;">
+        <div style="width:46px;height:56px;border-radius:14px;background:#3A342E;position:relative;">
+          <div class="nq-pop-el" style="position:absolute;top:-6px;right:-14px;width:20px;height:20px;border-radius:50%;background:{{tone.accent}};display:flex;align-items:center;justify-content:center;">
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none"><path d="M5 13l4 4L19 7" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </div>
+        </div>
+        <span style="font-size:10.5px;font-weight:800;color:#3A342E;">Watch Connected!</span>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#3A342E;">Connected</span>
+      <span style="font-size:10px;font-weight:600;color:#B9B4AC;">step: "connected"</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    return { tone: getTone(accentColor, colorMode) };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 130">
+  <!-- Sprout Wisp — fiber, common, #8FE3A0 -->
+  <!-- roots -->
+  <path d="M44 120 Q40 127 35 130" stroke="#25933b" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <path d="M56 120 Q60 127 65 130" stroke="#25933b" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <!-- curved stem body -->
+  <path d="M50 118 C38 102 60 88 46 68 C35 52 57 40 50 24" stroke="#54d46e" stroke-width="17" fill="none" stroke-linecap="round"/>
+  <!-- leaves -->
+  <ellipse cx="28" cy="76" rx="12" ry="7" fill="#25933b" transform="rotate(-24 28 76)"/>
+  <ellipse cx="68" cy="58" rx="12" ry="7" fill="#25933b" transform="rotate(22 68 58)"/>
+  <!-- head bulb -->
+  <circle cx="50" cy="22" r="17" fill="#54d46e"/>
+  <!-- face (smaller scale for the smaller head) -->
+  <ellipse cx="44" cy="20" rx="4" ry="5" fill="white"/>
+  <ellipse cx="56" cy="20" rx="4" ry="5" fill="white"/>
+  <circle cx="44.5" cy="21" r="2.6" fill="#2B2620"/>
+  <circle cx="56.5" cy="21" r="2.6" fill="#2B2620"/>
+  <circle cx="43.5" cy="19.5" r="0.9" fill="white"/>
+  <circle cx="55.5" cy="19.5" r="0.9" fill="white"/>
+  <path d="M40 15 Q44 13 48 15" stroke="#2B2620" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  <path d="M52 15 Q56 13 60 15" stroke="#2B2620" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  <ellipse cx="38.5" cy="25" rx="3" ry="1.8" fill="#FF9F9F" opacity="0.55"/>
+  <ellipse cx="61.5" cy="25" rx="3" ry="1.8" fill="#FF9F9F" opacity="0.55"/>
+  <path d="M46 27 Q50 30 54 27" stroke="#2B2620" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/user-profile.json",
+  "title": "User Profile",
+  "description": "Per-player profile. Persisted in user_profile table. One row per player_id.",
+  "type": "object",
+  "required": ["id", "displayName", "level", "streakDays", "battlesWon", "activeCharacterId", "colorMode", "createdAt", "updatedAt"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header. Same as player_id PK."
+    },
+    "displayName": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 32,
+      "description": "User-chosen display name. Trimmed before storage."
+    },
+    "level": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 999,
+      "description": "Player level. Starts at 1."
+    },
+    "streakDays": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3650,
+      "description": "Consecutive-day scan streak. Resets on missed day."
+    },
+    "battlesWon": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Lifetime PvP battles won."
+    },
+    "activeCharacterId": {
+      "type": ["string", "null"],
+      "maxLength": 64,
+      "description": "Currently equipped character id, or null if none."
+    },
+    "colorMode": {
+      "type": "string",
+      "enum": ["active", "bestUnselected", "none"],
+      "description": "How the accent color is sourced. Mirrors ColorMode in DesignTokens.swift."
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. Set once on first GET /user/:id."
+    },
+    "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. Set on every PUT /user/:id."
+    }
+  },
+  "additionalProperties": false
+}

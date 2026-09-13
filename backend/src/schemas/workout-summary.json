@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/workout-summary.json",
+  "title": "Workout Summary",
+  "description": "One workout from HealthKit. Embedded in health-snapshot.recentWorkouts[].",
+  "type": "object",
+  "required": ["activityType", "start", "end", "durationMinutes"],
+  "properties": {
+    "activityType": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64,
+      "description": "HealthKit activity type (e.g. 'running', 'cycling', 'walking')."
+    },
+    "start": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. Workout start time."
+    },
+    "end": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. Workout end time."
+    },
+    "durationMinutes": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1440,
+      "description": "Workout duration in minutes."
+    },
+    "activeCalories": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 20000,
+      "description": "Active calories burned (kcal). Null if unavailable."
+    },
+    "distanceMeters": {
+      "type": ["number", "null"],
+      "minimum": 0,
+      "maximum": 1000000,
+      "description": "Distance in meters. Null if unavailable (e.g. strength training)."
+    },
+    "averageHeartRateBpm": {
+      "type": ["number", "null"],
+      "minimum": 20,
+      "maximum": 250,
+      "description": "Average heart rate during workout. Null if unavailable."
+    },
+    "maxHeartRateBpm": {
+      "type": ["number", "null"],
+      "minimum": 20,
+      "maximum": 250,
+      "description": "Max heart rate during workout. Null if unavailable."
+    }
+  },
+  "additionalProperties": false
+}

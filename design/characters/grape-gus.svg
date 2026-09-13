@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 130">
+  <!-- Grape Gus — hydration, legendary, #B892FF -->
+  <!-- feet -->
+  <ellipse cx="40" cy="119" rx="8" ry="5" fill="#4000b8"/>
+  <ellipse cx="60" cy="119" rx="8" ry="5" fill="#4000b8"/>
+  <!-- grape cluster -->
+  <circle cx="28" cy="70" r="16" fill="#7329ff"/>
+  <circle cx="72" cy="70" r="16" fill="#7329ff"/>
+  <circle cx="38" cy="97" r="15" fill="#7329ff"/>
+  <circle cx="62" cy="97" r="15" fill="#7329ff"/>
+  <circle cx="50" cy="52" r="14" fill="#7329ff"/>
+  <circle cx="50" cy="77" r="23" fill="#7329ff"/>
+  <!-- shine dots -->
+  <circle cx="43" cy="70" r="2.4" fill="white" opacity="0.5"/>
+  <circle cx="24" cy="65" r="1.8" fill="white" opacity="0.4"/>
+  <circle cx="68" cy="65" r="1.8" fill="white" opacity="0.4"/>
+  <!-- vine tendril -->
+  <path d="M50 38 C54 30 46 24 51 16" stroke="#4000b8" stroke-width="3" fill="none" stroke-linecap="round"/>
+  <ellipse cx="60" cy="20" rx="9" ry="5" fill="#4000b8" transform="rotate(-25 60 20)"/>
+  <!-- face on main circle -->
+  <ellipse cx="42" cy="74" rx="7" ry="9" fill="white"/>
+  <ellipse cx="58" cy="74" rx="7" ry="9" fill="white"/>
+  <circle cx="43" cy="76" r="4.6" fill="#2B2620"/>
+  <circle cx="59" cy="76" r="4.6" fill="#2B2620"/>
+  <circle cx="41" cy="73" r="1.7" fill="white"/>
+  <circle cx="57" cy="73" r="1.7" fill="white"/>
+  <path d="M35 65 Q42 61 49 65" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M51 65 Q58 61 65 65" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <ellipse cx="32" cy="83" rx="5.5" ry="3.3" fill="#FF9F9F" opacity="0.55"/>
+  <ellipse cx="68" cy="83" rx="5.5" ry="3.3" fill="#FF9F9F" opacity="0.55"/>
+  <path d="M45 86 Q50 91 55 86" stroke="#2B2620" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+</svg>

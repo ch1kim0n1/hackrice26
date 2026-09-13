@@ -1,0 +1,160 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width:390px;height:844px;background:{{tone.accentBg}};font-family:'Quicksand', ui-rounded, system-ui, sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+
+  <div style="position:absolute;top:-70px;right:-70px;width:220px;height:220px;border-radius:50%;background:{{tone.accentSoft}};"></div>
+
+  <div style="flex:1;overflow-y:auto;position:relative;z-index:2;">
+
+    <!-- top bar -->
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:22px 20px 0;">
+      <div style="width:34px;height:34px;border-radius:50%;background:#FFFFFF;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#3A342E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:16px;color:#3A342E;">Profile</span>
+      <div style="width:34px;height:34px;"></div>
+    </div>
+
+    <!-- pfp + name -->
+    <div style="display:flex;flex-direction:column;align-items:center;padding:14px 20px 6px;">
+      <div style="position:relative;">
+        <div style="width:104px;height:104px;border-radius:50%;background:#FFFFFF;box-shadow:0 10px 24px -6px {{tone.accent}}, 0 6px 16px rgba(58,52,46,0.12);border:4px solid {{tone.accent}};display:flex;align-items:center;justify-content:center;overflow:hidden;">
+          <svg width="86" height="106" viewBox="0 0 100 130" style="margin-top:22px;">
+            <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/>
+            <circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/><circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/>
+            <circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/>
+            <path d="M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z" fill="{{tone.accentDark}}"/>
+            <ellipse cx="38" cy="51" rx="7.5" ry="9.5" fill="white"/><ellipse cx="62" cy="51" rx="7.5" ry="9.5" fill="white"/>
+            <circle cx="39" cy="53" r="5" fill="#2B2620"/><circle cx="63" cy="53" r="5" fill="#2B2620"/>
+            <circle cx="37" cy="50" r="1.8" fill="white"/><circle cx="61" cy="50" r="1.8" fill="white"/>
+            <ellipse cx="28" cy="62" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.55"/><ellipse cx="72" cy="62" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.55"/>
+            <path d="M43 64 Q50 70 57 64" stroke="#2B2620" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div style="position:absolute;bottom:0;right:0;width:32px;height:32px;border-radius:50%;background:{{tone.accentDark}};border:3px solid {{tone.accentBg}};display:flex;align-items:center;justify-content:center;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 8h3l1.5-2h7L17 8h3a1 1 0 011 1v9a1 1 0 01-1 1H4a1 1 0 01-1-1V9a1 1 0 011-1z" stroke="white" stroke-width="1.8" stroke-linejoin="round"/><circle cx="12" cy="13" r="3" stroke="white" stroke-width="1.8"/></svg>
+        </div>
+      </div>
+      <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:20px;color:#3A342E;margin-top:12px;">Trainer Arca</div>
+      <div style="font-size:12px;font-weight:600;color:#8A857C;margin-top:2px;">Level 12 · Member since Sept 2026</div>
+    </div>
+
+    <!-- stat chips -->
+    <div style="display:flex;gap:10px;padding:16px 20px 4px;">
+      <div style="flex:1;background:#FFFFFF;border-radius:18px;padding:12px 8px;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+        <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:17px;color:#3A342E;">18</div>
+        <div style="font-size:10px;font-weight:600;color:#8A857C;margin-top:2px;">Characters</div>
+      </div>
+      <div style="flex:1;background:#FFFFFF;border-radius:18px;padding:12px 8px;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+        <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:17px;color:#3A342E;">42</div>
+        <div style="font-size:10px;font-weight:600;color:#8A857C;margin-top:2px;">Battles Won</div>
+      </div>
+      <div style="flex:1;background:#FFFFFF;border-radius:18px;padding:12px 8px;text-align:center;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+        <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:17px;color:#3A342E;">7</div>
+        <div style="font-size:10px;font-weight:600;color:#8A857C;margin-top:2px;">Day Streak</div>
+      </div>
+    </div>
+
+    <!-- settings list -->
+    <div style="padding:18px 20px 24px;">
+      <div style="font-size:11px;font-weight:700;color:#8A857C;letter-spacing:0.03em;margin-bottom:8px;padding-left:4px;">SETTINGS</div>
+      <div style="background:#FFFFFF;border-radius:20px;overflow:hidden;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #F3F1EC;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="#8A857C" stroke-width="1.8"/><path d="M5 20c1.5-4 4.2-6 7-6s5.5 2 7 6" stroke="#8A857C" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span style="flex:1;font-size:13px;font-weight:600;color:#3A342E;">Account</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#C9C4BB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #F3F1EC;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 3a5 5 0 00-5 5v3.5c0 .8-.3 1.5-.9 2.1L5 15h14l-1.1-1.4c-.6-.6-.9-1.3-.9-2.1V8a5 5 0 00-5-5z" stroke="#8A857C" stroke-width="1.8" stroke-linejoin="round"/><path d="M10 18a2 2 0 004 0" stroke="#8A857C" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span style="flex:1;font-size:13px;font-weight:600;color:#3A342E;">Notifications</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#C9C4BB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #F3F1EC;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><rect x="7" y="7" width="10" height="14" rx="3" stroke="#8A857C" stroke-width="1.8"/><path d="M17 10l2.5-1.5v7L17 14" stroke="#8A857C" stroke-width="1.8" stroke-linejoin="round"/></svg>
+          <span style="flex:1;font-size:13px;font-weight:600;color:#3A342E;">Connected Devices</span>
+          <span style="font-size:11px;font-weight:700;color:#B9B4AC;margin-right:2px;">Not Connected</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#C9C4BB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid #F3F1EC;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="#8A857C" stroke-width="1.8"/><path d="M9.5 9.5a2.5 2.5 0 013.6-1.2c1 .6 1.2 1.8.5 2.6-.5.6-1.6.9-1.6 2M12 16.2v.1" stroke="#8A857C" stroke-width="1.8" stroke-linecap="round"/></svg>
+          <span style="flex:1;font-size:13px;font-weight:600;color:#3A342E;">Help &amp; Support</span>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 6l6 6-6 6" stroke="#C9C4BB" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+
+        <div style="display:flex;align-items:center;gap:12px;padding:14px 16px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a1 1 0 01-1-1V4a1 1 0 011-1h4" stroke="#E2765F" stroke-width="1.8" stroke-linecap="round"/><path d="M16 17l4-5-4-5M20 12H9" stroke="#E2765F" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span style="flex:1;font-size:13px;font-weight:700;color:#E2765F;">Log Out</span>
+        </div>
+
+      </div>
+    </div>
+
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF","#8FE3A0"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    return { tone: getTone(accentColor, colorMode) };
+  }
+}
+</script>
+</body>
+</html>

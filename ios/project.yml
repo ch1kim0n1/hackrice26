@@ -1,0 +1,115 @@
+# XcodeGen spec for the NutriQuest iOS app (issue #25).
+#
+# The SPM package stays the source of truth for all code; this adds a thin
+# app target that compiles Sources/NutriQuest directly (so its @main
+# NutriQuestApp is the app entry point) and links the BattleKit and
+# NutriQuestUI package products. Regenerate with:
+#
+#   cd ios && xcodegen generate
+name: NutriQuest
+options:
+  bundleIdPrefix: com.nutriquest
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+packages:
+  NutriQuestKit:
+    path: .
+targets:
+  NutriQuest:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/NutriQuest
+      - path: Resources/Fonts
+        type: folder
+        buildPhase: resources
+      - path: ../game-assets
+        type: folder
+        buildPhase: resources
+        excludes:
+          - "*.svg"
+    dependencies:
+      - package: NutriQuestKit
+        products:
+          - BattleKit
+          - NutriQuestUI
+    info:
+      path: Support/Info.plist
+      properties:
+        # Backend the app talks to. Point this at the Railway deployment for
+        # TestFlight/release builds, e.g. https://<railway-app>.up.railway.app
+        # (APIClient also reads this key at runtime as the compiled-in default;
+        # AppConfig.backendBaseURL can still override it via UserDefaults).
+        BackendBaseURL: https://main-production-3bbd.up.railway.app
+        UIAppFonts:
+          - Fonts/Baloo2.ttf
+          - Fonts/Quicksand.ttf
+        NSCameraUsageDescription: NutriQuest scans food barcodes and meal photos to summon characters.
+        NSPhotoLibraryUsageDescription: NutriQuest can use a meal photo from your library when the camera isn't available.
+        NSAppTransportSecurity:
+          # Railway deployment is HTTPS, no exception needed. Kept for anyone
+          # switching BackendBaseURL back to a local http://localhost dev server.
+          NSAllowsLocalNetworking: true
+        # LAN Battle (MultipeerConnectivity, service type "nq-lan"). iOS 14+
+        # silently finds no peers unless both Bonjour types are declared.
+        NSLocalNetworkUsageDescription: NutriQuest finds friends on the same Wi-Fi so you can battle nearby.
+        NSBonjourServices:
+          - _nq-lan._tcp
+          - _nq-lan._udp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.nutriquest.app
+        PRODUCT_NAME: NutriQuest
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSCameraUsageDescription: NutriQuest scans food barcodes and meal photos to summon characters.
+        INFOPLIST_KEY_NSPhotoLibraryUsageDescription: NutriQuest can use a meal photo from your library when the camera isn't available.
+        INFOPLIST_KEY_NSLocalNetworkUsageDescription: NutriQuest finds friends on the same Wi-Fi so you can battle nearby.
+        TARGETED_DEVICE_FAMILY: 1
+        SWIFT_VERSION: "5.9"
+        ENABLE_PREVIEWS: YES
+  NutriQuestTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/NutriQuestTests
+    dependencies:
+      - target: NutriQuest
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        # @testable import NutriQuest loads app code — the bundle must be
+        # hosted by the app or xcodebuild fails with "missing app host".
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/NutriQuest.app/NutriQuest"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+  BattleKitTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: Tests/BattleKitTests
+    dependencies:
+      - package: NutriQuestKit
+        products:
+          - BattleKit
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  NutriQuest:
+    build:
+      targets:
+        NutriQuest: all
+        NutriQuestTests: [test]
+        BattleKitTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      gatherCoverageData: false
+      targets:
+        - NutriQuestTests
+        - BattleKitTests

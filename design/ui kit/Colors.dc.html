@@ -1,0 +1,190 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width:1240px;min-height:900px;background:#FFFFFF;font-family:'Quicksand', ui-rounded, system-ui, sans-serif;padding:44px 56px;">
+
+  <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:28px;color:#3A342E;">Colors</div>
+  <div style="font-size:13px;font-weight:600;color:#8A857C;margin-top:4px;margin-bottom:32px;">NutriQuest is white-first — every accent is a light tint derived from the player's selected character.</div>
+
+  <!-- core -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">CORE</div>
+  <div style="display:flex;gap:20px;margin-bottom:36px;">
+    <div style="width:190px;">
+      <div style="width:190px;height:110px;border-radius:18px;background:#FFFFFF;border:1.5px solid #EFEDE9;"></div>
+      <div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">App Background</div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;">#FFFFFF</div>
+    </div>
+    <div style="width:190px;">
+      <div style="width:190px;height:110px;border-radius:18px;background:{{tone.accentBg}};"></div>
+      <div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Screen Tint</div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;">from selected character</div>
+    </div>
+    <div style="width:190px;">
+      <div style="width:190px;height:110px;border-radius:18px;background:{{tone.accentSoft}};"></div>
+      <div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Soft Accent</div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;">chips, progress tracks</div>
+    </div>
+    <div style="width:190px;">
+      <div style="width:190px;height:110px;border-radius:18px;background:{{tone.accent}};"></div>
+      <div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Accent</div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;">buttons, progress fill</div>
+    </div>
+    <div style="width:190px;">
+      <div style="width:190px;height:110px;border-radius:18px;background:{{tone.accentDark}};"></div>
+      <div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Accent Dark</div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;">badges, mascot shading</div>
+    </div>
+  </div>
+
+  <!-- elevation -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:6px;">ELEVATION — NEW</div>
+  <div style="font-size:11.5px;font-weight:600;color:#8A857C;margin-bottom:14px;max-width:760px;line-height:1.6;">Every card is a contact shadow + a softer ambient shadow, plus a barely-there inner top highlight — never a flat outline standing in for depth. Three levels, used consistently: E1 for anything resting (grid cards, list rows), E2 for anything raised or asking for attention (a featured card, an active state), E3 for a genuine hero moment. An accent-tinted glow layers on top of any of these for celebratory or "this is yours" moments.</div>
+  <div style="display:flex;gap:20px;margin-bottom:36px;">
+    <div style="width:230px;">
+      <div style="width:230px;height:120px;border-radius:20px;background:#FFFFFF;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);display:flex;align-items:center;justify-content:center;">
+        <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:15px;color:#3A342E;">E1 · Resting</span>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;margin-top:8px;">Grid cards, list rows, NQCard default</div>
+    </div>
+    <div style="width:230px;">
+      <div style="width:230px;height:120px;border-radius:20px;background:#FFFFFF;box-shadow:inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px rgba(58,52,46,0.07), 0 14px 28px -12px rgba(58,52,46,0.22);display:flex;align-items:center;justify-content:center;">
+        <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:15px;color:#3A342E;">E2 · Raised</span>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;margin-top:8px;">Active/featured cards, primary CTAs</div>
+    </div>
+    <div style="width:230px;">
+      <div style="width:230px;height:120px;border-radius:20px;background:#FFFFFF;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 4px 8px rgba(58,52,46,0.08), 0 24px 48px -16px rgba(58,52,46,0.26);display:flex;align-items:center;justify-content:center;">
+        <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:15px;color:#3A342E;">E3 · Floating</span>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;margin-top:8px;">Hero character stage, celebratory moments</div>
+    </div>
+    <div style="width:230px;">
+      <div style="width:230px;height:120px;border-radius:20px;background:#FFFFFF;box-shadow:inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px rgba(58,52,46,0.07), 0 14px 28px -12px rgba(58,52,46,0.22), 0 0 28px -4px {{tone.accent}};display:flex;align-items:center;justify-content:center;">
+        <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:15px;color:#3A342E;">+ Accent glow</span>
+      </div>
+      <div style="font-size:11px;font-weight:600;color:#B9B4AC;margin-top:8px;">Layered on any level — "this is yours"</div>
+    </div>
+  </div>
+
+  <!-- conditional states -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">CONDITIONAL ACCENT — TWEAK "colorMode" ABOVE TO PREVIEW</div>
+  <div style="display:flex;gap:20px;margin-bottom:36px;">
+    <div style="flex:1;background:#FAFAF8;border-radius:18px;padding:16px;">
+      <div style="font-size:12.5px;font-weight:800;color:#3A342E;margin-bottom:8px;">Character selected</div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;height:44px;border-radius:10px;background:#5FCB82;"></div>
+        <div style="flex:1;height:44px;border-radius:10px;background:hsl(142, 45%, 90%);"></div>
+      </div>
+      <div style="font-size:10.5px;font-weight:600;color:#8A857C;margin-top:8px;">Light tint of the active character's own color</div>
+    </div>
+    <div style="flex:1;background:#FAFAF8;border-radius:18px;padding:16px;">
+      <div style="font-size:12.5px;font-weight:800;color:#3A342E;margin-bottom:8px;">Owned, none selected</div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;height:44px;border-radius:10px;background:#B892FF;"></div>
+        <div style="flex:1;height:44px;border-radius:10px;background:hsl(267, 45%, 90%);"></div>
+      </div>
+      <div style="font-size:10.5px;font-weight:600;color:#8A857C;margin-top:8px;">Falls back to the best unselected character's color</div>
+    </div>
+    <div style="flex:1;background:#FAFAF8;border-radius:18px;padding:16px;">
+      <div style="font-size:12.5px;font-weight:800;color:#3A342E;margin-bottom:8px;">No characters owned</div>
+      <div style="display:flex;gap:8px;">
+        <div style="flex:1;height:44px;border-radius:10px;background:#9C978F;"></div>
+        <div style="flex:1;height:44px;border-radius:10px;background:#ECEAE6;"></div>
+      </div>
+      <div style="font-size:10.5px;font-weight:600;color:#8A857C;margin-top:8px;">Neutral grey — no character color to draw from</div>
+    </div>
+  </div>
+
+  <!-- text -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">TEXT</div>
+  <div style="display:flex;gap:20px;margin-bottom:36px;">
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#3A342E;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Primary</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">#3A342E</div></div>
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#5B564E;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Secondary</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">#5B564E</div></div>
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#8A857C;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Muted</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">#8A857C</div></div>
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#B9B4AC;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Disabled</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">#B9B4AC</div></div>
+  </div>
+
+  <!-- rarity -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:6px;">RARITY — 7 TIERS</div>
+  <div style="font-size:11.5px;font-weight:600;color:#8A857C;margin-bottom:14px;max-width:900px;line-height:1.6;">Extended from 4 to 7 tiers to match the game's real economy (common/uncommon/rare/epic/legendary/mythic/secret). Uncommon reuses the brand's own link-hover green rather than inventing a new hue; mythic is new — a rose-crimson chosen to sit clearly apart from epic's purple and legendary's gold. Secret is the one holographic ring in the whole system, reserved for the single rarest tier so it reads as a genuine event rather than decoration.</div>
+  <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:36px;">
+    <div style="width:150px;"><div style="width:150px;height:70px;border-radius:16px;background:#EFEDE9;border:2px solid #C9C4BB;"></div><div style="font-size:12px;font-weight:700;color:#3A342E;margin-top:8px;">Common</div><div style="font-size:10.5px;font-weight:600;color:#B9B4AC;">#C9C4BB</div></div>
+    <div style="width:150px;"><div style="width:150px;height:70px;border-radius:16px;background:#E4F7EC;border:2px solid #6FCF97;"></div><div style="font-size:12px;font-weight:700;color:#3A342E;margin-top:8px;">Uncommon</div><div style="font-size:10.5px;font-weight:600;color:#B9B4AC;">#6FCF97</div></div>
+    <div style="width:150px;"><div style="width:150px;height:70px;border-radius:16px;background:#E3F2FD;border:2.5px solid #56B8F5;"></div><div style="font-size:12px;font-weight:700;color:#3A342E;margin-top:8px;">Rare</div><div style="font-size:10.5px;font-weight:600;color:#B9B4AC;">#56B8F5</div></div>
+    <div style="width:150px;"><div style="width:150px;height:70px;border-radius:16px;background:#F1E9FD;border:3px solid #B892FF;box-shadow:0 0 14px -2px rgba(184,146,255,0.4);"></div><div style="font-size:12px;font-weight:700;color:#3A342E;margin-top:8px;">Epic</div><div style="font-size:10.5px;font-weight:600;color:#B9B4AC;">#B892FF · glow</div></div>
+    <div style="width:150px;"><div style="width:150px;height:70px;border-radius:16px;background:#FFF3D9;border:3px solid #FFC24B;box-shadow:0 0 14px -2px rgba(255,194,75,0.45);"></div><div style="font-size:12px;font-weight:700;color:#3A342E;margin-top:8px;">Legendary</div><div style="font-size:10.5px;font-weight:600;color:#B9B4AC;">#FFC24B · glow</div></div>
+    <div style="width:150px;"><div style="width:150px;height:70px;border-radius:16px;background:#FDE7EB;border:3.5px solid #E8546B;box-shadow:0 0 16px -2px rgba(232,84,107,0.45);"></div><div style="font-size:12px;font-weight:700;color:#3A342E;margin-top:8px;">Mythic — new</div><div style="font-size:10.5px;font-weight:600;color:#B9B4AC;">#E8546B · glow</div></div>
+    <div style="width:150px;"><div style="width:150px;height:70px;border-radius:16px;background:#2B2620;border:4px solid transparent;background-image:linear-gradient(#2B2620,#2B2620), linear-gradient(120deg, #8B7FE8, #FFC24B, #E8546B, #56B8F5);background-origin:border-box;background-clip:padding-box, border-box;box-shadow:0 0 18px -2px rgba(139,127,232,0.4);"></div><div style="font-size:12px;font-weight:700;color:#3A342E;margin-top:8px;">Secret — new</div><div style="font-size:10.5px;font-weight:600;color:#B9B4AC;">holographic ring</div></div>
+  </div>
+
+  <!-- semantic -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">SEMANTIC</div>
+  <div style="display:flex;gap:20px;">
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#FFF1E0;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Warning</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">fatigue banner · #D98B2B</div></div>
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#E2765F;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Danger</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">log out · #E2765F</div></div>
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#FF9F9F;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Blush</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">mascot cheeks · #FF9F9F</div></div>
+    <div style="width:190px;"><div style="width:190px;height:70px;border-radius:18px;background:#FFC24B;"></div><div style="font-size:12.5px;font-weight:700;color:#3A342E;margin-top:8px;">Sparkle</div><div style="font-size:11px;font-weight:600;color:#B9B4AC;">decorative · #FFC24B</div></div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    return { tone: getTone(accentColor, colorMode) };
+  }
+}
+</script>
+</body>
+</html>

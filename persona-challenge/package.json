@@ -1,0 +1,12 @@
+{
+  "name": "nutriquest-persona-challenge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Prove You're Human signup pre-gate — reflex game + Persona verification",
+  "scripts": {
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.50.0"
+  }
+}

@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>Prove You're Human</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Quicksand:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+  <script src="https://cdn.withpersona.com/dist/persona-v5.8.0.js" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div class="bg-orbs" aria-hidden="true">
+    <div class="bg-orb bg-orb-1"></div>
+    <div class="bg-orb bg-orb-2"></div>
+    <div class="bg-orb bg-orb-3"></div>
+  </div>
+
+  <main id="app">
+
+    <!-- ============ SCREEN: SIGNUP ============ -->
+    <section class="screen" id="screen-signup" data-screen="signup">
+      <div class="card signup-card">
+        <div class="wordmark">nutriquest<span class="wordmark-dot">.</span></div>
+        <h1 class="headline">Create your account</h1>
+        <p class="subhead">One quick step before you're in.</p>
+
+        <form id="signup-form" autocomplete="off">
+          <label class="field">
+            <span class="field-label">Display name</span>
+            <input type="text" name="displayName" placeholder="Ada Lovelace" maxlength="32" />
+          </label>
+          <label class="field">
+            <span class="field-label">Username</span>
+            <input type="text" name="username" placeholder="ada_l" required
+                   minlength="3" maxlength="24" pattern="[a-zA-Z0-9_.\-]+" />
+          </label>
+          <label class="field">
+            <span class="field-label">Password</span>
+            <input type="password" name="password" placeholder="8+ characters" required minlength="8" maxlength="128" />
+          </label>
+          <p class="form-error" id="signup-error" hidden></p>
+          <button type="submit" class="btn btn-primary btn-block" id="btn-signup">
+            Continue
+          </button>
+        </form>
+
+        <p class="fine-print">No email needed. Protected by a human-check mini-game.</p>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: INTRO ============ -->
+    <section class="screen" id="screen-intro" data-screen="intro" hidden>
+      <div class="card intro-card">
+        <div class="intro-badge">HUMAN CHECK</div>
+        <h1 class="headline">Prove you're human</h1>
+        <p class="subhead" id="intro-copy">A 5-second reflex game. Tap the orbs as they appear. That's it.</p>
+
+        <div class="intro-demo" aria-hidden="true">
+          <div class="demo-orb"></div>
+        </div>
+
+        <button class="btn btn-primary btn-block" id="btn-start">Start</button>
+        <p class="fine-print">No wrong answers. Just be quick, be human.</p>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: GAME ============ -->
+    <section class="screen screen-game" id="screen-game" data-screen="game" hidden>
+      <header class="game-hud">
+        <div class="hud-instruction" id="hud-instruction" role="status" aria-live="polite">Get ready…</div>
+        <div class="hud-progress" id="hud-progress" aria-label="Round progress"></div>
+      </header>
+      <div class="arena" id="arena">
+        <div class="arena-countdown" id="arena-countdown" hidden></div>
+      </div>
+      <footer class="game-footer">
+        <span class="hud-round" id="hud-round">Round 1</span>
+        <span class="hud-streak" id="hud-streak" hidden>×0</span>
+      </footer>
+    </section>
+
+    <!-- ============ SCREEN: RESULT / HANDOFF ============ -->
+    <section class="screen" id="screen-result" data-screen="result" hidden>
+      <div class="card result-card">
+        <div class="result-icon" id="result-icon">
+          <svg viewBox="0 0 64 64" width="72" height="72" fill="none">
+            <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="3" opacity="0.25"/>
+            <path d="M20 33.5 28.5 42 44 24" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h1 class="headline" id="result-title">Human confirmed</h1>
+        <p class="subhead" id="result-copy">Nice reflexes. Creating your account…</p>
+        <div class="result-spinner" id="result-spinner"></div>
+        <button class="btn btn-ghost btn-block" id="btn-back-signup" hidden>Back to sign up</button>
+      </div>
+    </section>
+
+    <!-- ============ SCREEN: STATS BREAKDOWN ============ -->
+    <section class="screen screen-stats" id="screen-stats" data-screen="stats" hidden>
+      <div class="stats-scroll" id="stats-body"></div>
+    </section>
+
+    <!-- ============ SCREEN: DONE ============ -->
+    <section class="screen" id="screen-done" data-screen="done" hidden>
+      <div class="card result-card">
+        <div class="result-icon success">
+          <svg viewBox="0 0 64 64" width="72" height="72" fill="none">
+            <circle cx="32" cy="32" r="30" stroke="currentColor" stroke-width="3" opacity="0.25"/>
+            <path d="M20 33.5 28.5 42 44 24" stroke="currentColor" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <h1 class="headline" id="done-title">You're in</h1>
+        <p class="subhead" id="done-copy">Verification complete. Welcome aboard.</p>
+        <button class="btn btn-ghost btn-block" id="btn-restart">Run it again</button>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Debug drawer: session + scoring internals, for demo/judging -->
+  <button id="debug-toggle" aria-label="Toggle debug panel">∿</button>
+  <aside id="debug-drawer" hidden>
+    <h2>pre-gate debug</h2>
+    <pre id="debug-output">no session yet</pre>
+  </aside>
+
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/scan-character.json",
+  "title": "Scanned Character (Minted from Food Scan)",
+  "description": "A character minted from scanning a food barcode. Persisted in scan_character table. Composite PK (player_id, char_id). One row per unique (player, barcode).",
+  "type": "object",
+  "required": ["player_id", "char_id", "payload", "minted_at"],
+  "properties": {
+    "player_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header."
+    },
+    "char_id": {
+      "type": "string",
+      "pattern": "^scan-\\d{6,20}$",
+      "description": "Character id. Format: scan-{barcode}."
+    },
+    "payload": {
+      "type": "string",
+      "description": "JSON-encoded Character object (see character-payload.json)."
+    },
+    "minted_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. When the character was first minted. Not currently stored separately — derived from scan_seen.seen_at."
+    }
+  },
+  "additionalProperties": false
+}

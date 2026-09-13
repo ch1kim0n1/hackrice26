@@ -1,0 +1,37 @@
+{
+  "name": "nutriquest-backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "TypeScript backend for NutriQuest -- barcode lookup, character collection, and battle logic.",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "ts-node-dev --respawn src/index.ts",
+    "build": "tsc -p .",
+    "start": "node dist/index.js",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "analyze:photo": "ts-node scripts/analyze-photo.ts",
+    "art:generate": "ts-node scripts/generate-character-art.ts"
+  },
+  "dependencies": {
+    "@types/pg": "^8.23.1",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "pg": "^8.23.0",
+    "zod": "^3.25.76"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.20.1",
+    "ts-node-dev": "^2.0.0",
+    "typescript": "^5.5.2",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "overrides": {
+    "qs": "^6.16.0"
+  }
+}

@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/lootbox-retired.json",
+  "title": "Lootbox Retired Seed Pair",
+  "description": "A retired commit-reveal seed pair. The server_seed is now revealed so players can verify past rolls. Persisted in lootbox_retired table. Multiple rows per player_id (one per rotation).",
+  "type": "object",
+  "required": ["player_id", "server_seed", "server_seed_hash", "client_seed", "nonce", "created_at", "retired_at"],
+  "properties": {
+    "player_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header."
+    },
+    "server_seed": {
+      "type": "string",
+      "description": "Revealed server seed. Players can verify SHA256(server_seed) === server_seed_hash."
+    },
+    "server_seed_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "The hash that was published before the seed was revealed."
+    },
+    "client_seed": {
+      "type": "string",
+      "minLength": 6,
+      "maxLength": 64,
+      "description": "Client seed that was in effect during this round."
+    },
+    "nonce": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Final nonce value when the pair was retired."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. When this seed pair was created."
+    },
+    "retired_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. When this seed pair was rotated out."
+    }
+  },
+  "additionalProperties": false
+}

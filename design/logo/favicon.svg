@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" fill="none">
+  <!-- NutriQuest favicon: sprout only, no scan frame. Reads at 16x16. -->
+  <path d="M16 8 C20 8 22 12 21 17 C20 22 18 26 16 26 C14 26 12 22 11 17 C10 12 12 8 16 8 Z" fill="#5FCB82"/>
+  <path d="M16 9 C14 6 12 5 10 5 C11 7 13 9 15 10 Z" fill="#3FAE63"/>
+  <path d="M16 9 C18 6 20 5 22 5 C21 7 19 9 17 10 Z" fill="#3FAE63"/>
+  <ellipse cx="13" cy="15" rx="1.6" ry="2" fill="white"/>
+  <ellipse cx="19" cy="15" rx="1.6" ry="2" fill="white"/>
+  <circle cx="13.3" cy="15.5" r="1" fill="#2B2620"/>
+  <circle cx="19.3" cy="15.5" r="1" fill="#2B2620"/>
+  <path d="M14 18 Q16 20 18 18" stroke="#2B2620" stroke-width="0.7" fill="none" stroke-linecap="round"/>
+</svg>

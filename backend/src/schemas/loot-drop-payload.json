@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/loot-drop-payload.json",
+  "title": "Loot Drop (Payload)",
+  "description": "The full result of one crate open. Stored as JSON payload inside lootbox_drop.payload. Contains the character, power roll, shiny flag, value, and the fairness inputs needed to verify the roll.",
+  "type": "object",
+  "required": ["crateId", "character", "power", "powerLabel", "shiny", "value", "rolls", "fairness", "openedAt"],
+  "properties": {
+    "crateId": {
+      "type": "string",
+      "description": "Which crate was opened (e.g. starter-crate, harvest-crate)."
+    },
+    "character": {
+      "$ref": "character-payload.json",
+      "description": "The character that dropped."
+    },
+    "power": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Power roll. Higher is better (unlike CS:GO float)."
+    },
+    "powerLabel": {
+      "type": "string",
+      "description": "Human-readable power band label (e.g. 'Pristine', 'Worn')."
+    },
+    "shiny": {
+      "type": "boolean",
+      "description": "Holo variant. Cosmetic, but doubles the drop's value."
+    },
+    "value": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Computed drop value in arbitrary units. power * rarityMultiplier * (shiny ? 2 : 1)."
+    },
+    "rolls": {
+      "type": "object",
+      "required": ["rarity", "character", "power", "shiny"],
+      "properties": {
+        "rarity": { "type": "number", "minimum": 0, "maximum": 1, "description": "Raw roll for rarity tier selection." },
+        "character": { "type": "number", "minimum": 0, "maximum": 1, "description": "Raw roll for character selection within tier." },
+        "power": { "type": "number", "minimum": 0, "maximum": 1, "description": "Raw roll for power band." },
+        "shiny": { "type": "number", "minimum": 0, "maximum": 1, "description": "Raw roll for shiny flag." }
+      },
+      "additionalProperties": false
+    },
+    "fairness": {
+      "type": "object",
+      "required": ["serverSeedHash", "clientSeed", "nonce"],
+      "properties": {
+        "serverSeedHash": { "type": "string", "pattern": "^[0-9a-f]{64}$", "description": "SHA256 of the server seed in effect." },
+        "clientSeed": { "type": "string", "minLength": 6, "maxLength": 64 },
+        "nonce": { "type": "integer", "minimum": 0, "description": "Nonce value used for this specific roll." }
+      },
+      "additionalProperties": false
+    },
+    "openedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. When the crate was opened."
+    }
+  },
+  "additionalProperties": false
+}

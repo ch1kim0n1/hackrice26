@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NutriQuest — Scan food. Summon friends. Battle.</title>
+<meta name="description" content="NutriQuest turns every meal into a tiny adventure. Scan a barcode, summon a character, balance your day, battle a friend.">
+<style>
+  :root {
+    --ink: #3A342E;
+    --ink-muted: #6F6A62;
+    --ink-faint: #7A756D;
+    --bg: #FFFFFF;
+    --surface: #FAFAF8;
+    --hairline: #EFEDE9;
+    --green: #5FCB82;
+    --blue: #56B8F5;
+    --pink: #F78FB3;
+    --orange: #FFB86B;
+    --purple: #8F7AF5;
+    --gold: #FFC24B;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Quicksand', ui-rounded, system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    overflow-x: hidden;
+  }
+  .display { font-family: 'Baloo 2', ui-rounded, system-ui; }
+
+  /* ===== Animated background ===== */
+  .bg-blobs {
+    position: fixed; inset: 0; z-index: 0; overflow: hidden;
+    pointer-events: none;
+  }
+  .blob {
+    position: absolute; border-radius: 50%;
+    filter: blur(70px); opacity: .32;
+    animation: drift 26s ease-in-out infinite alternate;
+  }
+  .blob.b1 { width: 46vw; height: 46vw; background: var(--green);  top: -12%; left: -8%;  animation-delay: 0s;   }
+  .blob.b2 { width: 38vw; height: 38vw; background: var(--blue);   top: 20%;  right: -10%; animation-delay: -6s; }
+  .blob.b3 { width: 34vw; height: 34vw; background: var(--pink);   bottom: -6%; left: 12%;  animation-delay: -12s; }
+  .blob.b4 { width: 30vw; height: 30vw; background: var(--orange); bottom: 18%; right: 8%;  animation-delay: -18s; }
+  .blob.b5 { width: 26vw; height: 26vw; background: var(--purple); top: 46%; left: 38%;     animation-delay: -22s; opacity: .22; }
+  @keyframes drift {
+    0%   { transform: translate(0,0)      scale(1);    }
+    33%  { transform: translate(6vw,4vh)  scale(1.12); }
+    66%  { transform: translate(-4vw,7vh) scale(0.94); }
+    100% { transform: translate(3vw,-3vh) scale(1.05); }
+  }
+  .grain {
+    position: fixed; inset: 0; z-index: 1; pointer-events: none;
+    background-image: radial-gradient(rgba(58,52,46,.05) 1px, transparent 1px);
+    background-size: 22px 22px;
+  }
+  .sparkle {
+    position: absolute; color: var(--gold); opacity: 0;
+    animation: twinkle 3.4s ease-in-out infinite;
+    pointer-events: none; z-index: 1;
+  }
+  @keyframes twinkle {
+    0%,100% { opacity: 0; transform: scale(.5) rotate(0deg); }
+    50%     { opacity: .9; transform: scale(1) rotate(20deg); }
+  }
+
+  /* ===== Layout ===== */
+  .wrap { position: relative; z-index: 2; max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+
+  nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 22px 0; position: relative;
+  }
+  .skip {
+    position: absolute; left: 12px; top: -48px; z-index: 10;
+    background: var(--ink); color: #fff; font-weight: 800; font-size: 13px;
+    padding: 10px 14px; border-radius: 10px; text-decoration: none;
+  }
+  .skip:focus { top: 12px; }
+  .nav-toggle {
+    display: none; background: #fff; border: 1.5px solid var(--hairline);
+    border-radius: 12px; padding: 8px 12px; font-weight: 800; font-size: 13px;
+    color: var(--ink); min-height: 44px;
+  }
+  .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 21px; }
+  .logo-mark {
+    width: 34px; height: 34px; display: grid; place-items: center;
+    flex-shrink: 0;
+  }
+  .logo-mark svg { width: 34px; height: 34px; }
+  .nav-links { display: flex; gap: 26px; align-items: center; }
+  .nav-links a { color: var(--ink-muted); text-decoration: none; font-weight: 700; font-size: 14px; transition: color .2s; }
+  .nav-links a:hover { color: var(--ink); }
+
+  /* ===== Hero ===== */
+  .hero {
+    display: grid; grid-template-columns: 1.1fr .9fr; gap: 40px;
+    align-items: center; min-height: 78vh; padding: 40px 0 80px;
+  }
+  .badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #fff; border: 1px solid var(--hairline);
+    padding: 7px 14px; border-radius: 20px; font-size: 12.5px; font-weight: 700;
+    color: var(--ink-muted); box-shadow: 0 2px 8px rgba(58,52,46,.07);
+    animation: pop .6s cubic-bezier(.22,1,.36,1) backwards .1s;
+  }
+  .badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.5); } }
+  h1 {
+    font-family: 'Baloo 2', ui-rounded, system-ui;
+    font-weight: 800; font-size: clamp(40px, 6vw, 68px);
+    line-height: 1.02; letter-spacing: -1px; margin: 20px 0 18px;
+    animation: rise .7s cubic-bezier(.22,1,.36,1) backwards .2s;
+  }
+  h1 .word { display: inline-block; }
+  h1 .accent-word {
+    color: var(--green);
+  }
+  .sub {
+    font-size: 18px; line-height: 1.6; color: var(--ink-muted); font-weight: 600;
+    max-width: 460px; animation: rise .7s cubic-bezier(.22,1,.36,1) backwards .35s;
+  }
+  .cta-row { display: flex; gap: 14px; margin-top: 30px; flex-wrap: wrap; animation: rise .7s cubic-bezier(.22,1,.36,1) backwards .5s; }
+  .btn-primary {
+    display: inline-flex; align-items: center; gap: 10px;
+    background: linear-gradient(180deg, var(--green), #34A862);
+    color: #2B2620; font-weight: 800; font-size: 16px;
+    padding: 15px 28px; border-radius: 50px; text-decoration: none;
+    box-shadow: 0 8px 24px rgba(95,203,130,.4), 0 2px 6px rgba(58,52,46,.1);
+    transition: transform .18s cubic-bezier(.22,1,.36,1), box-shadow .18s;
+  }
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 14px 34px rgba(95,203,130,.5); }
+  .btn-primary:active { transform: translateY(0) scale(.98); }
+  .btn-primary:focus-visible, .btn-ghost:focus-visible, .nav-links a:focus-visible {
+    outline: 3px solid var(--green); outline-offset: 3px;
+  }
+  .btn-ghost {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #fff; border: 1.5px solid var(--hairline); color: var(--ink);
+    font-weight: 700; font-size: 15px; padding: 14px 24px; border-radius: 50px;
+    text-decoration: none; transition: all .18s;
+  }
+  .btn-ghost:hover { border-color: var(--green); transform: translateY(-2px); }
+  @keyframes rise { from { opacity: 0; transform: translateY(22px); } to { opacity: 1; transform: none; } }
+  @keyframes pop  { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: none; } }
+
+  /* Hero characters */
+  .stage { position: relative; height: 460px; animation: pop .8s cubic-bezier(.34,1.56,.64,1) backwards .4s; }
+  .stage .ring {
+    position: absolute; inset: 12%; border-radius: 50%;
+    border: 2px dashed var(--hairline);
+    animation: spin 40s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .char {
+    position: absolute; filter: drop-shadow(0 10px 18px rgba(58,52,46,.16));
+    animation: bob 4.6s ease-in-out infinite;
+    transition: transform .3s cubic-bezier(.22,1,.36,1);
+  }
+  .char:hover { filter: drop-shadow(0 16px 22px rgba(58,52,46,.28)); }
+  .char.c1 { width: 46%; left: 27%; top: 18%; animation-delay: 0s;   z-index: 3; }
+  .char.c2 { width: 26%; left: 6%;  top: 40%; animation-delay: -1.5s; z-index: 2; }
+  .char.c3 { width: 24%; right: 6%; top: 8%;  animation-delay: -2.4s; z-index: 2; }
+  .char.c4 { width: 22%; right: 16%; top: 62%; animation-delay: -3.2s; z-index: 2; }
+  .char.c5 { width: 20%; left: 16%; top: 6%;  animation-delay: -0.8s; z-index: 1; opacity: .9; }
+  @keyframes bob { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }
+
+  .name-tag {
+    position: absolute; left: 50%; bottom: 2%; transform: translateX(-50%);
+    background: #fff; border-radius: 14px; padding: 6px 14px;
+    font-weight: 800; font-size: 13px; white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(58,52,46,.1); z-index: 4;
+  }
+
+  /* ===== Feature cards ===== */
+  .features { display: grid; grid-template-columns: repeat(3,1fr); gap: 18px; padding: 20px 0 90px; }
+  .card {
+    background: var(--surface); border: 1px solid var(--hairline); border-radius: 24px;
+    padding: 26px;
+    transition: transform .25s cubic-bezier(.22,1,.36,1), box-shadow .25s;
+  }
+  .card:hover { transform: translateY(-6px); box-shadow: 0 14px 34px rgba(58,52,46,.1); }
+  .card .icon {
+    width: 44px; height: 44px; border-radius: 14px; display: grid; place-items: center;
+    margin-bottom: 14px; color: var(--ink);
+  }
+  .card .icon svg { width: 22px; height: 22px; display: block; }
+  .card h3 { font-family: 'Baloo 2', ui-rounded, system-ui; font-size: 19px; margin-bottom: 8px; }
+  .card p { color: var(--ink-muted); font-weight: 600; font-size: 14px; line-height: 1.55; }
+  .i-green  { background: rgba(95,203,130,.16); }
+  .i-blue   { background: rgba(86,184,245,.16); }
+  .i-pink   { background: rgba(247,143,179,.18); }
+  .i-orange { background: rgba(255,184,107,.18); }
+  .i-purple { background: rgba(143,122,245,.16); }
+  .i-gold   { background: rgba(255,194,75,.18); }
+
+  /* ===== How it works ===== */
+  .steps { display: grid; grid-template-columns: repeat(4,1fr); gap: 14px; padding-bottom: 90px; }
+  .step { text-align: center; padding: 22px 14px; }
+  .step .num {
+    width: 42px; height: 42px; margin: 0 auto 12px; border-radius: 50%;
+    background: #fff; border: 2px solid var(--hairline); display: grid; place-items: center;
+    font-family: 'Baloo 2', ui-rounded, system-ui; font-weight: 800;
+  }
+  .step strong { display: block; font-size: 15px; margin-bottom: 4px; }
+  .step span { color: var(--ink-muted); font-size: 13px; font-weight: 600; line-height: 1.5; }
+
+  footer {
+    border-top: 1px solid var(--hairline); padding: 26px 0 34px;
+    display: flex; justify-content: space-between; align-items: center;
+    color: var(--ink-faint); font-size: 13px; font-weight: 600;
+  }
+
+  @media (max-width: 860px) {
+    .hero { grid-template-columns: 1fr; min-height: auto; }
+    .stage { height: 380px; }
+    .features { grid-template-columns: 1fr; }
+    .steps { grid-template-columns: repeat(2,1fr); }
+    .nav-toggle { display: inline-flex; align-items: center; }
+    .nav-links {
+      display: none; position: absolute; right: 24px; top: 72px;
+      flex-direction: column; gap: 4px; background: #fff;
+      border: 1px solid var(--hairline); border-radius: 16px;
+      padding: 10px; min-width: 180px; z-index: 5;
+    }
+    .nav-links.open { display: flex; }
+    .nav-links a { padding: 10px 12px; min-height: 44px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  }
+</style>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;700;800&family=Quicksand:wght@500;600;700;800&display=swap" rel="stylesheet">
+<link rel="icon" type="image/svg+xml" href="../design/logo/favicon.svg">
+</head>
+<body>
+
+<div class="bg-blobs">
+  <div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div><div class="blob b4"></div><div class="blob b5"></div>
+</div>
+<div class="grain"></div>
+
+<div class="wrap">
+  <a class="skip" href="#main">Skip to content</a>
+  <nav>
+    <div class="logo">
+      <span class="logo-mark">
+        <svg viewBox="0 0 120 120" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <g stroke="#3A342E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+            <path d="M22 38 L22 26 L34 26"/>
+            <path d="M86 26 L98 26 L98 38"/>
+            <path d="M22 82 L22 94 L34 94"/>
+            <path d="M86 94 L98 94 L98 82"/>
+          </g>
+          <path d="M92 18 C94 24 96 26 102 28 C96 30 94 32 92 38 C90 32 88 30 82 28 C88 26 90 24 92 18 Z" fill="#FFC24B"/>
+          <path d="M60 38 C76 38 84 54 82 70 C80 88 72 100 60 100 C48 100 40 88 38 70 C36 54 44 38 60 38 Z" fill="#5FCB82"/>
+          <path d="M60 40 C56 30 50 26 44 26 C46 32 50 38 56 42 Z" fill="#3FAE63"/>
+          <path d="M60 40 C64 30 70 26 76 26 C74 32 70 38 64 42 Z" fill="#3FAE63"/>
+          <ellipse cx="50" cy="62" rx="6" ry="7.5" fill="white"/>
+          <ellipse cx="70" cy="62" rx="6" ry="7.5" fill="white"/>
+          <circle cx="51" cy="64" r="4" fill="#2B2620"/>
+          <circle cx="71" cy="64" r="4" fill="#2B2620"/>
+          <circle cx="49" cy="61" r="1.5" fill="white"/>
+          <circle cx="69" cy="61" r="1.5" fill="white"/>
+          <ellipse cx="42" cy="72" rx="5" ry="3" fill="#FF9F9F" opacity="0.5"/>
+          <ellipse cx="78" cy="72" rx="5" ry="3" fill="#FF9F9F" opacity="0.5"/>
+          <path d="M53 74 Q60 80 67 74" stroke="#2B2620" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </svg>
+      </span>
+      <span class="display">NutriQuest</span>
+    </div>
+    <button class="nav-toggle" type="button" aria-expanded="false" aria-controls="nav-links">Menu</button>
+    <div class="nav-links" id="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="#characters">Characters</a>
+    </div>
+  </nav>
+
+  <main id="main">
+
+  <section class="hero">
+    <div>
+      <span class="badge"><span class="dot"></span> Free · unlimited scans · built at HackRice '26</span>
+      <h1>Scan food.<br>Summon <span class="accent-word">friends</span>.<br>Battle a friend.</h1>
+      <p class="sub">Every barcode hides a character. Scan what you eat, summon the food spirit inside, balance your day, and prove your squad in the arena.</p>
+      <div class="cta-row">
+        <a class="btn-primary" href="#how">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M4 4v6M8 4v6M12 4v6M16 4v6M20 4v6M4 10h16M4 10v10M20 10v10M4 20h16"/></svg>
+          See how scanning works
+        </a>
+        <a class="btn-ghost" href="#characters">Meet the squad</a>
+      </div>
+    </div>
+
+    <div class="stage" id="characters" aria-label="NutriQuest characters">
+      <div class="ring"></div>
+      <img class="char c1" src="characters/broccoli-bud.svg" alt="Broccoli Bud — a green fiber character" data-tag="Broccoli Bud · Fiber · Common">
+      <img class="char c2" src="characters/sushi-sam.svg" alt="Sushi Sam — a blue protein character" data-tag="Sushi Sam · Protein · Rare">
+      <img class="char c3" src="characters/berry-belle.svg" alt="Berry Belle — a pink vitamin character" data-tag="Berry Belle · Vitamin · Epic">
+      <img class="char c4" src="characters/citrus-chip.svg" alt="Citrus Chip — an orange vitamin character" data-tag="Citrus Chip · Vitamin · Common">
+      <img class="char c5" src="characters/grape-gus.svg" alt="Grape Gus — a purple legendary character" data-tag="Grape Gus · Hydration · Legendary">
+      <div class="name-tag" id="name-tag">Broccoli Bud · Fiber · Common</div>
+    </div>
+  </section>
+
+  <section class="features" id="features">
+    <div class="card">
+      <div class="icon i-green" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h6M7 14h10"/></svg></div>
+      <h3>Scan any barcode</h3>
+      <p>Point the camera at any food barcode — EAN, UPC, whatever's in the pantry. Nutrition, ingredients, and origin pulled live from Open Food Facts. Free, unlimited.</p>
+    </div>
+    <div class="card">
+      <div class="icon i-blue" aria-hidden="true"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.2 6.8L21 11l-6.8 2.2L12 20l-2.2-6.8L3 11l6.8-2.2z"/></svg></div>
+      <h3>Summon a character</h3>
+      <p>Every product mints a battle character. Color, nutrients, and size shape its stats, rarity, and personality — your groceries become your roster.</p>
+    </div>
+    <div class="card">
+      <div class="icon i-gold" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 10h16v8a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-8z"/><path d="M8 10V8a4 4 0 0 1 8 0v2"/></svg></div>
+      <h3>Open summon crates</h3>
+      <p>Earn keys, crack crates, and let the fair reveal decide your drop — seven tiers, Common through Secret. Every pull lands in your collection.</p>
+    </div>
+    <div class="card">
+      <div class="icon i-purple" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M14 4l6 4-6 4V4zM10 12l-6 4 6 4v-8z"/><path d="M8 8l8 8"/></svg></div>
+      <h3>Battle your squad</h3>
+      <p>Pick three characters and simulate deterministic battles. Type matchups, crits, and misses play out with real damage math — no pay-to-win RNG.</p>
+    </div>
+    <div class="card">
+      <div class="icon i-orange" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="7"/><path d="M12 5V3M8 7c-2 0-3 1-3 1"/></svg></div>
+      <h3>Balance your day</h3>
+      <p>Protein, fiber, and quality bars track today's nutrition. Hit your targets and your squad earns a daily multiplier boost in battle.</p>
+    </div>
+    <div class="card">
+      <div class="icon i-pink" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="7" y="3" width="10" height="18" rx="3"/><path d="M10 8h4M10 12h4"/></svg></div>
+      <h3>Watch &amp; health sync</h3>
+      <p>Apple Watch steps, heart rate, and workouts feed your Daily Boost — up to +10% battle power for staying active.</p>
+    </div>
+  </section>
+
+  <section class="steps" id="how">
+    <div class="step"><div class="num">1</div><strong>Scan</strong><span>Point at any food barcode</span></div>
+    <div class="step"><div class="num">2</div><strong>Summon</strong><span>Get a character with real stats</span></div>
+    <div class="step"><div class="num">3</div><strong>Balance</strong><span>Hit nutrition targets for boosts</span></div>
+    <div class="step"><div class="num">4</div><strong>Battle</strong><span>Take your squad to the arena</span></div>
+  </section>
+
+  </main>
+
+  <footer>
+    <span>NutriQuest · HackRice '26</span>
+    <span>Made with food pixels &amp; friendship</span>
+  </footer>
+</div>
+
+<script>
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const N = reduceMotion ? 0 : 14;
+  const sparkleSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2l2.4 7.6L22 12l-7.6 2.4L12 22l-2.4-7.6L2 12l7.6-2.4z"/></svg>';
+  for (let i = 0; i < N; i++) {
+    const s = document.createElement('span');
+    s.className = 'sparkle';
+    s.innerHTML = sparkleSvg;
+    s.style.left = Math.random() * 100 + 'vw';
+    s.style.top = Math.random() * 100 + 'vh';
+    s.style.animationDelay = (Math.random() * 3.4) + 's';
+    s.style.color = ['#FFC24B', '#5FCB82', '#56B8F5', '#F78FB3'][i % 4];
+    document.body.appendChild(s);
+  }
+
+  const toggle = document.querySelector('.nav-toggle');
+  const links = document.getElementById('nav-links');
+  if (toggle && links) {
+    toggle.addEventListener('click', () => {
+      const open = links.classList.toggle('open');
+      toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+    });
+    links.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => {
+      links.classList.remove('open');
+      toggle.setAttribute('aria-expanded', 'false');
+    }));
+  }
+
+  const roster = [
+    'Broccoli Bud · Fiber · Common',
+    'Sushi Sam · Protein · Rare',
+    'Berry Belle · Vitamin · Epic',
+    'Citrus Chip · Vitamin · Common',
+    'Grape Gus · Hydration · Legendary'
+  ];
+  const tag = document.getElementById('name-tag');
+  let i = 0;
+  document.querySelectorAll('.char').forEach((el) => {
+    el.addEventListener('mouseenter', () => {
+      const name = el.getAttribute('data-tag');
+      if (!name) return;
+      tag.textContent = name;
+      const idx = roster.indexOf(name);
+      if (idx >= 0) i = idx;
+    });
+  });
+  if (!reduceMotion) {
+    setInterval(() => {
+      i = (i + 1) % roster.length;
+      tag.textContent = roster[i];
+    }, 2800);
+  }
+</script>
+</body>
+</html>

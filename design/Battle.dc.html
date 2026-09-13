@@ -1,0 +1,228 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+    @keyframes nq-turn-pulse { 0%, 100% { box-shadow: 0 3px 8px rgba(58,52,46,0.15), 0 0 0px 0 rgba(0,0,0,0); } 50% { box-shadow: 0 3px 8px rgba(58,52,46,0.15), 0 0 18px 2px var(--nq-turn-glow); } }
+  </style>
+</helmet>
+<div style="width:390px;height:844px;background:#FFFFFF;font-family:'Quicksand', ui-rounded, system-ui, sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+
+  <!-- top bar -->
+  <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 20px 0;">
+    <div style="width:34px;height:34px;border-radius:50%;background:{{tone.accentBg}};display:flex;align-items:center;justify-content:center;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M15 5l-7 7 7 7" stroke="#3A342E" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:16px;color:#3A342E;">Ranked Battle</span>
+    <div style="display:flex;align-items:center;gap:5px;background:{{tone.accentBg}};padding:6px 11px;border-radius:14px;">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="{{tone.accent}}"/></svg>
+      <span style="font-size:12px;font-weight:700;color:#3A342E;">4/5</span>
+    </div>
+  </div>
+
+  <!-- turn banner -->
+  <div style="display:flex;justify-content:center;margin:12px 20px 0;">
+    <div style="background:linear-gradient(180deg, {{tone.accent}}, {{tone.accentDark}});color:#FFFFFF;font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:12.5px;letter-spacing:0.03em;padding:6px 18px;border-radius:14px;animation:nq-turn-pulse 2.2s ease-in-out infinite;--nq-turn-glow:{{tone.accent}};">YOUR TURN</div>
+  </div>
+
+  <!-- fatigue / ready banner -->
+  <sc-if value="{{fatigued}}" hint-placeholder-val="{{false}}">
+    <div style="margin:10px 20px 0;padding:9px 14px;border-radius:16px;background:#FFF1E0;display:flex;align-items:center;gap:9px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(58,52,46,0.06), 0 10px 20px -10px rgba(217,139,43,0.35);">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3z" stroke="#D98B2B" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v3.5" stroke="#D98B2B" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.5" r="0.9" fill="#D98B2B"/></svg>
+      <span style="font-size:11.5px;font-weight:700;color:#A66A1E;">Squad fatigued — recovers in 1h 42m</span>
+    </div>
+  </sc-if>
+
+  <!-- arena -->
+  <div style="margin:12px 20px 0;border-radius:26px;background:linear-gradient(165deg, {{tone.accentSoft}}, #FFFFFF);padding:16px 14px;position:relative;">
+
+    <div style="font-size:10.5px;font-weight:700;color:#8A857C;margin-bottom:8px;">OPPONENT · RIVAL SQUAD</div>
+    <div style="display:flex;justify-content:space-between;gap:8px;margin-bottom:12px;">
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;">
+        <svg width="52" height="66" viewBox="0 0 100 130">
+          <ellipse cx="50" cy="100" rx="24" ry="22" fill="#C9C4BB"/>
+          <circle cx="18" cy="92" r="9" fill="#C9C4BB"/><circle cx="82" cy="92" r="9" fill="#C9C4BB"/>
+          <circle cx="50" cy="48" r="34" fill="#C9C4BB"/>
+          <circle cx="39" cy="53" r="4" fill="#2B2620"/><circle cx="63" cy="53" r="4" fill="#2B2620"/>
+          <path d="M43 62 Q50 58 57 62" stroke="#2B2620" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div style="width:100%;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:48%;height:100%;background:#C9C4BB;"></div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;">
+        <svg width="52" height="66" viewBox="0 0 100 130">
+          <ellipse cx="50" cy="100" rx="24" ry="22" fill="#B892FF"/>
+          <circle cx="18" cy="92" r="9" fill="#B892FF"/><circle cx="82" cy="92" r="9" fill="#B892FF"/>
+          <circle cx="50" cy="48" r="34" fill="#B892FF"/>
+          <circle cx="39" cy="53" r="4" fill="#2B2620"/><circle cx="63" cy="53" r="4" fill="#2B2620"/>
+          <path d="M43 62 Q50 58 57 62" stroke="#2B2620" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div style="width:100%;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:72%;height:100%;background:#B892FF;"></div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;">
+        <svg width="52" height="66" viewBox="0 0 100 130">
+          <ellipse cx="50" cy="100" rx="24" ry="22" fill="#FFB86B"/>
+          <circle cx="18" cy="92" r="9" fill="#FFB86B"/><circle cx="82" cy="92" r="9" fill="#FFB86B"/>
+          <circle cx="50" cy="48" r="34" fill="#FFB86B"/>
+          <circle cx="39" cy="53" r="4" fill="#2B2620"/><circle cx="63" cy="53" r="4" fill="#2B2620"/>
+          <path d="M43 62 Q50 58 57 62" stroke="#2B2620" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div style="width:100%;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:30%;height:100%;background:#E2765F;"></div></div>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:10px;margin:2px 0 12px;">
+      <div style="flex:1;height:1.5px;background:#E7E4DE;"></div>
+      <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:13px;color:#3A342E;background:#FFFFFF;padding:4px 12px;border-radius:12px;box-shadow:0 2px 6px rgba(58,52,46,0.08);">VS</div>
+      <div style="flex:1;height:1.5px;background:#E7E4DE;"></div>
+    </div>
+
+    <div style="font-size:10.5px;font-weight:700;color:#8A857C;margin-bottom:8px;">YOUR SQUAD</div>
+    <div style="display:flex;justify-content:space-between;gap:8px;">
+
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;position:relative;">
+        <div style="position:absolute;top:-8px;background:{{tone.accent}};color:#FFF;font-size:8px;font-weight:800;padding:2px 6px;border-radius:6px;">ACTIVE</div>
+        <svg width="58" height="74" viewBox="0 0 100 130">
+          <ellipse cx="50" cy="100" rx="24" ry="22" fill="{{tone.accent}}"/>
+          <circle cx="18" cy="92" r="9" fill="{{tone.accent}}"/><circle cx="82" cy="92" r="9" fill="{{tone.accent}}"/>
+          <circle cx="50" cy="48" r="34" fill="{{tone.accent}}"/>
+          <path d="M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z" fill="{{tone.accentDark}}"/>
+          <ellipse cx="38" cy="51" rx="6.5" ry="8.5" fill="white"/><ellipse cx="62" cy="51" rx="6.5" ry="8.5" fill="white"/>
+          <circle cx="39" cy="53" r="4.4" fill="#2B2620"/><circle cx="63" cy="53" r="4.4" fill="#2B2620"/>
+          <circle cx="37" cy="50" r="1.6" fill="white"/><circle cx="61" cy="50" r="1.6" fill="white"/>
+          <ellipse cx="28" cy="62" rx="5" ry="3" fill="#FF9F9F" opacity="0.55"/><ellipse cx="72" cy="62" rx="5" ry="3" fill="#FF9F9F" opacity="0.55"/>
+          <path d="M43 64 Q50 69 57 64" stroke="#2B2620" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div style="width:100%;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:85%;height:100%;background:{{tone.accent}};"></div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;">
+        <svg width="52" height="66" viewBox="0 0 100 130">
+          <ellipse cx="50" cy="100" rx="24" ry="22" fill="#56B8F5"/>
+          <circle cx="18" cy="92" r="9" fill="#56B8F5"/><circle cx="82" cy="92" r="9" fill="#56B8F5"/>
+          <circle cx="50" cy="48" r="34" fill="#56B8F5"/>
+          <circle cx="39" cy="53" r="4" fill="#2B2620"/><circle cx="63" cy="53" r="4" fill="#2B2620"/>
+          <path d="M43 64 Q50 69 57 64" stroke="#2B2620" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div style="width:100%;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:64%;height:100%;background:#56B8F5;"></div></div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:5px;flex:1;">
+        <svg width="52" height="66" viewBox="0 0 100 130">
+          <ellipse cx="50" cy="100" rx="24" ry="22" fill="#F78FB3"/>
+          <circle cx="18" cy="92" r="9" fill="#F78FB3"/><circle cx="82" cy="92" r="9" fill="#F78FB3"/>
+          <circle cx="50" cy="48" r="34" fill="#F78FB3"/>
+          <circle cx="39" cy="53" r="4" fill="#2B2620"/><circle cx="63" cy="53" r="4" fill="#2B2620"/>
+          <path d="M43 64 Q50 69 57 64" stroke="#2B2620" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        </svg>
+        <div style="width:100%;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:100%;height:100%;background:#F78FB3;"></div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- move select -->
+  <div style="margin:12px 20px 0;flex:1;display:flex;flex-direction:column;">
+    <div style="font-size:11px;font-weight:700;color:#8A857C;margin-bottom:8px;">CHOOSE A MOVE</div>
+    <div style="display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:10px;">
+      <div style="background:{{tone.accentSoft}};border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(58,52,46,0.06), 0 10px 20px -10px {{tone.accent}};">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="{{tone.accentDark}}"/></svg>
+          <span style="font-size:12.5px;font-weight:700;color:#3A342E;">Protein Punch</span>
+        </div>
+        <span style="font-size:10.5px;font-weight:600;color:#8A857C;">Power 45 · high crit</span>
+      </div>
+      <div style="background:#F0EEEA;border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 4C15 5 16 9 13 12 C10 15 6 13 6 9 C6 6 8 4.5 12 4Z" fill="#7DBB8B"/></svg>
+          <span style="font-size:12.5px;font-weight:700;color:#3A342E;">Fiber Whirl</span>
+        </div>
+        <span style="font-size:10.5px;font-weight:600;color:#8A857C;">Power 30 · hits twice</span>
+      </div>
+      <div style="background:#F0EEEA;border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9.2l-5.2 1.8L12 16.4l-1.8-5.4L5 9.2l5.2-1.8L12 2z" fill="#FFC24B"/></svg>
+          <span style="font-size:12.5px;font-weight:700;color:#3A342E;">Vitamin Beam</span>
+        </div>
+        <span style="font-size:10.5px;font-weight:600;color:#8A857C;">Power 38 · buffs squad</span>
+      </div>
+      <div style="background:#F0EEEA;border-radius:16px;padding:12px 14px;display:flex;flex-direction:column;gap:2px;">
+        <div style="display:flex;align-items:center;gap:6px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M12 3c4 5 6 8 6 11a6 6 0 01-12 0c0-3 2-6 6-11z" fill="#56B8F5"/></svg>
+          <span style="font-size:12.5px;font-weight:700;color:#3A342E;">Hydro Splash</span>
+        </div>
+        <span style="font-size:10.5px;font-weight:600;color:#8A857C;">Power 26 · heals 10%</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- secondary actions -->
+  <div style="display:flex;gap:10px;padding:12px 20px 22px;">
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#FFFFFF;padding:11px 0;border-radius:16px;border:2px solid {{tone.accentSoft}};">
+      <span style="font-size:12px;font-weight:700;color:#3A342E;">Switch Character</span>
+    </div>
+    <div style="flex:1;display:flex;align-items:center;justify-content:center;background:#FFFFFF;padding:11px 0;border-radius:16px;border:2px solid #F0EEEA;">
+      <span style="font-size:12px;font-weight:700;color:#B9B4AC;">Flee</span>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF","#8FE3A0"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]},
+  "fatigued": {"editor":"boolean","default":false}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    var fatigued = !!this.props.fatigued;
+    return {
+      tone: getTone(accentColor, colorMode),
+      fatigued: fatigued
+    };
+  }
+}
+</script>
+</body>
+</html>

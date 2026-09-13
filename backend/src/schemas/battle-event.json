@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/battle-event.json",
+  "title": "Battle Event",
+  "description": "One event in the battle replay stream. Event types: battleStart, roundStart, miss, attack, faint, roundEnd, victory. Mirrors BattleKit BattleEngine event emission.",
+  "oneOf": [
+    {
+      "type": "object",
+      "required": ["event", "seed"],
+      "properties": {
+        "event": { "const": "battleStart" },
+        "seed": { "type": "string", "description": "BigInt seed as string." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "round"],
+      "properties": {
+        "event": { "const": "roundStart" },
+        "round": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "attacker", "defender"],
+      "properties": {
+        "event": { "const": "miss" },
+        "attacker": { "type": "string" },
+        "defender": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "attacker", "defender", "move", "damage", "crit", "typeMod"],
+      "properties": {
+        "event": { "const": "attack" },
+        "attacker": { "type": "string", "description": "Attacking unit id." },
+        "defender": { "type": "string", "description": "Defending unit id." },
+        "move": { "type": "string", "description": "Move name ('Strike' or '{name} Special')." },
+        "damage": { "type": "integer", "minimum": 0, "description": "Damage dealt after mitigation." },
+        "crit": { "type": "boolean", "description": "Whether this was a critical hit (×1.6)." },
+        "typeMod": { "type": "number", "description": "Type effectiveness multiplier." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "unit"],
+      "properties": {
+        "event": { "const": "faint" },
+        "unit": { "type": "string", "description": "Unit id that fainted." }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "round"],
+      "properties": {
+        "event": { "const": "roundEnd" },
+        "round": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "required": ["event", "winner", "rounds"],
+      "properties": {
+        "event": { "const": "victory" },
+        "winner": { "type": "string", "enum": ["A", "B"] },
+        "rounds": { "type": "integer", "minimum": 1 }
+      },
+      "additionalProperties": false
+    }
+  ]
+}

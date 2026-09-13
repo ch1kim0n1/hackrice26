@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/vitals-snapshot.json",
+  "title": "Vitals Snapshot (Apple Watch Health Data)",
+  "description": "One point-in-time health reading posted by the iOS app via POST /vitals. Persisted in vitals_snapshot table. Capped at MAX_SNAPSHOTS (100) per player. Per-player isolated history. Health data stays in local DB only — never logged with values.",
+  "type": "object",
+  "required": ["seq", "player_id", "payload"],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Auto-increment primary key. Global sequence."
+    },
+    "player_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header."
+    },
+    "payload": {
+      "type": "string",
+      "description": "JSON-encoded StoredSnapshot object (see stored-snapshot-payload.json)."
+    }
+  },
+  "additionalProperties": false
+}

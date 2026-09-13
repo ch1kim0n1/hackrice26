@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/lootbox-drop.json",
+  "title": "Lootbox Drop (Crate Open History)",
+  "description": "One crate open result. Persisted in lootbox_drop table. Capped at MAX_HISTORY (200) per player. Each drop is deterministic from (server_seed, client_seed, nonce) and verifiable after seed rotation.",
+  "type": "object",
+  "required": ["seq", "player_id", "payload"],
+  "properties": {
+    "seq": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Auto-increment primary key. Global sequence, not per-player."
+    },
+    "player_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header."
+    },
+    "payload": {
+      "type": "string",
+      "description": "JSON-encoded LootDrop object (see loot-drop-payload.json)."
+    }
+  },
+  "additionalProperties": false
+}

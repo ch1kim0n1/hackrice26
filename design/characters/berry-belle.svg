@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 130">
+  <!-- Berry Belle — vitamin, epic, #F78FB3 -->
+  <!-- arm nubs -->
+  <circle cx="14" cy="68" r="9" fill="#f13777"/>
+  <circle cx="86" cy="68" r="9" fill="#f13777"/>
+  <!-- teardrop berry body -->
+  <path d="M50 25 C75 25 85 50 82 70 C79 96 66 122 50 122 C34 122 21 96 18 70 C15 50 25 25 50 25 Z" fill="#f13777"/>
+  <!-- calyx leaves -->
+  <ellipse cx="42" cy="18" rx="6" ry="11" fill="#ab0c43" transform="rotate(-18 42 18)"/>
+  <ellipse cx="58" cy="18" rx="6" ry="11" fill="#ab0c43" transform="rotate(18 58 18)"/>
+  <ellipse cx="50" cy="14" rx="6" ry="11" fill="#ab0c43"/>
+  <!-- seed texture -->
+  <ellipse cx="34" cy="76" rx="2" ry="3" fill="#ab0c43" opacity="0.6"/>
+  <ellipse cx="50" cy="88" rx="2" ry="3" fill="#ab0c43" opacity="0.6"/>
+  <ellipse cx="66" cy="76" rx="2" ry="3" fill="#ab0c43" opacity="0.6"/>
+  <ellipse cx="42" cy="99" rx="2" ry="3" fill="#ab0c43" opacity="0.6"/>
+  <ellipse cx="58" cy="99" rx="2" ry="3" fill="#ab0c43" opacity="0.6"/>
+  <ellipse cx="50" cy="108" rx="2" ry="3" fill="#ab0c43" opacity="0.6"/>
+  <!-- face -->
+  <ellipse cx="40" cy="58" rx="7.5" ry="9.5" fill="white"/>
+  <ellipse cx="60" cy="58" rx="7.5" ry="9.5" fill="white"/>
+  <circle cx="41" cy="60" r="5" fill="#2B2620"/>
+  <circle cx="61" cy="60" r="5" fill="#2B2620"/>
+  <circle cx="39" cy="57" r="1.8" fill="white"/>
+  <circle cx="59" cy="57" r="1.8" fill="white"/>
+  <path d="M33 48 Q40 44 47 48" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <path d="M53 48 Q60 44 67 48" stroke="#2B2620" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <ellipse cx="29" cy="69" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.6"/>
+  <ellipse cx="71" cy="69" rx="6" ry="3.6" fill="#FF9F9F" opacity="0.6"/>
+  <path d="M43 71 Q50 77 57 71" stroke="#2B2620" stroke-width="2.6" fill="none" stroke-linecap="round"/>
+</svg>

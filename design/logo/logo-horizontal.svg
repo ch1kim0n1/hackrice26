@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 120" fill="none">
+  <!-- NutriQuest horizontal lockup: mark + wordmark -->
+  <style>
+    .wm { font-family: 'Baloo 2', 'Quicksand', ui-rounded, system-ui, sans-serif;
+          font-weight: 800; font-size: 64px; fill: #3A342E; letter-spacing: -0.5px; }
+  </style>
+
+  <!-- Mark (scaled to 100x100, offset 10,10) -->
+  <g transform="translate(10,10) scale(0.833)">
+    <g stroke="#3A342E" stroke-width="6" stroke-linecap="round" stroke-linejoin="round" fill="none">
+      <path d="M22 38 L22 26 L34 26"/>
+      <path d="M86 26 L98 26 L98 38"/>
+      <path d="M22 82 L22 94 L34 94"/>
+      <path d="M86 94 L98 94 L98 82"/>
+    </g>
+    <path d="M92 18 C94 24 96 26 102 28 C96 30 94 32 92 38 C90 32 88 30 82 28 C88 26 90 24 92 18 Z" fill="#FFC24B"/>
+    <path d="M60 38 C76 38 84 54 82 70 C80 88 72 100 60 100 C48 100 40 88 38 70 C36 54 44 38 60 38 Z" fill="#5FCB82"/>
+    <path d="M60 40 C56 30 50 26 44 26 C46 32 50 38 56 42 Z" fill="#3FAE63"/>
+    <path d="M60 40 C64 30 70 26 76 26 C74 32 70 38 64 42 Z" fill="#3FAE63"/>
+    <ellipse cx="50" cy="62" rx="6" ry="7.5" fill="white"/>
+    <ellipse cx="70" cy="62" rx="6" ry="7.5" fill="white"/>
+    <circle cx="51" cy="64" r="4" fill="#2B2620"/>
+    <circle cx="71" cy="64" r="4" fill="#2B2620"/>
+    <circle cx="49" cy="61" r="1.5" fill="white"/>
+    <circle cx="69" cy="61" r="1.5" fill="white"/>
+    <ellipse cx="42" cy="72" rx="5" ry="3" fill="#FF9F9F" opacity="0.5"/>
+    <ellipse cx="78" cy="72" rx="5" ry="3" fill="#FF9F9F" opacity="0.5"/>
+    <path d="M53 74 Q60 80 67 74" stroke="#2B2620" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="130" y="82" class="wm">NutriQuest</text>
+  <path d="M525 86 C530 92 536 95 542 95 C537 89 532 85 526 83 Z" fill="#5FCB82"/>
+</svg>

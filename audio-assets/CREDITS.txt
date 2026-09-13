@@ -1,0 +1,22 @@
+Audio assets — Kenney Sound Pack
+Source: kenney.nl (via gamesounds.xyz mirror)
+Packs used: UI Audio, Casino Audio, Impact Sounds, RPG Audio, Music Jingles
+
+License: Creative Commons Zero (CC0)
+http://creativecommons.org/publicdomain/zero/1.0/
+Free for personal, educational, and commercial use. Attribution not required.
+
+File map:
+  ui-tap / ui-tap-alt / ui-toggle / ui-hover   UI Audio (click1, click2, switch4, rollover1)
+  battle-hit / -light / -heavy / battle-crit   Impact Sounds (punch medium/heavy, generic light, bell heavy)
+  crate-open / crate-reveal / crate-roll       Casino Audio (cardOpenPackage1, cardTakeOutPackage1, diceThrow1)
+  crate-rumble-loop                            Casino Audio (dieShuffle1)
+  crate-creak / crate-latch                    RPG Audio (creak2, metalLatch)
+  keys-earn / reward-coins                     Casino Audio (chipsStack1), RPG Audio (handleCoins)
+  summon-fanfare / -alt                        Music Jingles (pizzicato_05, steel_00)
+  victory-jingle / -alt                        Music Jingles (steel_05, pizzicato_10)
+
+Format note: OGG Vorbis. iOS AVAudioPlayer does not decode OGG — converted to
+.caf via `afconvert -f caff -d aac -b 128000 in.ogg out.caf`.
+The .caf set is bundled in the app at ios/Sources/NutriQuestUI/Resources/Audio/
+and played by NQSound (ios/Sources/NutriQuestUI/NQSound.swift).

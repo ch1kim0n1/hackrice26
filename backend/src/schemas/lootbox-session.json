@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/lootbox-session.json",
+  "title": "Lootbox Session (Active Fairness Round)",
+  "description": "Per-player active lootbox state: key balance, current commit-reveal seed pair, nonce. Persisted in lootbox_session table. One row per player_id. Source of truth for keys and fairness.",
+  "type": "object",
+  "required": ["player_id", "keys", "server_seed", "server_seed_hash", "client_seed", "nonce", "created_at"],
+  "properties": {
+    "player_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{6,64}$",
+      "description": "Player identifier from X-Player-Id header."
+    },
+    "keys": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Current key balance. Starts at STARTING_KEYS (25). Spent on crate opens, granted by gameplay."
+    },
+    "server_seed": {
+      "type": "string",
+      "description": "Server-side entropy for provably-fair rolls. Revealed only when retired."
+    },
+    "server_seed_hash": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$",
+      "description": "SHA256(server_seed). Published up front so the server cannot change the seed without breaking the hash."
+    },
+    "client_seed": {
+      "type": "string",
+      "minLength": 6,
+      "maxLength": 64,
+      "description": "Player-supplied entropy. Carries over on rotation."
+    },
+    "nonce": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Roll counter. Increments on every crate open. Used in HMAC input."
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. When this seed pair was created."
+    }
+  },
+  "additionalProperties": false
+}

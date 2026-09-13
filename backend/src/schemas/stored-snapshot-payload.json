@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nutriquest.dev/schemas/stored-snapshot-payload.json",
+  "title": "Stored Snapshot (Payload)",
+  "description": "A vitals snapshot as stored, with server-side analysis. Stored as JSON payload inside vitals_snapshot.payload. Contains the raw HealthKit reading and the server's textual analysis.",
+  "type": "object",
+  "required": ["receivedAt", "snapshot", "analysis"],
+  "properties": {
+    "receivedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "ISO 8601. Server timestamp when the snapshot was received."
+    },
+    "snapshot": {
+      "$ref": "health-snapshot.json",
+      "description": "The raw health reading from the iOS client."
+    },
+    "analysis": {
+      "type": "object",
+      "description": "Server-computed textual analysis. Keys are metric names, values are human-readable strings.",
+      "additionalProperties": { "type": "string" }
+    }
+  },
+  "additionalProperties": false
+}

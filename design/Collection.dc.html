@@ -1,0 +1,166 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width:390px;height:844px;background:{{tone.accentBg}};font-family:'Quicksand', ui-rounded, system-ui, sans-serif;position:relative;overflow:hidden;display:flex;flex-direction:column;">
+
+  <div style="position:absolute;top:-60px;left:-60px;width:170px;height:170px;border-radius:50%;background:{{tone.accentSoft}};opacity:0.6;"></div>
+
+  <!-- top bar -->
+  <div style="padding:22px 20px 4px;position:relative;z-index:2;">
+    <div style="display:flex;align-items:center;justify-content:space-between;">
+      <div style="display:flex;align-items:center;gap:7px;">
+        <span style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:22px;color:#3A342E;">My Collection</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9.2l-5.2 1.8L12 16.4l-1.8-5.4L5 9.2l5.2-1.8L12 2z" fill="#FFC24B"/></svg>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px;background:#FFFFFF;padding:7px 13px;border-radius:20px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2c1 4-4 5-4 9a4 4 0 008 0c0-2-1-3-1-3s2 1 2 4a5 5 0 01-10 0c0-5 5-6 5-10z" fill="#FF9F5A"/></svg>
+        <span style="font-weight:700;font-size:13px;color:#3A342E;">3</span>
+      </div>
+    </div>
+
+    <!-- progress: the collection game's real hierarchy device — completion is the thing worth glancing at daily -->
+    <div style="display:flex;align-items:center;gap:8px;margin-top:10px;">
+      <div style="flex:1;height:7px;border-radius:5px;background:#F0EEEA;overflow:hidden;">
+        <div style="width:{{progressPct}}%;height:100%;border-radius:5px;background:linear-gradient(90deg, {{tone.accent}}, {{tone.accentDark}});"></div>
+      </div>
+      <span style="font-size:11px;font-weight:700;color:#8A857C;white-space:nowrap;">{{unlockedCount}}/{{totalCount}}</span>
+    </div>
+  </div>
+
+  <!-- filter pills -->
+  <div style="display:flex;gap:8px;padding:14px 20px 6px;position:relative;z-index:2;overflow:hidden;">
+    <div style="background:{{tone.accent}};color:#FFFFFF;font-size:12px;font-weight:700;padding:11px 16px;border-radius:16px;box-shadow:0 3px 10px -3px {{tone.accent}};">All</div>
+    <div style="background:#FFFFFF;color:#8A857C;font-size:12px;font-weight:700;padding:11px 16px;border-radius:16px;">Veggies</div>
+    <div style="background:#FFFFFF;color:#8A857C;font-size:12px;font-weight:700;padding:11px 16px;border-radius:16px;">Fruits</div>
+    <div style="background:#FFFFFF;color:#8A857C;font-size:12px;font-weight:700;padding:11px 16px;border-radius:16px;">Protein</div>
+  </div>
+
+  <!-- grid -->
+  <div style="flex:1;display:grid;grid-template-columns:repeat(2, minmax(0, 1fr));gap:14px;padding:16px 20px 20px;overflow-y:auto;position:relative;z-index:2;">
+    <sc-for list="{{items}}" as="item" hint-placeholder-count="6">
+      <dc-import name="CharacterCard" char-name="{{item.name}}" color="{{item.color}}" rarity="{{item.rarity}}" state="{{item.state}}" locked="{{item.locked}}" loading="{{item.loading}}" stat-type="{{item.statType}}" hint-size="158px,206px"></dc-import>
+    </sc-for>
+  </div>
+
+  <!-- bottom nav -->
+  <div style="display:flex;align-items:center;justify-content:space-around;background:#FFFFFF;padding:6px 10px 14px;border-top-left-radius:26px;border-top-right-radius:26px;box-shadow:0 -6px 18px -8px rgba(58,52,46,0.14);position:relative;z-index:2;">
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v9a1 1 0 01-1 1h-4v-6h-6v6H5a1 1 0 01-1-1v-9z" stroke="#C9C4BB" stroke-width="1.8" fill="none"/></svg>
+    </div>
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="7" height="7" rx="2" fill="{{tone.accent}}"/><rect x="13" y="4" width="7" height="7" rx="2" stroke="{{tone.accent}}" stroke-width="1.8"/><rect x="4" y="13" width="7" height="7" rx="2" stroke="{{tone.accent}}" stroke-width="1.8"/><rect x="13" y="13" width="7" height="7" rx="2" stroke="{{tone.accent}}" stroke-width="1.8"/></svg>
+    </div>
+    <div style="width:50px;height:50px;border-radius:50%;background:{{tone.accent}};display:flex;align-items:center;justify-content:center;margin-top:-22px;box-shadow:0 4px 10px rgba(58,52,46,0.2);border:4px solid #FFFFFF;">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="2" height="14" fill="white"/><rect x="7" y="5" width="1.4" height="14" fill="white"/><rect x="10.5" y="5" width="2.8" height="14" fill="white"/><rect x="15" y="5" width="1.4" height="14" fill="white"/><rect x="18" y="5" width="3" height="14" fill="white"/></svg>
+    </div>
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 4l4 8-3 2 3 6 8-10h-5l3-6z" stroke="#C9C4BB" stroke-width="1.7" stroke-linejoin="round"/></svg>
+    </div>
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="#C9C4BB" stroke-width="1.8"/><path d="M5 20c1.5-4 4.2-6 7-6s5.5 2 7 6" stroke="#C9C4BB" stroke-width="1.8" stroke-linecap="round"/></svg>
+    </div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF","#8FE3A0"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]},
+  "loading": {"editor":"boolean","default":false}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+// One example of every tier, so the 7-band ramp is proven in the actual grid
+// it has to work in — not just on a swatch sheet.
+var BASE_ITEMS = [
+  { name: 'Broccoli Bud', color: '#5FCB82', rarity: 'common', statType: 'fiber' },
+  { name: 'Spinach Scout', color: '#6FCF97', rarity: 'uncommon', statType: 'vitamin' },
+  { name: 'Sushi Sam', color: '#56B8F5', rarity: 'rare', statType: 'protein' },
+  { name: 'Berry Belle', color: '#F78FB3', rarity: 'epic', statType: 'vitamin' },
+  { name: 'Grape Gus', color: '#B892FF', rarity: 'legendary', statType: 'hydration' },
+  { name: 'Mango Monarch', color: '#FFB86B', rarity: 'mythic', statType: 'vitamin' }
+];
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    var loading = !!this.props.loading;
+    var tone = getTone(accentColor, colorMode);
+    var forceLocked = colorMode === 'none';
+
+    var items;
+    if (loading) {
+      items = Array.from({ length: 6 }, function () {
+        return { name: '', color: '#C9C4BB', rarity: 'common', statType: 'fiber', locked: false, loading: true, state: 'normal' };
+      });
+    } else {
+      items = BASE_ITEMS.map(function (c, i) {
+        var state = 'normal';
+        if (!forceLocked && i === 0) {
+          state = colorMode === 'active' ? 'active' : 'suggested';
+        }
+        return { name: c.name, color: c.color, rarity: c.rarity, statType: c.statType, locked: forceLocked, loading: false, state: state };
+      });
+      items.push({ name: '???', color: '#C9C4BB', rarity: 'rare', statType: 'fiber', locked: true, loading: false, state: 'normal' });
+      items.push({ name: '???', color: '#C9C4BB', rarity: 'secret', statType: 'fiber', locked: true, loading: false, state: 'normal' });
+    }
+
+    var unlockedCount = loading ? 0 : (forceLocked ? 0 : BASE_ITEMS.length);
+    var totalCount = 24;
+
+    return {
+      tone: tone,
+      items: items,
+      unlockedCount: unlockedCount,
+      totalCount: totalCount,
+      progressPct: Math.round((unlockedCount / totalCount) * 100)
+    };
+  }
+}
+</script>
+</body>
+</html>

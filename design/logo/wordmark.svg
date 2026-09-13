@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 520 120" fill="none">
+  <!-- NutriQuest wordmark. Baloo 2 Bold is the app's display font.
+       The Q's tail curls into a leaf shape, echoing the sprout mark. -->
+  <style>
+    .wm { font-family: 'Baloo 2', 'Quicksand', ui-rounded, system-ui, sans-serif;
+          font-weight: 800; font-size: 84px; fill: #3A342E; letter-spacing: -1px; }
+  </style>
+  <text x="0" y="92" class="wm">NutriQuest</text>
+  <!-- Leaf-tail on Q: a small green leaf sprouting from the Q's descender -->
+  <path d="M398 96 C404 104 412 108 420 108 C414 100 408 94 400 92 Z" fill="#5FCB82"/>
+</svg>

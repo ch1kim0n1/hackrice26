@@ -1,0 +1,162 @@
+{
+  "pages": [
+    {
+      "id": "page-screens",
+      "name": "App Screens"
+    },
+    {
+      "id": "page-ui-kit",
+      "name": "UI Kit"
+    }
+  ],
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Home",
+      "page": "page-screens"
+    },
+    {
+      "file": "Collection.dc.html",
+      "x": 500,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Collection",
+      "page": "page-screens"
+    },
+    {
+      "file": "Stats.dc.html",
+      "x": 1000,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Stats",
+      "page": "page-screens"
+    },
+    {
+      "file": "Scan.dc.html",
+      "x": 1500,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Scan",
+      "page": "page-screens"
+    },
+    {
+      "file": "GymCheck.dc.html",
+      "x": 2000,
+      "y": 0,
+      "w": 390,
+      "h": 844,
+      "title": "Gym Check",
+      "page": "page-screens"
+    },
+    {
+      "file": "Battle.dc.html",
+      "x": 0,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "title": "Battle",
+      "page": "page-screens"
+    },
+    {
+      "file": "Profile.dc.html",
+      "x": 500,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "title": "Profile",
+      "page": "page-screens"
+    },
+    {
+      "file": "WatchConnect.dc.html",
+      "x": 1000,
+      "y": 1000,
+      "w": 390,
+      "h": 844,
+      "title": "Connect Apple Watch",
+      "page": "page-screens"
+    },
+    {
+      "file": "CharacterCard.dc.html",
+      "x": 0,
+      "y": 2000,
+      "w": 158,
+      "h": 206,
+      "title": "Character Card (component)",
+      "page": "page-screens"
+    },
+    {
+      "file": "Colors.dc.html",
+      "x": 0,
+      "y": 0,
+      "w": 1240,
+      "h": 1550,
+      "title": "Colors",
+      "page": "page-ui-kit"
+    },
+    {
+      "file": "Typography.dc.html",
+      "x": 1360,
+      "y": 0,
+      "w": 1000,
+      "h": 860,
+      "title": "Typography",
+      "page": "page-ui-kit"
+    },
+    {
+      "file": "Components.dc.html",
+      "x": 0,
+      "y": 1690,
+      "w": 1240,
+      "h": 1420,
+      "title": "Components",
+      "page": "page-ui-kit"
+    },
+    {
+      "file": "Characters.dc.html",
+      "x": 1360,
+      "y": 1690,
+      "w": 1240,
+      "h": 1360,
+      "title": "Characters",
+      "page": "page-ui-kit"
+    },
+    {
+      "file": "States.dc.html",
+      "x": 0,
+      "y": 3250,
+      "w": 1240,
+      "h": 1680,
+      "title": "States",
+      "page": "page-ui-kit"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief-summary",
+      "x": 0,
+      "y": -110,
+      "w": 900,
+      "text": "NutriQuest \u2014 cutesy, chibi-anime-style iOS mockups.\nAccent color follows the selected character (light tint); grey when none is selected; falls back to the best unselected character's color otherwise. Toggle \"accentColor\" + \"colorMode\" on any screen to preview.\nCollection card outlines now show all 7 rarity tiers (common/uncommon/rare/epic/legendary/mythic/secret) as a filled band, not a stroke. Chibi characters carry a small stat-type badge (protein/fiber/vitamin/hydration).\nScan, Gym Check and Connect Apple Watch each have a state tweak (stage/step) to preview their flow; Battle has a \"fatigued\" toggle; Collection has a \"loading\" toggle for the skeleton state.",
+      "page": "page-screens"
+    },
+    {
+      "id": "ui-kit-summary",
+      "x": 0,
+      "y": -110,
+      "w": 900,
+      "text": "UI Kit \u2014 the design system extracted from the screens: colors, elevation tokens, type scale, reusable components, character-building blocks, and every per-screen state (States sheet), including the generic Loading/Empty/Locked/Success patterns.",
+      "page": "page-ui-kit"
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-ui-kit"
+  }
+}

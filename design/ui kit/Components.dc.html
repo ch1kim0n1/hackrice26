@@ -1,0 +1,186 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@700;800&family=Quicksand:wght@500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: #3A342E; }
+    a:hover { color: #6FCF97; }
+    * { box-sizing: border-box; }
+  </style>
+</helmet>
+<div style="width:1240px;min-height:1300px;background:#FFFFFF;font-family:'Quicksand', ui-rounded, system-ui, sans-serif;padding:44px 56px;">
+
+  <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:800;font-size:28px;color:#3A342E;">Components</div>
+  <div style="font-size:13px;font-weight:600;color:#8A857C;margin-top:4px;margin-bottom:32px;">Every reusable piece pulled straight from the app screens. Tweak "accentColor" / "colorMode" above to preview.</div>
+
+  <!-- cards -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:6px;">NQCARD — NEW</div>
+  <div style="font-size:11.5px;font-weight:600;color:#8A857C;margin-bottom:14px;max-width:760px;">The generic white surface every screen builds on — stat chips, banners, list containers. Two elevations cover every use: resting for anything passive, raised for anything that wants a glance first.</div>
+  <div style="display:flex;gap:16px;margin-bottom:36px;">
+    <div style="width:280px;background:#FFFFFF;border-radius:22px;padding:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+      <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:700;font-size:14.5px;color:#3A342E;">Resting — E1</div>
+      <div style="font-size:11.5px;font-weight:600;color:#8A857C;margin-top:4px;">Stat cards, list containers, passive info</div>
+    </div>
+    <div style="width:280px;background:#FFFFFF;border-radius:22px;padding:16px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.55), 0 2px 4px rgba(58,52,46,0.07), 0 14px 28px -12px rgba(58,52,46,0.22), 0 0 24px -6px {{tone.accent}};">
+      <div style="font-family:'Baloo 2', ui-rounded, system-ui;font-weight:700;font-size:14.5px;color:#3A342E;">Raised — E2 + glow</div>
+      <div style="font-size:11.5px;font-weight:600;color:#8A857C;margin-top:4px;">Featured card, today's highlight, active state</div>
+    </div>
+  </div>
+
+  <!-- buttons -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">BUTTONS</div>
+  <div style="display:flex;gap:16px;align-items:center;margin-bottom:36px;">
+    <div style="display:flex;align-items:center;justify-content:center;background:linear-gradient(180deg, {{tone.accent}}, {{tone.accentDark}});padding:14px 26px;border-radius:18px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.35), 0 4px 10px rgba(58,52,46,0.16), 0 0 20px -6px {{tone.accent}};">
+      <span style="font-size:13px;font-weight:700;color:white;">Primary</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;background:#FFFFFF;padding:14px 26px;border-radius:18px;border:2px solid {{tone.accentSoft}};">
+      <span style="font-size:12.5px;font-weight:700;color:#3A342E;">Secondary</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;background:#FFFFFF;padding:14px 26px;border-radius:18px;border:2px solid #F0EEEA;">
+      <span style="font-size:12.5px;font-weight:700;color:#B9B4AC;">Disabled</span>
+    </div>
+    <div style="display:flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;background:{{tone.accent}};box-shadow:0 4px 10px rgba(58,52,46,0.2);border:4px solid #FFFFFF;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="2" height="14" fill="white"/><rect x="7" y="5" width="1.4" height="14" fill="white"/><rect x="10.5" y="5" width="2.8" height="14" fill="white"/><rect x="15" y="5" width="1.4" height="14" fill="white"/><rect x="18" y="5" width="3" height="14" fill="white"/></svg>
+    </div>
+  </div>
+
+  <!-- rarity chips -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">RARITY CHIPS — 7 TIERS</div>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:36px;">
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#8A857C;background:#EFEDE9;padding:4px 10px;border-radius:9px;">COMMON</div>
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#2F9E5C;background:#E4F7EC;padding:4px 10px;border-radius:9px;">UNCOMMON</div>
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#2C7FBF;background:#E3F2FD;padding:4px 10px;border-radius:9px;">RARE</div>
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#8455D6;background:#F1E9FD;padding:4px 10px;border-radius:9px;">EPIC</div>
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#C98A1B;background:#FFF3D9;padding:4px 10px;border-radius:9px;">LEGENDARY</div>
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#C23A57;background:#FDE7EB;padding:4px 10px;border-radius:9px;">MYTHIC</div>
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#FFFFFF;background:#2B2620;padding:4px 10px;border-radius:9px;">SECRET</div>
+  </div>
+
+  <!-- status badges -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">STATUS BADGES</div>
+  <div style="display:flex;gap:12px;margin-bottom:36px;">
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:#FFFFFF;background:{{tone.accent}};padding:4px 10px;border-radius:9px;">ACTIVE</div>
+    <div style="font-size:9.5px;font-weight:800;letter-spacing:0.03em;color:{{tone.accentDark}};background:{{tone.accentSoft}};padding:4px 10px;border-radius:9px;">SUGGESTED</div>
+  </div>
+
+  <!-- stat type chips -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">STAT-TYPE ICONS</div>
+  <div style="display:flex;gap:16px;margin-bottom:36px;">
+    <div style="display:flex;align-items:center;gap:7px;background:{{tone.accentBg}};padding:8px 14px;border-radius:14px;">
+      <div style="width:22px;height:22px;border-radius:7px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M13 2L4 14h6l-1 8 9-12h-6l1-8z" fill="white"/></svg></div>
+      <span style="font-size:11.5px;font-weight:700;color:#3A342E;">Protein</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px;background:{{tone.accentBg}};padding:8px 14px;border-radius:14px;">
+      <div style="width:22px;height:22px;border-radius:7px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 4C15 5 16 9 13 12 C10 15 6 13 6 9 C6 6 8 4.5 12 4Z" fill="white"/></svg></div>
+      <span style="font-size:11.5px;font-weight:700;color:#3A342E;">Fiber</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px;background:{{tone.accentBg}};padding:8px 14px;border-radius:14px;">
+      <div style="width:22px;height:22px;border-radius:7px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 2l1.8 5.4L19 9.2l-5.2 1.8L12 16.4l-1.8-5.4L5 9.2l5.2-1.8L12 2z" fill="white"/></svg></div>
+      <span style="font-size:11.5px;font-weight:700;color:#3A342E;">Vitamin</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px;background:{{tone.accentBg}};padding:8px 14px;border-radius:14px;">
+      <div style="width:22px;height:22px;border-radius:7px;background:{{tone.accentDark}};display:flex;align-items:center;justify-content:center;"><svg width="11" height="11" viewBox="0 0 24 24" fill="none"><path d="M12 3c4 5 6 8 6 11a6 6 0 01-12 0c0-3 2-6 6-11z" fill="white"/></svg></div>
+      <span style="font-size:11.5px;font-weight:700;color:#3A342E;">Hydration</span>
+    </div>
+  </div>
+
+  <!-- progress bars -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">STAT BARS</div>
+  <div style="display:flex;flex-direction:column;gap:10px;max-width:420px;margin-bottom:36px;">
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:11.5px;font-weight:600;color:#8A857C;width:64px;">Protein</span>
+      <div style="flex:1;height:8px;border-radius:6px;background:#F0EEEA;overflow:hidden;"><div style="width:82%;height:100%;border-radius:6px;background:{{tone.accent}};"></div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:11.5px;font-weight:600;color:#8A857C;width:64px;">HP</span>
+      <div style="flex:1;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:64%;height:100%;background:#56B8F5;"></div></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;">
+      <span style="font-size:11.5px;font-weight:600;color:#8A857C;width:64px;">HP · low</span>
+      <div style="flex:1;height:6px;border-radius:4px;background:#F0EEEA;overflow:hidden;"><div style="width:22%;height:100%;background:#E2765F;"></div></div>
+    </div>
+  </div>
+  <div style="font-size:11px;font-weight:600;color:#B9B4AC;margin-top:-24px;margin-bottom:36px;max-width:420px;">HP bars shift to the warning colour under ~35%, overriding the character's own colour — critical health should read instantly, not just numerically.</div>
+
+  <!-- banners -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">BANNERS — E1 INFO / E2 ATTENTION</div>
+  <div style="display:flex;flex-direction:column;gap:10px;max-width:420px;margin-bottom:36px;">
+    <div style="padding:10px 14px;border-radius:16px;background:#FFFFFF;display:flex;align-items:center;gap:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.6), 0 1px 2px rgba(58,52,46,0.05), 0 6px 16px -9px rgba(58,52,46,0.16);">
+      <div style="width:9px;height:9px;border-radius:50%;background:{{tone.accent}};"></div>
+      <span style="font-size:12px;font-weight:600;color:#5B564E;">Display character: <strong style="color:#3A342E;">Broccoli Bud</strong></span>
+    </div>
+    <div style="padding:10px 14px;border-radius:16px;background:#FFF1E0;display:flex;align-items:center;gap:9px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(58,52,46,0.06), 0 10px 20px -10px rgba(217,139,43,0.35);">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 3l9 16H3z" stroke="#D98B2B" stroke-width="1.8" stroke-linejoin="round"/><path d="M12 10v3.5" stroke="#D98B2B" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.5" r="0.9" fill="#D98B2B"/></svg>
+      <span style="font-size:11.5px;font-weight:700;color:#A66A1E;">Squad fatigued — recovers in 1h 42m</span>
+    </div>
+    <div style="padding:10px 14px;border-radius:16px;background:{{tone.accentSoft}};display:flex;align-items:center;gap:9px;box-shadow:inset 0 1px 0 rgba(255,255,255,0.5), 0 2px 4px rgba(58,52,46,0.06), 0 10px 22px -10px {{tone.accent}};">
+      <div style="width:8px;height:8px;border-radius:50%;background:{{tone.accent}};"></div>
+      <span style="font-size:11.5px;font-weight:700;color:{{tone.accentDark}};">Squad ready — +18% boost active</span>
+    </div>
+  </div>
+
+  <!-- nav bar -->
+  <div style="font-size:12px;font-weight:800;letter-spacing:0.05em;color:#8A857C;margin-bottom:14px;">BOTTOM NAV</div>
+  <div style="max-width:390px;display:flex;align-items:center;justify-content:space-around;background:#FAFAF8;padding:10px 10px 14px;border-radius:26px;">
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M4 11l8-7 8 7v9a1 1 0 01-1 1h-4v-6h-6v6H5a1 1 0 01-1-1v-9z" fill="{{tone.accent}}"/></svg></div>
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><rect x="4" y="4" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/><rect x="13" y="4" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/><rect x="4" y="13" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/><rect x="13" y="13" width="7" height="7" rx="2" stroke="#C9C4BB" stroke-width="1.8"/></svg></div>
+    <div style="width:50px;height:50px;border-radius:50%;background:{{tone.accent}};display:flex;align-items:center;justify-content:center;margin-top:-22px;box-shadow:0 4px 10px rgba(58,52,46,0.2);border:4px solid #FAFAF8;"><svg width="19" height="19" viewBox="0 0 24 24" fill="none"><rect x="3" y="5" width="2" height="14" fill="white"/><rect x="7" y="5" width="1.4" height="14" fill="white"/><rect x="10.5" y="5" width="2.8" height="14" fill="white"/><rect x="15" y="5" width="1.4" height="14" fill="white"/><rect x="18" y="5" width="3" height="14" fill="white"/></svg></div>
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><path d="M6 4l4 8-3 2 3 6 8-10h-5l3-6z" stroke="#C9C4BB" stroke-width="1.7" stroke-linejoin="round"/></svg></div>
+    <div style="width:44px;height:44px;display:flex;align-items:center;justify-content:center;"><svg width="22" height="22" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="3.4" stroke="#C9C4BB" stroke-width="1.8"/><path d="M5 20c1.5-4 4.2-6 7-6s5.5 2 7 6" stroke="#C9C4BB" stroke-width="1.8" stroke-linecap="round"/></svg></div>
+  </div>
+
+</div>
+</x-dc>
+<script data-dc-script data-props='{
+  "accentColor": {"editor":"color","default":"#5FCB82","options":["#5FCB82","#56B8F5","#F78FB3","#FFB86B","#B892FF"]},
+  "colorMode": {"editor":"enum","default":"active","options":["active","best-unselected","none"]}
+}'>
+function hexToHsl(hex) {
+  hex = hex.replace('#', '');
+  var r = parseInt(hex.substring(0,2),16)/255;
+  var g = parseInt(hex.substring(2,4),16)/255;
+  var b = parseInt(hex.substring(4,6),16)/255;
+  var max = Math.max(r,g,b), min = Math.min(r,g,b);
+  var h, s, l = (max+min)/2;
+  if (max === min) { h = 0; s = 0; }
+  else {
+    var d = max-min;
+    s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+    if (max === r) h = (g-b)/d + (g < b ? 6 : 0);
+    else if (max === g) h = (b-r)/d + 2;
+    else h = (r-g)/d + 4;
+    h /= 6;
+  }
+  return { h: h*360, s: s*100, l: l*100 };
+}
+function hslStr(h,s,l) { return 'hsl(' + h.toFixed(1) + ', ' + s.toFixed(1) + '%, ' + l.toFixed(1) + '%)'; }
+function getTone(accentColor, colorMode) {
+  if (colorMode === 'none') {
+    return { accent: '#9C978F', accentDark: '#6B665F', accentSoft: '#ECEAE6', accentBg: '#FAFAF8' };
+  }
+  var hsl = hexToHsl(accentColor);
+  var sat = Math.max(hsl.s, 45);
+  return {
+    accent: hslStr(hsl.h, sat, 58),
+    accentDark: hslStr(hsl.h, sat, 36),
+    accentSoft: hslStr(hsl.h, Math.min(sat,55), 90),
+    accentBg: hslStr(hsl.h, Math.min(sat,40), 97)
+  };
+}
+class Component extends DCLogic {
+  renderVals() {
+    var accentColor = this.props.accentColor || '#5FCB82';
+    var colorMode = this.props.colorMode || 'active';
+    return { tone: getTone(accentColor, colorMode) };
+  }
+}
+</script>
+</body>
+</html>
