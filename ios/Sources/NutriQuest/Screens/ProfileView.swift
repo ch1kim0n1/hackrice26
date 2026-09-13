@@ -19,14 +19,25 @@ struct ProfileView: View {
     var rows: [ProfileSettingsRow]
 
     @Environment(\.nqAccent) private var accent
-    @State private var showJourney = ProcessInfo.processInfo.arguments.contains("-uiJourney")
+    /// QA launch args are honored in debug builds only — a stale
+    /// `-uiJourney` (or friends) left on a simulator launch must never
+    /// hijack a real profile tap.
+    private static func qaArg(_ name: String) -> Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains(name)
+        #else
+        return false
+        #endif
+    }
+
+    @State private var showJourney = ProfileView.qaArg("-uiJourney")
     /// QA hook, matching RootTabView's `-uiTab`: `-uiHumanGate` launches
     /// straight into the human-gate web game for screenshots/demo.
-    @State private var showHumanGate = ProcessInfo.processInfo.arguments.contains("-uiHumanGate")
+    @State private var showHumanGate = ProfileView.qaArg("-uiHumanGate")
     /// `-uiWatch` opens Connected devices (WatchConnectView) directly.
-    @State private var showWatchQA = ProcessInfo.processInfo.arguments.contains("-uiWatch")
+    @State private var showWatchQA = ProfileView.qaArg("-uiWatch")
     /// QA hook: `-uiBodyMetrics` opens the body-and-goals editor directly.
-    @State private var showBodyMetrics = ProcessInfo.processInfo.arguments.contains("-uiBodyMetrics")
+    @State private var showBodyMetrics = ProfileView.qaArg("-uiBodyMetrics")
     @State private var showAccount = false
 
     var body: some View {
