@@ -180,7 +180,7 @@ struct PortalWheelView: View {
                         .foregroundStyle(rarity.badgeText)
                         .nqPadding(.badge)
                         .background(rarity.badgeBackground)
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                     Text(String(repeating: "★", count: max(1, monster.stars)))
                         .font(NQText.microS.font)
                         .foregroundStyle(NQTheme.gold)
@@ -226,7 +226,7 @@ struct PortalWheelView: View {
                         }
                         .nqPadding(.chip)
                         .background((entry.won ? NQTheme.success : NQTheme.inkFaint).opacity(0.14))
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                         .accessibilityLabel(
                             entry.won
                                 ? "Won \(String(format: "%.2f", entry.multiplier)) times on \(entry.pick)"
@@ -465,7 +465,7 @@ struct PortalWheelView: View {
                             .foregroundStyle(Color(hex: band.colorHex))
                             .nqPadding(.chip)
                             .background(Color(hex: band.colorHex).opacity(0.16))
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -956,7 +956,7 @@ struct PortalWheelResultView: View {
                 .foregroundStyle(rarity.badgeText)
                 .nqPadding(.chip)
                 .background(rarity.badgeBackground)
-                .clipShape(Capsule())
+                .clipShape(NQTicketShape())
 
             Text(reward.character.name)
                 .font(NQText.displayL.font)

@@ -356,7 +356,7 @@ struct OBPhoneMockup: View {
                     .foregroundStyle(OBTheme.ink)
                     .padding(.horizontal, 9)
                     .padding(.vertical, 4)
-                    .background(Capsule().fill(NQTheme.background))
+                    .background(NQTicketShape().fill(NQTheme.background))
                 Image(systemName: "barcode.viewfinder")
                     .font(.system(size: 10))
                     .foregroundStyle(.white)
@@ -369,7 +369,7 @@ struct OBPhoneMockup: View {
             }
             .padding(.horizontal, 8)
             .padding(.vertical, 5)
-            .background(Capsule().fill(.white.opacity(0.16)))
+            .background(NQTicketShape().fill(.white.opacity(0.16)))
             HStack {
                 ZStack {
                     Circle().fill(.white.opacity(0.16)).frame(width: 28, height: 28)

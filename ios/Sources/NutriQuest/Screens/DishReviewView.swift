@@ -190,8 +190,8 @@ struct DishReviewView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
-        .background(tint.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusM))
+        .background(NQTicketShape().fill(tint.opacity(0.12)))
+        .overlay { NQTicketShape().strokeBorder(tint.opacity(0.5), lineWidth: 1.5) }
     }
 
     // MARK: - Item row

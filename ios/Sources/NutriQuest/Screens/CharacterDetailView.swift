@@ -107,7 +107,7 @@ struct CharacterDetailView: View {
             .foregroundStyle(accent.accentDark)
             .nqPadding(.badge)
             .padding(.horizontal, 4)
-            .background(Capsule().fill(accent.accentSoft))
+            .background(NQTicketShape().fill(accent.accentSoft))
 
             Spacer()
         }
@@ -237,7 +237,7 @@ struct CharacterDetailView: View {
             .font(NQText.micro.font.weight(.bold))
             .foregroundStyle(NQTheme.inkMuted)
             .nqPadding(.badge)
-            .background(Capsule().fill(NQTheme.hairline))
+            .background(NQTicketShape().fill(NQTheme.hairline))
     }
 
     private func effectLabel(_ effect: StatusEffectID, chance: Double?) -> String {

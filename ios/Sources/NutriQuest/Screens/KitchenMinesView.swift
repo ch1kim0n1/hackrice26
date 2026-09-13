@@ -199,7 +199,7 @@ struct KitchenMinesView: View {
                         .foregroundStyle(rarity.badgeText)
                         .nqPadding(.badge)
                         .background(rarity.badgeBackground)
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                     Text(String(repeating: "★", count: max(1, monster.stars)))
                         .font(NQText.microS.font)
                         .foregroundStyle(NQTheme.gold)
@@ -274,7 +274,7 @@ struct KitchenMinesView: View {
                             .frame(maxWidth: .infinity)
                             .nqPadding(.chip)
                             .background(mines == preset ? accent.accent : NQTheme.surface)
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("\(preset) burnt dishes")

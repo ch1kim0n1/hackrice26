@@ -131,8 +131,8 @@ struct BodyMetricsView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, NQTheme.spaceS)
-        .background(color.opacity(0.16))
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusS))
+        .background(NQTicketShape().fill(color.opacity(0.16)))
+        .overlay { NQTicketShape().strokeBorder(color.opacity(0.5), lineWidth: 1.5) }
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(label) \(grams) grams")
     }

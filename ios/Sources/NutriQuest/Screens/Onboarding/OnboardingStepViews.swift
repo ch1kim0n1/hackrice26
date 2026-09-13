@@ -443,15 +443,15 @@ struct OBAppleHealthStep: View {
         .accessibilityHidden(true)
     }
 
-    /// Small white capsule label used around the illustration, styled like
-    /// home's streak pill (white, ink stroke, sticker shadow).
+    /// Small ticket label used around the illustration, styled like the
+    /// app's chips (ticket cut, ink stroke, sticker shadow).
     private func labelPill(_ text: String) -> some View {
         Text(text)
             .font(NQFont.body.font(13))
             .foregroundStyle(OBTheme.ink)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .nqPlate(Capsule(), elevation: .sticker, inkStroke: true, lineWidth: 1.5)
+            .nqPlate(NQTicketShape(), elevation: .sticker, inkStroke: true, lineWidth: 1.5)
     }
 }
 

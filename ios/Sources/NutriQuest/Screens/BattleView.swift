@@ -236,7 +236,7 @@ struct BattleView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background {
-                Capsule()
+                NQTicketShape()
                     .fill(LinearGradient(colors: [accent.accent, accent.accentDark], startPoint: .top, endPoint: .bottom))
                     .nqElevation(.card)
             }
@@ -430,7 +430,7 @@ struct BattleView: View {
                     .foregroundStyle(kind.tint)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(kind.tint.opacity(0.16)))
+                    .background(NQTicketShape().fill(kind.tint.opacity(0.16)))
             }
         }
     }
@@ -488,7 +488,7 @@ struct BattleView: View {
                 .foregroundStyle(NQTheme.ink)
                 .nqPadding(.badge)
                 .padding(.horizontal, 6)
-                .nqPlate(Capsule(), elevation: .soft)
+                .nqPlate(NQTicketShape(), elevation: .soft)
             Rectangle().fill(NQTheme.hairline).frame(height: 1.5)
         }
         .accessibilityHidden(true)

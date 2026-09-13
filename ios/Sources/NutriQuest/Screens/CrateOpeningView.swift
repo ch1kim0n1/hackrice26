@@ -171,7 +171,7 @@ struct CrateOpeningView: View {
                         .background(
                             self.tab == tab ? accent.accent.opacity(0.12) : Color.clear
                         )
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                 }
             }
         }
@@ -276,7 +276,7 @@ struct CrateOpeningView: View {
                             .foregroundStyle(NQTheme.background)
                             .nqPadding(.badge)
                             .background(claiming ? NQTheme.lockedFill : accent.accent)
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                     .buttonStyle(.plain)
                     .disabled(claiming)
@@ -330,7 +330,7 @@ struct CrateOpeningView: View {
                 .nqPadding(.button)
                 .background(accent.accent)
                 .foregroundStyle(accent.accent.readableTextColor())
-                .clipShape(Capsule())
+                .clipShape(NQTicketShape())
             }
             .buttonStyle(NQPressableStyle())
             .disabled(opening)
@@ -475,7 +475,7 @@ struct CrateOpeningView: View {
                         .foregroundStyle(NQTheme.background)
                         .nqPadding(.badge)
                         .background(NQTheme.gold)
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Sell \(item.character.name) for \(item.value) coins")

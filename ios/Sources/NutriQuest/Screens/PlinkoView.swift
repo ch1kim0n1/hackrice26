@@ -203,7 +203,7 @@ struct PlinkoView: View {
                             .foregroundStyle(entry.multiplier >= 1 ? NQTheme.success : NQTheme.inkMuted)
                             .nqPadding(.chip)
                             .background((entry.multiplier >= 1 ? NQTheme.success : NQTheme.inkFaint).opacity(0.14))
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                 }
             }
@@ -687,7 +687,7 @@ struct PlinkoResultView: View {
                 .foregroundStyle(rarity.badgeText)
                 .nqPadding(.chip)
                 .background(rarity.badgeBackground)
-                .clipShape(Capsule())
+                .clipShape(NQTicketShape())
 
             Text(reward.character.name)
                 .font(NQText.displayL.font)
