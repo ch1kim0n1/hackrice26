@@ -171,7 +171,7 @@ export const COOKBOOKS: CookbookSpec[] = [
   {
     id: "super-simple-cookbook",
     name: "Super Simple Cookbook",
-    price: 100,
+    price: 1_000,
     odds: { common: 1.0, uncommon: 0.0, rare: 0.0, epic: 0.0,
             legendary: 0.0, mythic: 0.0, secret: 0.0 }
   },

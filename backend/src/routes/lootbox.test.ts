@@ -3,6 +3,7 @@ import express from "express";
 import { rmSync } from "fs";
 import { tmpdir } from "os";
 import path from "path";
+import type { Rarity } from "../types";
 
 // ============================================================================
 // Cookbooks: four fixed-price books whose published odds pick a rarity Case,
@@ -98,13 +99,27 @@ describe("cookbooks", () => {
         "secret-cookbook",
         "super-simple-cookbook"
       ]);
-      expect(byId["super-simple-cookbook"].price).toBe(100);
+      expect(byId["super-simple-cookbook"].price).toBe(1_000);
       expect(byId["home-cookbook"].price).toBe(1_600);
       expect(byId["chefs-cookbook"].price).toBe(3_300);
       expect(byId["master-cookbook"].price).toBe(9_200);
       expect(byId["forbidden-cookbook"].price).toBe(33_500);
       expect(byId["secret-cookbook"].price).toBe(100_000);
     });
+  });
+
+  it("never pays back more than a book costs on average", async () => {
+    // Selling pays full net worth, so a book whose expected drop value beats
+    // its price is an infinite coin loop: buy, open, sell, repeat.
+    const { COOKBOOKS } = await import("../game/spec");
+    const { expectedMintValue } = await import("../game/rarityBands");
+    for (const book of COOKBOOKS) {
+      const ev = Object.entries(book.odds).reduce(
+        (sum, [rarity, p]) => sum + p * expectedMintValue(rarity as Rarity),
+        0
+      );
+      expect(ev, `${book.id} EV ${Math.round(ev)} vs price ${book.price}`).toBeLessThan(book.price);
+    }
   });
 
   it("publishes the spec's 7-tier odds table for each book", async () => {
