@@ -4,6 +4,11 @@ import { buildApp } from "../index";
 
 async function freshApp() {
   process.env.NUTRIQUEST_DB = ":memory:";
+  // A developer's local .env may configure Persona, which turns login into a
+  // two-step challenge (covered in personaLogin.test.ts). These tests pin the
+  // plain password flow.
+  process.env.PERSONA_API_KEY = "";
+  process.env.PERSONA_TEMPLATE_ID = "";
   vi.resetModules();
   const { buildApp } = await import("../index");
   const app = buildApp();
