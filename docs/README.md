@@ -26,6 +26,7 @@ NutriQuest is a daily nutrition RPG for iOS: every meal you scan summons an anim
 8. [DATABASE.md](DATABASE.md) — migrations, RLS, and running the schema tests
 9. [TIGERDATA-MIGRATION.md](TIGERDATA-MIGRATION.md) — repository-wide database inventory, target architecture, and migration sequence
 10. [RANK-PROGRESSION.md](RANK-PROGRESSION.md) — the consistency ladder: rank points, squad fatigue, seasons, and the leaderboard
+11. [ANIMATIONS-AND-EFFECTS.md](ANIMATIONS-AND-EFFECTS.md) — audit of the existing `NutriQuestUI` animation kit, the gaps per screen, and the phased plan to close them
 
 Working with an AI assistant? Start at [`CLAUDE.md`](../CLAUDE.md) in the repo
 root — it covers how to run and test each layer, and the traps that are
