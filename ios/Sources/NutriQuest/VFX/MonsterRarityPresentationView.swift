@@ -126,11 +126,13 @@ private struct RarityAnimatedArtwork<CharacterImage: View>: View {
             .background(alignment: .bottom) {
                 // Above the glow, and outside the effect stack's mask so the
                 // flames can rise past the top of the portrait.
-                if let flame = configuration.flame {
-                    RarityFlameView(flame: flame, time: time)
-                        .frame(width: imageSize.width + RarityFlameView.sideBleed * 2,
-                               height: imageSize.height + RarityFlameView.topBleed + RarityFlameView.bottomBleed)
-                        .offset(y: RarityFlameView.bottomBleed)
+                if let tier = configuration.flame {
+                    // Canvas bottom sits `inset` below the portrait, so the
+                    // 150×200 particle space's floor lands at the monster's feet.
+                    MonsterAuraView(tier: tier, isDetailedView: false, isActive: animating)
+                        .frame(width: imageSize.width * MonsterAuraView.widthRatio + MonsterAuraView.inset * 2,
+                               height: imageSize.height * MonsterAuraView.heightRatio + MonsterAuraView.inset * 2)
+                        .offset(y: MonsterAuraView.inset)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                 }
@@ -196,107 +198,145 @@ private struct RarityAnimatedArtwork<CharacterImage: View>: View {
     }
 }
 
-/// Port of the cosmic-flame prototype, made stateless: each puff slot replays
-/// a short life on its own clock and re-rolls spawn point and velocity every
-/// cycle, so nothing is stored between frames.
-private struct RarityFlameView: View {
-    let flame: RarityAnimationConfiguration.Flame
-    let time: Double
+// MARK: - Monster aura flame
 
-    /// How far the canvas reaches past the portrait, so edge puffs fade out
-    /// instead of being cut off by the canvas bounds.
-    static let sideBleed: CGFloat = 60
-    static let topBleed: CGFloat = 96
-    static let bottomBleed: CGFloat = 28
+/// Tiers that burn; Common and Uncommon get no flame.
+enum RarityTier {
+    case rare, epic, legendary, mythic, secret
+
+    /// Particle colors. A tier with several gives each particle one of them at
+    /// spawn, so the colors overlap and mix.
+    var colors: [Color] {
+        switch self {
+        case .rare: return [.blue]
+        case .epic: return [.purple]
+        case .legendary: return [.yellow] // Gold
+        case .mythic: return [.red]
+        case .secret:
+            // White, silver and light blue overlapping.
+            return [.white, Color(red: 0.75, green: 0.78, blue: 0.83), Color(red: 0.55, green: 0.80, blue: 1)]
+        }
+    }
+}
+
+struct AuraParticle: Identifiable {
+    let id = UUID()
+    var x: CGFloat
+    var y: CGFloat
+    var vx: CGFloat
+    var vy: CGFloat
+    var radius: CGFloat
+    var initialRadius: CGFloat
+    var maxLife: Double
+    var life: Double
+    var isSpark: Bool
+    /// Index into the tier's colors, fixed for the particle's life.
+    var colorIndex: Int
+}
+
+/// Flame behind a monster. Particles live in a 150×200 space (the Squad
+/// portrait at ~1.6×), step once per frame, and the canvas scales to fit.
+struct MonsterAuraView: View {
+    let tier: RarityTier
+    let isDetailedView: Bool
+    /// Off-screen or Reduce Motion: freeze instead of stepping.
+    var isActive = true
+
+    static let space = CGSize(width: 150, height: 200)
+    /// Particle space relative to the 96×124 Squad portrait it was tuned on.
+    static let widthRatio: CGFloat = 150.0 / 96.0
+    static let heightRatio: CGFloat = 200.0 / 124.0
+    /// Margin so blurred puffs at the edges aren't cut off.
+    static let inset: CGFloat = 30
+
+    @State private var particles: [AuraParticle] = []
 
     var body: some View {
-        Canvas { context, size in
-            // Behind a character a centered flame is mostly hidden, so the
-            // emitter spans wider than the portrait at its feet and each puff
-            // leans outward to lick up around the silhouette.
-            let portraitWidth = size.width - Self.sideBleed * 2
-            let scale = portraitWidth / 126
-            let emitter = CGPoint(x: size.width / 2, y: size.height - Self.bottomBleed - 6)
-            let halfWidth = portraitWidth * 0.66
-            var puffs = context
-            puffs.blendMode = flame.dark ? .normal : .plusLighter
-            var edgeLight = context
-            edgeLight.blendMode = .plusLighter
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: !isActive)) { timeline in
+            Canvas { context, size in
+                // Blend on the shared canvas (not a layer per particle) so
+                // overlapping puffs actually add up and glow.
+                var canvas = context
+                canvas.blendMode = .plusLighter
+                canvas.translateBy(x: Self.inset, y: Self.inset)
+                canvas.scaleBy(x: (size.width - Self.inset * 2) / Self.space.width,
+                               y: (size.height - Self.inset * 2) / Self.space.height)
 
-            for index in 0..<flame.count {
-                let life = 0.5 + 0.5 * unit(index, 0, 1)
-                let shifted = time + unit(index, 0, 2) * life
-                let cycle = Int((shifted / life).rounded(.down))
-                let age = shifted / life - Double(cycle)
-                let seconds = age * life
+                for particle in particles {
+                    let progress = particle.life / particle.maxLife
+                    guard progress > 0 else { continue }
 
-                let side = unit(index, cycle, 3) * 2 - 1
-                let spawnX = side * halfWidth
-                let spawnY = (unit(index, cycle, 4) - 0.5) * 16 * scale
-                let vx = side * 28 * scale + (unit(index, cycle, 5) - 0.5) * 30 * scale
-                let vy = (unit(index, cycle, 6) * 2.5 + 1.5) * 60 * scale
-                let startRadius = (unit(index, cycle, 7) * 25 + 15) * scale
-                let radius = max(0.3, startRadius - 14 * seconds * scale)
-                let strength = (1 - age) * min(1, age / 0.08)
+                    var color = tier.colors[particle.colorIndex % tier.colors.count]
+                    var opacity = progress * 0.45
+                    if particle.isSpark {
+                        color = .white
+                        opacity = progress * 0.60
+                    }
 
-                let center = CGPoint(x: emitter.x + spawnX + vx * seconds,
-                                     y: emitter.y + spawnY - vy * seconds)
-                // Each puff is drawn around the origin of a space stretched
-                // upward, so it reads as a tongue of flame, not a round blob.
-                let circle = Path(ellipseIn: CGRect(x: -radius, y: -radius, width: radius * 2, height: radius * 2))
-                let roll = unit(index, cycle, 8)
-
-                if flame.dark && roll < 0.25 {
-                    stretch(edgeLight, at: center).fill(circle, with: .radialGradient(
-                        Gradient(stops: [
-                            .init(color: flame.edge.opacity(strength * 0.5), location: 0),
-                            .init(color: flame.edge.opacity(0), location: 1)
-                        ]), center: .zero, startRadius: 0, endRadius: radius))
-                    continue
+                    let rect = CGRect(
+                        x: particle.x - particle.radius,
+                        y: particle.y - particle.radius,
+                        width: particle.radius * 2,
+                        height: particle.radius * 2
+                    )
+                    canvas.fill(Path(ellipseIn: rect), with: .radialGradient(
+                        Gradient(colors: [color.opacity(opacity), color.opacity(0)]),
+                        center: CGPoint(x: rect.midX, y: rect.midY),
+                        startRadius: 0,
+                        endRadius: particle.radius
+                    ))
                 }
-
-                let stops: [Gradient.Stop]
-                if flame.dark {
-                    stops = [
-                        .init(color: flame.core.opacity(strength * 0.75), location: 0),
-                        .init(color: flame.body.opacity(strength * 0.4), location: 0.5),
-                        .init(color: flame.body.opacity(0), location: 1)
-                    ]
-                } else if roll < 0.12 {
-                    // Bright white spark at the heart of the flame.
-                    stops = [
-                        .init(color: .white.opacity(strength * 0.8), location: 0),
-                        .init(color: .white.opacity(strength * 0.3), location: 0.3),
-                        .init(color: .white.opacity(0), location: 1)
-                    ]
-                } else {
-                    stops = [
-                        .init(color: flame.core.opacity(strength * 0.8), location: 0),
-                        .init(color: flame.body.opacity(strength * 0.35), location: 0.4),
-                        .init(color: flame.body.opacity(0), location: 1)
-                    ]
-                }
-                stretch(puffs, at: center).fill(circle, with: .radialGradient(
-                    Gradient(stops: stops), center: .zero, startRadius: 0, endRadius: radius))
             }
+            .blur(radius: 5)
+            .drawingGroup()
+            .onChange(of: timeline.date) { _ in
+                updateParticles()
+            }
+        }
+        .onAppear {
+            // Pre-warm so a card scrolling into view shows a full flame
+            // instead of growing one from nothing.
+            guard isActive, particles.isEmpty else { return }
+            for _ in 0..<60 { updateParticles() }
         }
     }
 
-    private func stretch(_ context: GraphicsContext, at center: CGPoint) -> GraphicsContext {
-        var local = context
-        local.translateBy(x: center.x, y: center.y)
-        local.scaleBy(x: 0.8, y: 1.45)
-        return local
-    }
+    private func updateParticles() {
+        particles = particles.compactMap { particle -> AuraParticle? in
+            var updated = particle
+            updated.life -= 1
+            guard updated.life > 0 else { return nil }
 
-    /// Deterministic 0..<1 per puff slot, life cycle and property (splitmix64).
-    private func unit(_ index: Int, _ cycle: Int, _ salt: UInt64) -> Double {
-        var x = UInt64(truncatingIfNeeded: index) &* 0x9E37_79B9_7F4A_7C15
-        x ^= UInt64(truncatingIfNeeded: cycle) &* 0xC2B2_AE3D_27D4_EB4F
-        x ^= salt &* 0x1656_67B1_9E37_79F9
-        x = (x ^ (x >> 30)) &* 0xBF58_476D_1CE4_E5B9
-        x = (x ^ (x >> 27)) &* 0x94D0_49BB_1331_11EB
-        x ^= x >> 31
-        return Double(x >> 11) / 9_007_199_254_740_992.0
+            updated.x += updated.vx
+            updated.y += updated.vy
+            updated.radius = updated.initialRadius * CGFloat(updated.life / updated.maxLife)
+            return updated
+        }
+
+        // Particles live ~60% longer than the prototype's, so the cap rises with
+        // them to keep the same density.
+        let maxAllowedParticles = isDetailedView ? 220 : 72
+        let spawnCount = isDetailedView ? 6 : 3
+        guard particles.count < maxAllowedParticles else { return }
+
+        for _ in 0..<spawnCount {
+            let isSpark = Double.random(in: 0...1) < 0.15
+            let initialRadius = isSpark ? CGFloat.random(in: 12...20) : CGFloat.random(in: 26...38)
+            // One roll for both, so a particle never starts above full life.
+            // Slower than the prototype: ~40% less speed, longer life, same height.
+            let life = Double.random(in: 40...60)
+            particles.append(AuraParticle(
+                x: CGFloat.random(in: 25...125),
+                y: CGFloat.random(in: 170...195),
+                vx: CGFloat.random(in: -0.3...0.3),
+                vy: CGFloat.random(in: -4.0 ... -2.2),
+                radius: initialRadius,
+                initialRadius: initialRadius,
+                maxLife: life,
+                life: life,
+                isSpark: isSpark,
+                colorIndex: Int.random(in: 0..<tier.colors.count)
+            ))
+        }
     }
 }
