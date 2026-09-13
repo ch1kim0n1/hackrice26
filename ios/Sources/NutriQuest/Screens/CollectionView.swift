@@ -147,24 +147,23 @@ struct CollectionView: View {
         accessibilityLabel: String,
         action: @escaping () -> Void
     ) -> some View {
-        let fill = active ? NQTheme.warning : NQTheme.gold
+        // Round sticker, not a boxed tile: dark fill, gold icon and rim, hard
+        // drop shadow. While its mode is on it turns red and becomes an X.
         return Button {
             NQHaptic.selection()
             withAnimation(NQMotion.snappy) { action() }
         } label: {
-            VStack(spacing: 2) {
-                Image(systemName: symbol)
-                    .font(.system(size: 15, weight: .heavy))
-                Text(title)
-                    .font(NQText.microXS.font)
-                    .lineLimit(1)
-            }
-            .foregroundStyle(fill.readableTextColor())
-            .frame(width: 56, height: 44)
-            .background(NQTicketShape().fill(fill))
-            .overlay { NQTicketShape().strokeBorder(NQTheme.inkDeep, lineWidth: 2.5) }
+            Image(systemName: active ? "xmark" : symbol)
+                .font(.system(size: 16, weight: .black))
+                .foregroundStyle(active ? NQTheme.ink : NQTheme.gold)
+                .frame(width: 42, height: 42)
+                .background(Circle().fill(active ? NQTheme.warning : NQTheme.inkDeep))
+                .overlay {
+                    Circle().strokeBorder(active ? NQTheme.inkDeep : NQTheme.gold, lineWidth: 2.5)
+                }
+                .shadow(color: .black.opacity(0.45), radius: 0, y: 3)
         }
-        .buttonStyle(NQPressableStyle(scale: 0.94, haptic: false, ledge: 4))
+        .buttonStyle(NQPressableStyle(scale: 0.9, haptic: false))
         .accessibilityLabel(accessibilityLabel)
     }
 
@@ -535,26 +534,41 @@ struct CollectionView: View {
             NQHaptic.selection()
             selectedFilter = title
         } label: {
-            VStack(spacing: 5) {
-                Text(title)
-                    .font(NQText.caption.font.weight(.heavy))
-                    .foregroundStyle(selected ? NQTheme.gold : NQTheme.inkMuted)
-                Rectangle()
-                    .fill(selected ? NQTheme.gold : Color.clear)
-                    .frame(height: 3)
-            }
+            cartoonTab(title, selected: selected, size: 19)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
+    }
+
+    /// Tab label shared by the rarity and sort rows: the title's rounded
+    /// display face and hard ink shadow, with a chunky outlined gold
+    /// underline under the current pick.
+    private func cartoonTab(_ title: String, selected: Bool, size: CGFloat) -> some View {
+        VStack(spacing: 4) {
+            Text(title)
+                .font(NQFont.display.font(size))
+                .foregroundStyle(selected ? NQTheme.gold : NQTheme.ink.opacity(0.8))
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
+            Capsule()
+                .fill(selected ? NQTheme.gold : Color.clear)
+                .overlay {
+                    Capsule().strokeBorder(selected ? NQTheme.inkDeep : Color.clear, lineWidth: 1.5)
+                }
+                .frame(height: 6)
+        }
     }
 
     /// Sort as underlined keys, matching the rarity tabs.
     private var sortPills: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: NQTheme.spaceM) {
-                Text("Sort")
-                    .font(NQText.micro.font.weight(.bold))
-                    .foregroundStyle(NQTheme.inkFaint)
+                Text("SORT")
+                    .font(NQFont.display.font(13))
+                    .tracking(0.8)
+                    .foregroundStyle(NQTheme.gold.opacity(0.75))
+                    .shadow(color: NQTheme.inkDeep, radius: 0, y: 1.5)
+                    // Sit on the labels' baseline, above the underline gap.
+                    .padding(.bottom, 10)
                 ForEach(SortKey.allCases, id: \.self) { key in
                     sortPill(key)
                 }
@@ -568,14 +582,7 @@ struct CollectionView: View {
             NQHaptic.selection()
             sortKey = key
         } label: {
-            VStack(spacing: 5) {
-                Text(key.rawValue)
-                    .font(NQText.caption.font.weight(.heavy))
-                    .foregroundStyle(selected ? NQTheme.gold : NQTheme.inkMuted)
-                Rectangle()
-                    .fill(selected ? NQTheme.gold : Color.clear)
-                    .frame(height: 3)
-            }
+            cartoonTab(key.rawValue, selected: selected, size: 16)
         }
         .buttonStyle(.plain)
         .accessibilityAddTraits(selected ? .isSelected : [])
