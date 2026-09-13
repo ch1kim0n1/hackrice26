@@ -116,10 +116,21 @@ export function asCharacter(
   };
 }
 
+/** The designs a rolled rarity can mint — the `rarityEligibility`
+ *  whitelist, or every design when the field is omitted. Secret mints draw
+ *  from the brainrot pool only; the 14 food designs never mint Secret. */
+export function rosterFor(rarity: Rarity): RosterCharacter[] {
+  return ROSTER.filter((c) => c.rarityEligibility?.includes(rarity) ?? true);
+}
+
 // --- Invariants: hard errors at import, not lint warnings -------------------
 
-if (ROSTER_SIZE !== 14) {
-  throw new Error(`catalog must hold exactly 14 characters (spec §2), has ${ROSTER_SIZE}`);
+const standardPool = rosterFor("common");
+if (standardPool.length !== 14) {
+  throw new Error(`catalog must hold exactly 14 standard-pool characters (spec §2), has ${standardPool.length}`);
+}
+if (rosterFor("secret").length === 0) {
+  throw new Error("catalog must hold at least one secret-only design");
 }
 
 for (const character of ROSTER) {

@@ -51,7 +51,7 @@ struct BattleHubView: View {
         if let rank = gameState.rank {
             return "\(rank.rankLabel) · \(rank.rr) RR"
         }
-        return "Climb the ladder — RR and Cases on the line"
+        return "Climb the ladder: RR and Cases on the line"
     }
 
     var body: some View {
@@ -70,8 +70,9 @@ struct BattleHubView: View {
                         art: "star-badge"
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
                 .disabled(yourBattleSquad.count < 3)
+                .nqCascade(index: 0)
 
                 Button {
                     NQHaptic.selection()
@@ -82,12 +83,13 @@ struct BattleHubView: View {
                         title: "Friendly",
                         subtitle: yourBattleSquad.count < 3
                             ? "Needs 3 healthy monsters"
-                            : "Fight a friend's squad — no RR at stake",
+                            : "Fight a friend's squad: no RR at stake",
                         icon: .person,
                         tint: NQTheme.info
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
+                .nqCascade(index: 1)
 
                 NavigationLink {
                     DungeonView(gameState: gameState)
@@ -100,7 +102,8 @@ struct BattleHubView: View {
                         art: "dungeon-boss-door"
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
+                .nqCascade(index: 2)
 
                 Button {
                     NQHaptic.selection()
@@ -109,13 +112,14 @@ struct BattleHubView: View {
                 } label: {
                     hubCard(
                         title: "Practice",
-                        subtitle: "Turn-based sparring — pick every move",
+                        subtitle: "Turn-based sparring: pick every move",
                         icon: .leaf,
                         tint: NQTheme.success
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
                 .disabled(yourBattleSquad.count < 3)
+                .nqCascade(index: 3)
 
                 NavigationLink {
                     LANLobbyView(gameState: gameState)
@@ -127,7 +131,8 @@ struct BattleHubView: View {
                         tint: NQTheme.success
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
+                .nqCascade(index: 4)
 
                 Button {
                     NQJuice.tap()
@@ -140,11 +145,12 @@ struct BattleHubView: View {
                         tint: accent.accent
                     )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NQPressableStyle(scale: 0.97, haptic: false))
+                .nqCascade(index: 5)
             }
             .padding(NQTheme.spaceL)
         }
-        .nqPageBackground()
+        .nqSceneBackground(GameArt.scene("battle"))
         .sheet(isPresented: $showLeaderboard) {
             NavigationStack { LeaderboardView() }
         }
@@ -203,9 +209,17 @@ struct BattleHubView: View {
         }
         .overlay {
             if friendlyBusy {
-                ProgressView()
-                    .tint(accent.accent)
-                    .scaleEffect(1.4)
+                ZStack {
+                    NQTheme.inkDeep.opacity(0.45).ignoresSafeArea()
+                    VStack(spacing: NQTheme.spaceS) {
+                        NQDotsLoader(color: accent.accent)
+                        Text("Finding their squad…")
+                            .font(NQText.caption.font.weight(.bold))
+                            .foregroundStyle(NQTheme.ink)
+                    }
+                    .nqPadding(.card)
+                    .nqSurface(.hero)
+                }
             }
         }
     }
@@ -253,13 +267,11 @@ struct BattleHubView: View {
                     .font(NQText.captionS.font.weight(.bold))
                     .foregroundStyle(NQTheme.inkMuted)
             }
-            Image(systemName: "chevron.right")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(NQTheme.inkFaint)
+            NQChevron()
         }
         .nqPadding(.card)
         .frame(maxWidth: .infinity)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL + 2), elevation: .card)
+        .nqSurface(.sticker)
         .accessibilityElement(children: .combine)
     }
 }
@@ -294,7 +306,7 @@ private struct SquadPickSheet: View {
             Text(title)
                 .font(NQText.headingL.font.weight(.bold))
                 .foregroundStyle(NQTheme.ink)
-            Text("Pick 3 — the first leads the fight")
+            Text("Pick 3: the first leads the fight")
                 .font(NQText.captionS.font)
                 .foregroundStyle(NQTheme.inkMuted)
 
@@ -321,7 +333,7 @@ private struct SquadPickSheet: View {
                                     .foregroundStyle(NQTheme.ink)
                                     .lineLimit(1)
                                 if fainted {
-                                    Text("FAINTED")
+                                    Text("Fainted")
                                         .font(NQText.microXS.font.weight(.heavy))
                                         .foregroundStyle(NQTheme.warning)
                                 }

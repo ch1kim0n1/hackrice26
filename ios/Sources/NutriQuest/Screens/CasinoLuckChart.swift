@@ -31,18 +31,10 @@ struct CasinoLuckChart: View {
     private let windowHours = 72
 
     var body: some View {
-        VStack(alignment: .leading, spacing: NQTheme.spaceS) {
-            Text("YOUR LUCK")
-                .font(NQText.microXS.font)
-                .tracking(0.4)
-                .foregroundStyle(NQTheme.inkMuted)
-                .padding(.leading, 4)
-
-            NQCard {
-                VStack(alignment: .leading, spacing: NQTheme.spaceM) {
-                    header
-                    content
-                }
+        NQCard {
+            VStack(alignment: .leading, spacing: NQTheme.spaceM) {
+                header
+                content
             }
         }
         .task { await load() }
@@ -51,17 +43,22 @@ struct CasinoLuckChart: View {
     // MARK: - Pieces
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text("Net swing, last 3 days")
-                .font(NQText.bodyL.font.weight(.semibold))
-                .foregroundStyle(NQTheme.ink)
-            Spacer()
-            if state == .ready {
-                Text(netTotal >= 0 ? "+\(netTotal)" : "\(netTotal)")
-                    .font(NQText.bodyL.font.weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(netTotal >= 0 ? accent.accent : NQTheme.error)
+        VStack(alignment: .leading, spacing: NQTheme.spaceXS) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Luck")
+                    .font(NQText.headingL.font)
+                    .foregroundStyle(NQTheme.ink)
+                Spacer()
+                if state == .ready {
+                    Text(netTotal >= 0 ? "+\(netTotal)" : "\(netTotal)")
+                        .font(NQText.bodyL.font.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(netTotal >= 0 ? accent.accent : NQTheme.error)
+                }
             }
+            Text("Net swing, last 3 days")
+                .font(NQText.captionS.font)
+                .foregroundStyle(NQTheme.inkMuted)
         }
     }
 

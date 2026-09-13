@@ -28,13 +28,14 @@ struct CaseOpeningView: View {
     /// per open to multiply Rare+ odds by ×1.15. Default on when held.
     @State private var useBoost = true
 
-    /// The rarest tier this book can produce — the aspirational ceiling.
-    private var ceiling: Rarity {
-        Rarity(rawValue: cookbook.odds.last?.rarity ?? "") ?? .common
-    }
     private var affordable: Bool { gameState.coinBalance >= cookbook.price }
     private var boostsHeld: Int { gameState.streak?.boosts ?? 0 }
-    private var boostActive: Bool { useBoost && boostsHeld > 0 }
+    /// A book with no Rare+ mass can't benefit from a boost — the server
+    /// wouldn't spend one anyway, so don't offer the toggle.
+    private var boostable: Bool {
+        cookbook.odds.contains { $0.tierChance > 0 && $0.rarity != "common" && $0.rarity != "uncommon" }
+    }
+    private var boostActive: Bool { useBoost && boostsHeld > 0 && boostable }
     private var busy: Bool {
         if case .idle = phase { return false }
         return true
@@ -47,7 +48,7 @@ struct CaseOpeningView: View {
 
                 oddsCard
 
-                if boostsHeld > 0 { boostRow }
+                if boostsHeld > 0 && boostable { boostRow }
 
                 if case .spinning(let drop) = phase, let reel = drop.reel, let winnerIndex = drop.reelWinnerIndex {
                     CaseRouletteStrip(reel: reel, winnerIndex: winnerIndex) {
@@ -117,9 +118,9 @@ struct CaseOpeningView: View {
             }
         }
         .nqPadding(.card)
-        .nqSurface(.sticker)
+        .nqSurface(.sticker, fill: cookbook.shopTint.mix(with: NQTheme.background, amount: 0.55))
         .overlay {
-            NQPanelShape().strokeBorder(ceiling.ringColor.opacity(0.6), lineWidth: NQLayout.hairlineWidth)
+            NQPanelShape().strokeBorder(cookbook.shopTint, lineWidth: 3)
         }
     }
 
@@ -215,7 +216,7 @@ struct CaseOpeningView: View {
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.inkMuted)
                 if drop.overflowed == true {
-                    Text("Inventory full — sent to your mailbox")
+                    Text("Inventory full: sent to your mailbox")
                         .font(NQText.micro.font)
                         .foregroundStyle(NQTheme.warning)
                 }

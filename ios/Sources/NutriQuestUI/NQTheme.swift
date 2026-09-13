@@ -48,6 +48,8 @@ public enum NQTheme {
     // MARK: Status and rewards
     public static let success = Color(hex: 0x4FE39C)
     public static let warning = Color(hex: 0xFF7A7A)
+    /// Over-budget red — harder than `warning` so a blown calorie cap is unmistakable.
+    public static let overBudget = Color(hex: 0xD9453A)
     public static let error = warning
     public static let caution = Color(hex: 0xFFCC2E)
     public static let info = Color(hex: 0x5CB0FF)
@@ -78,6 +80,9 @@ public enum NQTheme {
     public static let radiusM: CGFloat = 16
     public static let radiusL: CGFloat = 22
     public static let radiusXL: CGFloat = 28
+    /// Tight stamp corners for HUD chips. `NQPanelShape` multiplies cut by
+    /// 1.65, so 4pt stays a rectangle on a 28pt control instead of a capsule.
+    public static let radiusStamp: CGFloat = 4
     public static let radiusPill: CGFloat = 999
 }
 
@@ -102,18 +107,18 @@ public enum NQText {
 
     public var size: CGFloat {
         switch self {
-        case .displayL: return 30
-        case .display: return 24
-        case .headingL: return 18
-        case .heading: return 16
-        case .bodyL: return 13
-        case .body: return 13
-        case .caption: return 12
-        case .captionS: return 12
-        case .tagBold: return 12
-        case .micro: return 10
-        case .microS: return 10
-        case .microXS: return 10
+        case .displayL: return 40
+        case .display: return 32
+        case .headingL: return 24
+        case .heading: return 20
+        case .bodyL: return 17
+        case .body: return 16
+        case .caption: return 15
+        case .captionS: return 14
+        case .tagBold: return 14
+        case .micro: return 13
+        case .microS: return 12
+        case .microXS: return 11
         }
     }
 
@@ -150,7 +155,9 @@ public enum NQText {
             // falls back to SF.
             return .custom("Quicksand Light", size: size, relativeTo: textStyle).weight(.semibold)
         case .micro, .microS, .microXS:
-            return .system(.caption2, design: .rounded).weight(.heavy)
+            // Baloo keeps the tiny labels on-theme too — rounded system type
+            // read as a different, more minimal font family next to it.
+            return .custom("Baloo 2", size: size, relativeTo: textStyle).weight(.heavy)
         }
     }
 }
@@ -521,7 +528,7 @@ public extension Color {
 
 import UIKit
 
-extension UIColor {
+public extension UIColor {
     convenience init(hex: UInt32) {
         self.init(
             red: CGFloat((hex >> 16) & 0xFF) / 255,

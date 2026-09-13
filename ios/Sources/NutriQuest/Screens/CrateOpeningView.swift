@@ -10,8 +10,9 @@ import NutriQuestUI
 ///   4. Fairness: server seed hash shown, verify link
 ///   5. Promo: redeem a code for coins or a Case
 ///
-/// Keys, pity meters and multi-opens are gone — the spec's economy buys
-/// Cookbooks with coins in the Shop and grants fixed-rarity Cases here.
+/// Keys and pity meters are gone — the spec's economy buys Cookbooks with
+/// coins in the Shop and grants fixed-rarity Cases here. Holding several
+/// cases of one rarity unlocks a quantity stepper that batch-opens them.
 struct CrateOpeningView: View {
     @ObservedObject var gameState: GameState
     /// .sheet presents a fresh environment -- custom @Environment keys like
@@ -30,6 +31,12 @@ struct CrateOpeningView: View {
     @State private var loadingCases = true
     @State private var opening = false
     @State private var revealedDrop: CrateOpenResponse?
+    /// Every drop from a multi-open, including the one in the capsule.
+    /// Empty or one element = the single-open layout.
+    @State private var revealedBatch: [CrateOpenResponse] = []
+    /// Chosen open count per case rarity — defaults to 1, clamped to how
+    /// many cases of that rarity are actually held.
+    @State private var openCounts: [String: Int] = [:]
     @State private var capsuleStage: NQCapsuleStage = .hidden
     @State private var chargeProgress: Double = 0
     @State private var chargeContinuation: CheckedContinuation<Void, Never>?
@@ -84,6 +91,7 @@ struct CrateOpeningView: View {
         }
         .onChange(of: gameState.pendingCases) { updated in
             cases = updated
+            clampOpenCounts()
         }
         .sheet(isPresented: $showFairness) {
             FairnessSheet(gameState: gameState)
@@ -101,7 +109,7 @@ struct CrateOpeningView: View {
             }
         } message: {
             if let item = pendingSale {
-                Text("\(item.character.name) leaves the collection. You get \(item.value) coins — full net worth.")
+                Text("\(item.character.name) leaves the collection. You get \(item.value) coins: full net worth.")
             }
         }
     }
@@ -163,7 +171,7 @@ struct CrateOpeningView: View {
                         .background(
                             self.tab == tab ? accent.accent.opacity(0.12) : Color.clear
                         )
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                 }
             }
         }
@@ -268,7 +276,7 @@ struct CrateOpeningView: View {
                             .foregroundStyle(NQTheme.background)
                             .nqPadding(.badge)
                             .background(claiming ? NQTheme.lockedFill : accent.accent)
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                     .buttonStyle(.plain)
                     .disabled(claiming)
@@ -282,6 +290,11 @@ struct CrateOpeningView: View {
 
     private func caseCard(_ pending: PendingCaseDTO) -> some View {
         let rarity = nqRarity(from: pending.rarity)
+        // A quantity stepper only makes sense when another case of the same
+        // rarity is held — opening is grouped by rarity.
+        let sameRarity = cases.filter { $0.rarity == pending.rarity }
+        let maxOpen = sameRarity.count
+        let count = min(openCounts[pending.rarity] ?? 1, maxOpen)
         return VStack(alignment: .leading, spacing: NQTheme.spaceS) {
             NQAssetImage(GameArt.rarityChest(closed: rarity, opened: false))
                 .frame(height: 92)
@@ -297,8 +310,12 @@ struct CrateOpeningView: View {
                 .font(NQText.caption.font)
                 .foregroundStyle(NQTheme.inkMuted)
 
+            if maxOpen > 1 {
+                quantityStepper(rarity: pending.rarity, count: count, max: maxOpen)
+            }
+
             Button {
-                openCase(pending)
+                openCase(pending, count: count)
             } label: {
                 HStack {
                     if opening {
@@ -306,21 +323,65 @@ struct CrateOpeningView: View {
                     } else {
                         NQIcon.sparkle.view.frame(width: 15, height: 15)
                     }
-                    Text(opening ? "Opening…" : "Open case")
+                    Text(opening ? "Opening…" : count > 1 ? "Open \(count) cases" : "Open case")
                         .font(NQText.heading.font)
                 }
                 .frame(maxWidth: .infinity)
                 .nqPadding(.button)
                 .background(accent.accent)
                 .foregroundStyle(accent.accent.readableTextColor())
-                .clipShape(Capsule())
+                .clipShape(NQTicketShape())
             }
             .buttonStyle(NQPressableStyle())
             .disabled(opening)
-            .accessibilityLabel("Open \(rarity.displayName) Case")
+            .accessibilityLabel("Open \(count) \(rarity.displayName) \(count > 1 ? "Cases" : "Case")")
         }
         .nqPadding(.card)
         .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .card)
+    }
+
+    /// − / ×N / + for how many same-rarity cases to open in one go.
+    private func quantityStepper(rarity: String, count: Int, max: Int) -> some View {
+        HStack(spacing: NQTheme.spaceS) {
+            stepperButton(systemName: "minus", enabled: count > 1) {
+                openCounts[rarity] = count - 1
+            }
+            Text("×\(count)")
+                .font(NQText.body.font.weight(.bold))
+                .foregroundStyle(NQTheme.ink)
+                .frame(minWidth: 36)
+            stepperButton(systemName: "plus", enabled: count < max) {
+                openCounts[rarity] = count + 1
+            }
+            Text("of \(max) held")
+                .font(NQText.micro.font)
+                .foregroundStyle(NQTheme.inkFaint)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func stepperButton(systemName: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            NQHaptic.light()
+            action()
+        } label: {
+            Image(systemName: systemName)
+                .font(.system(size: NQLayout.iconS, weight: .bold))
+                .foregroundStyle(enabled ? accent.accent : NQTheme.inkFaint)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(enabled ? accent.accent.opacity(0.12) : NQTheme.lockedFill))
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled || opening)
+    }
+
+    /// Cases were consumed or granted — keep every chosen count within the
+    /// number actually held.
+    private func clampOpenCounts() {
+        let held = Dictionary(grouping: cases, by: \.rarity).mapValues(\.count)
+        for (rarity, count) in openCounts where count > (held[rarity] ?? 0) {
+            openCounts[rarity] = max(1, held[rarity] ?? 1)
+        }
     }
 
     /// Where the Case came from, for the card's footnote.
@@ -414,7 +475,7 @@ struct CrateOpeningView: View {
                         .foregroundStyle(NQTheme.background)
                         .nqPadding(.badge)
                         .background(NQTheme.gold)
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Sell \(item.character.name) for \(item.value) coins")
@@ -673,8 +734,13 @@ struct CrateOpeningView: View {
 
                     // Drop info (visible at .open)
                     if capsuleStage == .open {
-                        dropInfo(drop)
-                            .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        if revealedBatch.count > 1 {
+                            batchInfo(revealedBatch, highlight: drop)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        } else {
+                            dropInfo(drop)
+                                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        }
                     }
                 }
 
@@ -720,6 +786,49 @@ struct CrateOpeningView: View {
         }
     }
 
+    /// Multi-open summary: the capsule showed the rarest pull; this lists
+    /// every mint and the combined net worth.
+    private func batchInfo(_ drops: [CrateOpenResponse], highlight: CrateOpenResponse) -> some View {
+        VStack(spacing: NQTheme.spaceS) {
+            Text("\(drops.count) cases opened")
+                .font(NQText.micro.font)
+                .foregroundStyle(.white.opacity(0.7))
+
+            ScrollView {
+                VStack(spacing: NQTheme.spaceXS) {
+                    ForEach(Array(drops.enumerated()), id: \.offset) { _, drop in
+                        batchRow(drop, highlighted: drop.id != nil && drop.id == highlight.id)
+                    }
+                }
+            }
+            .frame(maxHeight: 160)
+
+            statPill("Total", "\(drops.reduce(0) { $0 + $1.value })", "net worth")
+        }
+    }
+
+    private func batchRow(_ drop: CrateOpenResponse, highlighted: Bool) -> some View {
+        HStack(spacing: NQTheme.spaceS) {
+            Text(drop.character.name)
+                .font(NQText.body.font.weight(highlighted ? .heavy : .semibold))
+                .foregroundStyle(.white)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            NQChip(
+                drop.character.rarityLabel ?? drop.character.rarity.capitalized,
+                tint: rarityColor(drop.character.rarity),
+                filled: true
+            )
+            Text("\(drop.value)")
+                .font(NQText.caption.font.weight(.bold))
+                .foregroundStyle(NQTheme.gold)
+        }
+        .padding(.horizontal, NQTheme.spaceM)
+        .padding(.vertical, NQTheme.spaceXS)
+        .background(Color.black.opacity(0.25))
+        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusM))
+    }
+
     private var capsuleControls: some View {
         HStack(spacing: NQTheme.spaceM) {
             NQButton("Done", icon: .checkCircle, style: .primary, fullWidth: false) {
@@ -752,20 +861,38 @@ struct CrateOpeningView: View {
 
     // MARK: - Open sequence
 
-    private func openCase(_ pending: PendingCaseDTO) {
+    /// Opens `count` cases of the tapped case's rarity — the tapped one
+    /// first, then siblings. Each open is its own server transaction; a
+    /// failure mid-batch just shortens the reveal to what succeeded.
+    private func openCase(_ pending: PendingCaseDTO, count: Int = 1) {
+        let toOpen = Array(
+            ([pending] + cases.filter { $0.rarity == pending.rarity && $0.caseId != pending.caseId })
+                .prefix(max(1, count))
+        )
         opening = true
         revealedDrop = nil
+        revealedBatch = []
         capsuleStage = .hidden
 
         Task {
-            guard let drop = await gameState.openPendingCase(caseID: pending.caseId) else {
+            var drops: [CrateOpenResponse] = []
+            for pendingCase in toOpen {
+                guard let drop = await gameState.openPendingCase(caseID: pendingCase.caseId) else { break }
+                gameState.addCrateCharacter(drop: drop)
+                drops.append(drop)
+            }
+            guard !drops.isEmpty else {
                 opening = false
                 return
             }
 
-            gameState.addCrateCharacter(drop: drop)
-            revealedDrop = drop
-            await playCapsuleSequence(for: drop)
+            revealedBatch = drops
+            // The capsule plays for the rarest pull — the reveal's suspense
+            // should peak on the best monster in the batch.
+            revealedDrop = drops.max {
+                suspenseTier(for: $0.character.rarity) < suspenseTier(for: $1.character.rarity)
+            } ?? drops[0]
+            await playCapsuleSequence(for: revealedDrop!)
         }
     }
 
@@ -778,7 +905,7 @@ struct CrateOpeningView: View {
         withAnimation(.spring(response: 0.5, dampingFraction: 0.6)) {
             capsuleStage = .dropping
         }
-        NQSound.play(.crateCreak)
+        NQSound.play(.hitLight)
         try? await Task.sleep(nanoseconds: 600_000_000)
 
         // Hold-to-charge: the player builds the crack. Skipped under
@@ -909,6 +1036,7 @@ struct CrateOpeningView: View {
         withAnimation(NQMotion.quick) {
             capsuleStage = .hidden
             revealedDrop = nil
+            revealedBatch = []
             opening = false
         }
         Task {
@@ -1003,7 +1131,7 @@ private struct FairnessSheet: View {
                 } else {
                     ForEach(fairness.retired, id: \.serverSeedHash) { seed in
                         VStack(alignment: .leading, spacing: 4) {
-                            infoRow("Server seed", seed.serverSeed ?? "—")
+                            infoRow("Server seed", seed.serverSeed ?? "-")
                             infoRow("Hash", seed.serverSeedHash)
                             infoRow("Nonce", "\(seed.nonce)")
                             if let retiredAt = seed.retiredAt {

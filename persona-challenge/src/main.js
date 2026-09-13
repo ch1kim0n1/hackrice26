@@ -217,7 +217,7 @@ async function runPersonaLeg() {
   updateDebug();
 
   els.resultTitle.textContent = "One more check";
-  els.resultCopy.textContent = "Quick identity verification — takes about a minute.";
+  els.resultCopy.textContent = "Quick identity verification: takes about a minute.";
   els.resultSpinner.style.display = "none";
 
   try {

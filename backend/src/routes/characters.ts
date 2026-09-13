@@ -25,8 +25,9 @@ charactersRouter.get("/", (_req, res) => {
 
 // ===== Pokédex catalog (issue #95) ==========================================
 
-/** Directory holding the pre-generated base art (per-rarity variants are #98). */
-const ART_DIR = join(__dirname, "..", "..", "..", "game-assets");
+/** Directory holding the pre-generated base art (per-rarity variants are
+ *  #98). Inside backend/ so the Railway deploy (root dir = backend/) ships it. */
+const ART_DIR = join(__dirname, "..", "..", "game-assets");
 
 /** Resolve the art file for (character, rarity) — issue #99. Prefers a
  *  per-rarity variant (`<imageKey>-<rarity>.png`), falls back to the base

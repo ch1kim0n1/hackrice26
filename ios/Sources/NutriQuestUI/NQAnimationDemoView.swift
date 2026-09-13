@@ -92,8 +92,8 @@ public struct NQAnimationDemoView: View {
                     NQSectionHeader("States")
                     NQCard {
                         VStack(alignment: .leading, spacing: NQTheme.spaceM) {
-                            NQBanner.success("Snack scanned — Fibelle gained +12 protein!")
-                            NQBanner.warning("Streak at risk — scan something today!")
+                            NQBanner.success("Snack scanned: Fibelle gained +12 protein!")
+                            NQBanner.warning("Streak at risk: scan something today!")
                             NQBanner.error("Battle lost. Rematch?")
                             NQContentState(.offline(retry: {}))
                         }

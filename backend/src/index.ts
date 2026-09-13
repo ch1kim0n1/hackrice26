@@ -60,8 +60,9 @@ export function buildApp(): express.Express {
 
   app.use("/auth", authRouter);
   app.use("/human-gate", humanGateRouter);
-  // Pre-generated character art (game-assets/) — catalog/image routes point here.
-  app.use("/assets", express.static(join(__dirname, "..", "..", "game-assets")));
+  // Pre-generated character art (backend/game-assets/) — catalog/image routes
+  // point here. Lives inside the service root so Railway's deploy includes it.
+  app.use("/assets", express.static(join(__dirname, "..", "game-assets")));
   app.use("/characters", charactersRouter);
   app.use("/scan", scanRouter);
   app.use("/battle", battleRouter);

@@ -426,7 +426,7 @@ public struct NQFlamePulse: View {
             NQCountUpText(value: count, font: NQFont.body.font(13))
         }
         .nqPadding(.chip)
-        .nqPlate(Capsule(), fill: NQTheme.background, elevation: .card)
+        .nqPlate(NQTicketShape(), fill: NQTheme.background, elevation: .card)
         .onAppear { running = true; pulsing = true }
         .onDisappear { running = false }
         .accessibilityElement(children: .ignore)

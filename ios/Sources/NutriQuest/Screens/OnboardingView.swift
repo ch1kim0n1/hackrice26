@@ -37,7 +37,7 @@ struct AchievementToast: View {
             NQButton("Nice", style: .secondary, fullWidth: false) { onDismiss() }
         }
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
+        .nqSurface(.sticker)
         .padding(NQTheme.spaceXL)
     }
 }
@@ -166,7 +166,7 @@ struct OnboardingView: View {
         .padding(.bottom, 10)
         .nqPageBackground()
         .animation(.easeInOut(duration: 0.3), value: step)
-        .preferredColorScheme(.light)
+        .preferredColorScheme(.dark)
     }
 
     /// Progress through the questionnaire, 0...1.

@@ -1,4 +1,4 @@
-// Loot catalogue: the rarity ladder and the four Cookbooks.
+// Loot catalogue: the rarity ladder and the Cookbooks.
 //
 // Character designs live in the master authored catalog (characters.json,
 // loaded+validated by roster.ts) — a design has NO rarity; rarity is rolled
@@ -8,7 +8,7 @@
 
 import { Cookbook, Rarity, RarityTier } from "../types";
 import { COOKBOOKS as COOKBOOK_SPECS } from "../game/spec";
-import { ROSTER, RosterCharacter } from "./roster";
+import { ROSTER, RosterCharacter, rosterFor } from "./roster";
 
 /**
  * Weights are integers out of RARITY_TOTAL so the distribution stays exact.
@@ -53,12 +53,13 @@ export const RARITY_ORDER: Rarity[] = (Object.keys(RARITY_TIERS) as Rarity[]).so
 // parallel coin-shop pricing table that used to live here.
 
 /**
- * The pool every mint draws its character design from — the whole 14-design
- * catalog, because rarity is a property of the instance, not the design
- * (spec §2). A cookbook case rolls rarity first, then a uniform design.
+ * The pool a mint draws its character design from. Rarity is a property of
+ * the instance, not the design (spec §2) — but designs may whitelist the
+ * rarities they can mint at via `rarityEligibility`, and the brainrot set
+ * is Secret-only, so the pool depends on the rolled rarity.
  */
-export function mintPool(): RosterCharacter[] {
-  return ROSTER;
+export function mintPool(rarity?: Rarity): RosterCharacter[] {
+  return rarity === undefined ? ROSTER : rosterFor(rarity);
 }
 
 // ---------------------------------------------------------------------------
@@ -66,14 +67,16 @@ export function mintPool(): RosterCharacter[] {
 // ---------------------------------------------------------------------------
 
 const COOKBOOK_DESCRIPTIONS: Record<string, string> = {
-  "home-cookbook": "Weeknight staples. Every tier is reachable — even Secret — but the odds favour the everyday.",
+  "super-simple-cookbook": "Recipes on the back of the box. Commons only — a hundred coins, no surprises.",
+  "home-cookbook": "Weeknight staples. Every tier is reachable, even Secret, but the odds favour the everyday.",
   "chefs-cookbook": "A working kitchen's shelf. Better table, better pulls.",
   "master-cookbook": "Technique and patience. Epic and Legendary are realistic goals here.",
-  "forbidden-cookbook": "No Commons at all. The book nobody was supposed to publish."
+  "forbidden-cookbook": "No Commons at all. The book nobody was supposed to publish.",
+  "secret-cookbook": "One hundred thousand coins for a one-in-ten shot at a Secret. The table the Gatekeeper doesn't talk about."
 };
 
 /**
- * The four Cookbooks, cheapest first — the only loot containers that exist
+ * The Cookbooks, cheapest first — the only loot containers that exist
  * (spec §3). Opening one is: pay price, roll a rarity Case off the published
  * odds, mint a ★1 monster of that rarity. No keys, no pity.
  */

@@ -147,7 +147,7 @@ final class LANClient: ObservableObject {
     func lockIn(_ squad: LANSquad) {
         guard var match = activeMatch, case .picking = match.phase else { return }
         guard (try? squad.validate()) != nil, let bytes = try? JSONEncoder().encode(squad) else {
-            notice = "That squad can't be used — pick three different characters."
+            notice = "That squad can't be used: pick three different characters."
             return
         }
         let nonce = LANCrypto.makeNonce()
@@ -245,7 +245,7 @@ final class LANClient: ObservableObject {
             // Don't yank a result off screen mid-watch; queue the next match.
             if isShowingOutcome {
                 queuedMatch = next
-                notice = "Your next match vs \(name(for: opponentID)) is ready — head back to pick your squad."
+                notice = "Your next match vs \(name(for: opponentID)) is ready: head back to pick your squad."
                 return
             }
             pendingReveal = nil

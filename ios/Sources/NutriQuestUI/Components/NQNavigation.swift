@@ -92,15 +92,19 @@ public struct NQLogoMark: View {
 /// Framed command dock with a raised central scan crest.
 public struct NQBottomNav: View {
     @Binding private var selection: NQTab
+    private var inviteScan: Bool
 
     @Environment(\.nqAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var scanHop = false
 
-    public init(selection: Binding<NQTab>) {
+    public init(selection: Binding<NQTab>, inviteScan: Bool = false) {
         _selection = selection
+        self.inviteScan = inviteScan
     }
 
     public var body: some View {
-        HStack {
+        HStack(alignment: .bottom, spacing: 0) {
             navItem(.home)
             navItem(.collection)
             scanButton
@@ -132,7 +136,7 @@ public struct NQBottomNav: View {
                 NQTabIcon(icon: tab.icon, selected: isSelected)
                     .frame(height: 30)
                 Text(tab.title)
-                    .font(NQText.microS.font.weight(isSelected ? .heavy : .semibold))
+                    .font(NQText.captionS.font.weight(isSelected ? .heavy : .bold))
                     .lineLimit(1)
                     .minimumScaleFactor(0.8)
             }
@@ -147,7 +151,7 @@ public struct NQBottomNav: View {
             }
             .animation(NQMotion.snappy, value: isSelected)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(NQPressableStyle(scale: 0.92, haptic: false, ledge: 2))
         .accessibilityLabel(tab.title)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -158,30 +162,68 @@ public struct NQBottomNav: View {
             NQJuice.tap()
             withAnimation(NQMotion.snappy) { selection = .scan }
         } label: {
-            VStack(spacing: NQTheme.spaceXS) {
+            VStack(spacing: 2) {
                 ZStack {
-                    NQPanelShape(cut: NQTheme.radiusM)
+                    NQTicketShape()
                         .fill(LinearGradient(colors: [accent.accentDark, NQTheme.accentPress],
                                              startPoint: .top, endPoint: .bottom))
-                    NQPanelShape(cut: NQTheme.radiusM)
-                        .strokeBorder(NQTheme.inkDeep, lineWidth: 2)
+                    NQTicketShape()
+                        .strokeBorder(NQTheme.inkDeep, lineWidth: 2.5)
                     NQIconView(icon: .scan, tint: NQTheme.inkDeep)
-                        .frame(width: 26, height: 26)
+                        .frame(width: 22, height: 22)
                 }
-                .frame(width: 48, height: 44)
-                .shadow(color: NQTheme.inkDeep, radius: 0, y: 3)
+                .frame(width: 44, height: 44)
+                .shadow(color: NQTheme.inkDeep, radius: 0, y: isSelected ? 1 : 4)
+                .offset(y: inviteScan && !isSelected && scanHop && !reduceMotion ? -16 : -12)
                 Text(NQTab.scan.title)
-                    .font(NQText.microS.font)
+                    .font(NQText.captionS.font.weight(.heavy))
                     .foregroundStyle(accent.accent)
             }
             .frame(maxWidth: .infinity)
             .frame(minHeight: NQLayout.controlMinHeight)
-            .offset(y: -NQTheme.spaceXS)
             .animation(NQMotion.snappy, value: isSelected)
         }
-        .buttonStyle(NQPressableStyle(scale: 0.9, haptic: false))
+        .buttonStyle(NQPressableStyle(scale: 0.9, haptic: false, ledge: 4))
+        .onAppear {
+            guard inviteScan, !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.9).repeatForever(autoreverses: true)) {
+                scanHop = true
+            }
+        }
         .accessibilityLabel(NQTab.scan.title)
+        .accessibilityHint(inviteScan && !isSelected ? "Scan a snack to summon a monster" : "")
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// Transparent nav bar over scene art so pushed screens and tab roots share
+/// one cartoon world instead of a grey UIKit strip.
+public struct NQTransparentNav: ViewModifier {
+    public init() {}
+
+    public func body(content: Content) -> some View {
+        content
+            .toolbarBackground(.hidden, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+}
+
+public extension View {
+    func nqTransparentNav() -> some View {
+        modifier(NQTransparentNav())
+    }
+}
+
+public extension ToolbarContent {
+    /// iOS 26 wraps trailing items in a glass capsule. That reads as a pill
+    /// on top of our own chrome — hide it when the OS offers the control.
+    @ToolbarContentBuilder
+    func nqHideGlass() -> some ToolbarContent {
+        if #available(iOS 26.0, *) {
+            self.sharedBackgroundVisibility(.hidden)
+        } else {
+            self
+        }
     }
 }
 

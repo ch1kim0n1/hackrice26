@@ -110,6 +110,8 @@ public struct ChibiCharacterView: View {
     private let showFace: Bool
     private let pose: ChibiPose
     private let motif: ChibiMotif
+    /// Mystery shadow for locked collection cards — pose still varies, color does not.
+    private let silhouette: Bool
 
     public init(
         color: NQCharacterColor,
@@ -117,7 +119,8 @@ public struct ChibiCharacterView: View {
         expression: ChibiExpression = .happy,
         showFace: Bool = true,
         pose: ChibiPose? = nil,
-        motif: ChibiMotif = .plain
+        motif: ChibiMotif = .plain,
+        silhouette: Bool = false
     ) {
         self.color = color
         self.statType = statType
@@ -125,6 +128,7 @@ public struct ChibiCharacterView: View {
         self.showFace = showFace
         self.pose = pose ?? ChibiPose.forName(color.name)
         self.motif = motif
+        self.silhouette = silhouette
     }
 
     public var body: some View {
@@ -150,9 +154,9 @@ public struct ChibiCharacterView: View {
     // MARK: Geometry (design space 100 x 130)
 
     private func draw(_ context: inout GraphicsContext) {
-        let accent = color.accent
-        let dark = color.accentDark
-        let soft = color.accentSoft
+        let accent = silhouette ? NQTheme.lockedFill : color.accent
+        let dark = silhouette ? NQTheme.chrome : color.accentDark
+        let soft = silhouette ? NQTheme.track : color.accentSoft
         let ink = NQTheme.inkDeep
         let p = pose
 
@@ -170,12 +174,14 @@ public struct ChibiCharacterView: View {
         circle(&context, cx: p.handCx, cy: p.handCy, r: p.handR, fill: accent, stroke: ink, line: 1.6)
         circle(&context, cx: 100 - p.handCx, cy: p.handCy, r: p.handR, fill: accent, stroke: ink, line: 1.6)
 
-        // Food-group motif — drawn on the body, clear of the chest badge.
-        drawMotif(&context, p: p)
+        if !silhouette {
+            // Food-group motif — drawn on the body, clear of the chest badge.
+            drawMotif(&context, p: p)
 
-        // Chest badge
-        roundedRect(&context, x: 41, y: p.bodyCy - 8, w: 18, h: 18, radius: 6, fill: dark)
-        drawStatIcon(&context, badgeCy: p.bodyCy + 1)
+            // Chest badge
+            roundedRect(&context, x: 41, y: p.bodyCy - 8, w: 18, h: 18, radius: 6, fill: dark)
+            drawStatIcon(&context, badgeCy: p.bodyCy + 1)
+        }
 
         // Head
         circle(&context, cx: 50, cy: p.headCy, r: p.headRadius, fill: accent, stroke: ink, line: 2)
@@ -192,8 +198,10 @@ public struct ChibiCharacterView: View {
             path(&context, "M49 14 C53 1 61 -1 58 11 C56 18 51 19 49 14 Z", fill: dark)
         }
 
-        // Head accessory per stat type — silhouette reads at a glance
-        drawHeadAccessory(&context, headCy: p.headCy, headR: p.headRadius)
+        if !silhouette {
+            // Head accessory per stat type — silhouette reads at a glance
+            drawHeadAccessory(&context, headCy: p.headCy, headR: p.headRadius)
+        }
 
         guard showFace else { return }
 

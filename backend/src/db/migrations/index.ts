@@ -16,6 +16,7 @@ import { migration as cookbookEconomy } from "./015_cookbook_economy";
 import { migration as scanMintAndMeals } from "./016_scan_mint_and_meals";
 import { migration as progression } from "./017_progression";
 import { migration as battleMatches } from "./018_battle_matches";
+import { migration as healMissingTables } from "./019_heal_missing_tables";
 
 export const migrations = [
   initial,
@@ -35,5 +36,6 @@ export const migrations = [
   cookbookEconomy,
   scanMintAndMeals,
   progression,
-  battleMatches
+  battleMatches,
+  healMissingTables
 ];

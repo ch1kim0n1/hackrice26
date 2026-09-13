@@ -37,7 +37,7 @@ import {
 } from "../game/nutritionScore";
 import { mintValue } from "../game/rarityBands";
 import { SCAN_MINT_STAR } from "../game/spec";
-import { ROSTER, asCharacter } from "../data/roster";
+import { asCharacter, rosterFor } from "../data/roster";
 import { recordNutritionAction } from "./user";
 import { enqueueMirror } from "../services/mirrorQueue";
 import { mintCollectionDrop } from "../services/lootboxState";
@@ -306,7 +306,8 @@ scanRouter.post("/", rateLimitByPlayer({ windowMs: 60_000, max: 10, keyPrefix: "
     const rarityUnit = unit();
     const rarity: Rarity = rollRarity(score, rarityUnit);
     const characterUnit = unit();
-    const entry = ROSTER[Math.floor(characterUnit * ROSTER.length)];
+    const pool = rosterFor(rarity);
+    const entry = pool[Math.floor(characterUnit * pool.length)];
     const stats = combatBase(nutrition);
     const segmentUnit = unit();
     const positionUnit = unit();
@@ -434,7 +435,7 @@ const markAnalysisConsumed = (analysisId: string) =>
 // vision request.
 scanRouter.post(
   "/photo/analyze",
-  rateLimitByPlayer({ windowMs: 60_000, max: 5, keyPrefix: "scan:photo", message: "Photo scans are heavy — max 5 per minute." }),
+  rateLimitByPlayer({ windowMs: 60_000, max: 5, keyPrefix: "scan:photo", message: "Photo scans are heavy; max 5 per minute." }),
   async (req: PlayerRequest, res) => {
     const { image } = req.body as { image?: string };
     if (typeof image !== "string" || image.length < 500 || image.length > 9_000_000) {

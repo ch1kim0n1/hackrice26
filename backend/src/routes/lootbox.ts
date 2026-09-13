@@ -22,6 +22,7 @@ import { Character, Cookbook, Rarity } from "../types";
 import { enqueueMirror } from "../services/mirrorQueue";
 import { COIN_ERRORS, coinBalance, recordCoinsInTransaction } from "../services/coins";
 import { consumeCookbookBoost } from "./user";
+import { BOOST_EXEMPT } from "../game/spec";
 import { ledger, transact } from "../services/characterMutations";
 import {
   clientSeedBodySchema,
@@ -85,7 +86,7 @@ lootboxRouter.get("/rarities", (_req, res) => {
   });
 });
 
-// GET /lootbox/cookbooks -- the four Cookbooks with price + published odds.
+// GET /lootbox/cookbooks -- the Cookbooks with price + published odds.
 lootboxRouter.get("/cookbooks", (_req, res) => {
   res.json({ cookbooks: COOKBOOKS.map((b) => cookbookPayload(b)) });
 });
@@ -166,7 +167,12 @@ lootboxRouter.post(
         // Cookbook Boost (spec §6): the player asks, the store decrements one
         // held boost, and the rarity roll runs on the ×1.15 Rare+ table —
         // all inside this transaction, so a failed open refunds the boost.
-        const boosted = parsed.data.useBoost === true && consumeCookbookBoost(playerId);
+        // A book with no Rare+ mass (super-simple) would burn the boost for
+        // zero effect — don't consume it.
+        const boostable = RARITY_ORDER.some(
+          (r) => !BOOST_EXEMPT.includes(r) && (book.odds[r] ?? 0) > 0
+        );
+        const boosted = parsed.data.useBoost === true && boostable && consumeCookbookBoost(playerId);
         const odds = boosted ? engine.boostedOdds(book.odds) : book.odds;
         const outcome = engine.openCookbook(book, pair.serverSeed, pair.clientSeed, nonce, odds);
         const { drop: stored, overflowed } = session.record({

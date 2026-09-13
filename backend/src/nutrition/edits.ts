@@ -74,7 +74,7 @@ export function applyEdits(analysis: DishAnalysis, edits: ItemEdit[]): DishAnaly
   }
 
   if (items.length === 0) {
-    throw new NotFoodError("Every item was removed — nothing left to log");
+    throw new NotFoodError("Every item was removed; nothing left to log");
   }
 
   return {

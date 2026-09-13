@@ -96,7 +96,7 @@ struct DishReviewView: View {
                 VStack(spacing: NQTheme.spaceL) {
                     if analysis.lowConfidence {
                         NQBanner(
-                            "This one was hard to read — double-check the items before you log it.",
+                            "This one was hard to read: double-check the items before you log it.",
                             dotColor: NQTheme.warning
                         )
                     }
@@ -190,8 +190,8 @@ struct DishReviewView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
-        .background(tint.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusM))
+        .background(NQTicketShape().fill(tint.opacity(0.12)))
+        .overlay { NQTicketShape().strokeBorder(tint.opacity(0.5), lineWidth: 1.5) }
     }
 
     // MARK: - Item row
@@ -266,7 +266,7 @@ struct DishReviewView: View {
 
     private var actions: some View {
         VStack(spacing: NQTheme.spaceS) {
-            NQButton(isConfirming ? "Logging…" : "Looks right — log this meal", icon: .checkCircle) {
+            NQButton(isConfirming ? "Logging…" : "Looks right: log this meal", icon: .checkCircle) {
                 onConfirm(items.compactMap(\.edit))
             }
             .disabled(plateIsEmpty || isConfirming)

@@ -74,7 +74,7 @@ struct ScanView: View {
                     NQBanner("Summoned: **\(summonedCharacter.name)**", dotColor: accent.accent)
                         .transition(NQTransition.pop)
                 } else if scanResult?.duplicate == true {
-                    NQBanner("Already scanned — logged as a meal, but this barcode's monster is already yours.", dotColor: NQTheme.info)
+                    NQBanner("Already scanned: logged as a meal, but this barcode's monster is already yours.", dotColor: NQTheme.info)
                         .transition(NQTransition.pop)
                 }
 
@@ -109,8 +109,14 @@ struct ScanView: View {
             .padding(NQTheme.spaceL)
         }
         .nqPageBackground()
-        .navigationTitle("Scan Food")
+        .navigationTitle("Scan")
         .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle("Scan")
+            }
+        }
         .animation(NQMotion.springy, value: summonedCharacter)
         .animation(NQMotion.quick, value: errorMessage)
         .sheet(isPresented: $showPhotoCapture) {
@@ -147,18 +153,7 @@ struct ScanView: View {
     }
 
     private var detectingPill: some View {
-        HStack(spacing: 7) {
-            Circle()
-                .fill(accent.accent)
-                .frame(width: 7, height: 7)
-            Text("Detecting barcode…")
-                .font(NQText.captionS.font.weight(.bold))
-                .foregroundStyle(accent.accentDark)
-        }
-        .nqPadding(.badge)
-        .padding(.horizontal, 6)
-        .background(Capsule().fill(accent.accentBg))
-        .accessibilityElement(children: .combine)
+        DetectingPill()
     }
 
     private func productCard(_ result: ScanResultDTO) -> some View {
@@ -179,7 +174,7 @@ struct ScanView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusM), elevation: .soft)
+        .nqSurface(.sticker)
         .accessibilityElement(children: .combine)
     }
 
@@ -206,7 +201,7 @@ struct ScanView: View {
                 errorMessage = "Product not found in Open Food Facts. Try another barcode."
             } catch APIError.badStatus(let code, _) where code == 422 {
                 isLookingUp = false
-                errorMessage = "That product's nutrition data failed sanity checks — nothing was logged or summoned."
+                errorMessage = "That product's nutrition data failed sanity checks: nothing was logged or summoned."
             } catch {
                 isLookingUp = false
                 errorMessage = "Scan failed: \(error.localizedDescription). Check your connection and try again."
@@ -245,6 +240,10 @@ struct ScanView: View {
                     LinearGradient(colors: [NQTheme.chrome, NQTheme.inkDeep], startPoint: .topLeading, endPoint: .bottomTrailing)
                 )
                 .frame(height: 300)
+                .overlay {
+                    RoundedRectangle(cornerRadius: NQTheme.radiusXL + 8)
+                        .strokeBorder(NQTheme.inkDeep, lineWidth: 3)
+                }
                 .nqElevation(.raised)
 
             if !isScanning {
@@ -308,7 +307,7 @@ struct ScanView: View {
                 dishAnalysis = nil
                 gameState.registerDishLog(result: result)
                 if result.flagged == true {
-                    errorMessage = "Logged — heads up, this one was a rough estimate. You can double-check it in your meal log."
+                    errorMessage = "Logged: heads up, this one was a rough estimate. You can double-check it in your meal log."
                 }
             } catch {
                 errorMessage = "Couldn't log that plate: \(error.localizedDescription)"
@@ -350,8 +349,8 @@ struct ScanView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 6)
-        .background(tint.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusM))
+        .background(NQTicketShape().fill(tint.opacity(0.12)))
+        .overlay { NQTicketShape().strokeBorder(tint.opacity(0.5), lineWidth: 1.5) }
     }
 
 }
@@ -489,4 +488,34 @@ struct SummonRevealOverlay: View {
 
     private var rarityLabel: String { character.rarity.label.uppercased() }
     private var rarityColor: Color { character.rarity.kitRarity.outline }
+}
+
+private struct DetectingPill: View {
+    @Environment(\.nqAccent) private var accent
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var pulse = false
+
+    var body: some View {
+        HStack(spacing: NQTheme.spaceS) {
+            Circle()
+                .fill(accent.accent)
+                .frame(width: 8, height: 8)
+                .scaleEffect(pulse && !reduceMotion ? 1.25 : 0.85)
+            Text("Detecting barcode…")
+                .font(NQText.captionS.font.weight(.bold))
+                .foregroundStyle(accent.accentDark)
+        }
+        .nqPadding(.chip)
+        .background(NQPanelShape(cut: NQTheme.radiusS).fill(accent.accentBg))
+        .overlay {
+            NQPanelShape(cut: NQTheme.radiusS).strokeBorder(accent.accent.opacity(0.45), lineWidth: 1)
+        }
+        .onAppear {
+            guard !reduceMotion else { return }
+            withAnimation(.easeInOut(duration: 0.7).repeatForever(autoreverses: true)) {
+                pulse = true
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
 }

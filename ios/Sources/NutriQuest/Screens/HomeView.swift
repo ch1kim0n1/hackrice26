@@ -16,9 +16,13 @@ struct HomeView: View {
 
     @Environment(\.nqAccent) private var accent
 
-    /// Red for over-budget states on the gauge and macro tiles. Deliberately
-    /// harder than NQTheme.warning's terracotta so "over" is unmistakable.
-    private let overRed = Color(hex: 0xD9453A)
+    /// The character the profile is currently showcasing — server value,
+    /// starter fallback while it loads (same resolution RootTabView uses).
+    private var activeCharacter: Character? {
+        let id = gameState.profile?.activeCharacterId
+        return gameState.collection.first { $0.id == id }
+            ?? gameState.collection.first { !$0.isLocked }
+    }
 
     var body: some View {
         ScrollView {
@@ -27,7 +31,7 @@ struct HomeView: View {
                     .nqSlideUp(delay: 0.02)
                 weekStrip
                     .nqSlideUp(delay: 0.05)
-                nutritionCard
+                heroCard
                     .nqSlideUp(delay: 0.1)
                 activityRow
                     .nqSlideUp(delay: 0.15)
@@ -36,8 +40,103 @@ struct HomeView: View {
             }
             .padding(NQTheme.spaceL)
         }
+        .refreshable {
+            await gameState.refreshTasks()
+            await gameState.refreshVitals()
+            await gameState.loadCoinBalance()
+            await gameState.loadProfile()
+        }
         .nqSceneBackground(GameArt.scene("home"))
-        .task { await gameState.refreshTasks() }
+        .navigationTitle("Quest")
+        .navigationBarTitleDisplayMode(.inline)
+        .nqTransparentNav()
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                NQGameTitle("Quest")
+            }
+            ToolbarItem(placement: .navigationBarTrailing) {
+                HStack(spacing: NQTheme.spaceS) {
+                    if let days = gameState.streak?.days, days > 0 {
+                        NQStreakPill(count: days)
+                    }
+                    NQCoinBalance(balance: gameState.coinBalance)
+                }
+            }
+            .nqHideGlass()
+        }
+        .task {
+            await gameState.refreshTasks()
+            await gameState.loadCoinBalance()
+        }
+    }
+
+    // MARK: - Hero card: display character + nutrition (#28)
+
+    /// The display character stands centre-stage with today's calorie budget
+    /// wrapped as a progress ring around its base; the three macro tiles sit
+    /// underneath. One card, same daily plan numbers as before.
+    private var heroCard: some View {
+        let target = max(Double(gameState.dailyPlan.calories), 1)
+        let consumed = gameState.todayCalories
+        let over = consumed > target
+        let progress = min(consumed / target, 1)
+        let remaining = Int(abs(target - consumed).rounded())
+
+        return VStack(spacing: NQTheme.spaceM) {
+            ZStack {
+                // The ring wraps the character's base — consumed calories
+                // sweep it in the accent colour, red once over budget.
+                Circle()
+                    .stroke(NQTheme.hairline, lineWidth: 12)
+                Circle()
+                    .trim(from: 0, to: max(0.02, progress))
+                    .stroke(
+                        over ? AnyShapeStyle(NQTheme.overBudget)
+                             : AnyShapeStyle(LinearGradient(colors: [accent.accent, accent.accentDark],
+                                                            startPoint: .topLeading, endPoint: .bottomTrailing)),
+                        style: StrokeStyle(lineWidth: 12, lineCap: .round)
+                    )
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeOut(duration: 0.4), value: progress)
+                if let character = activeCharacter, !character.isLocked {
+                    CharacterArtwork(character: character)
+                        .frame(width: 118, height: 148)
+                        .modifier(MascotIdleBob(enabled: true))
+                        .nqSquish()
+                        .accessibilityHint("Tap to squish")
+                } else {
+                    NQIcon.sparkle.view
+                        .frame(width: 44, height: 44)
+                        .foregroundStyle(NQTheme.inkFaint)
+                }
+            }
+            .frame(width: 190, height: 190)
+            .padding(.top, NQTheme.spaceS)
+
+            VStack(spacing: 2) {
+                NQCountUpText(
+                    value: remaining,
+                    font: NQFont.display.font(34),
+                    color: over ? NQTheme.overBudget : NQTheme.ink
+                )
+                Text(over ? "Calories over" : "Calories left")
+                    .font(NQText.caption.font.weight(.bold))
+                    .foregroundStyle(over ? NQTheme.overBudget : NQTheme.inkMuted)
+            }
+
+            Rectangle()
+                .fill(NQTheme.hairline)
+                .frame(height: 1.5)
+            macroRow
+        }
+        .nqPadding(.card)
+        .nqSurface(.hero)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            over
+            ? "\(remaining) calories over today's \(gameState.dailyPlan.calories) calorie budget"
+            : "\(remaining) calories left of today's \(gameState.dailyPlan.calories) calorie budget"
+        )
     }
 
     // MARK: - Section 4: daily tasks (spec §6)
@@ -48,10 +147,10 @@ struct HomeView: View {
     private var tasksCard: some View {
         VStack(alignment: .leading, spacing: NQTheme.spaceS) {
             HStack {
-                Text("DAILY TASKS")
-                    .font(NQText.micro.font)
-                    .tracking(2)
-                    .foregroundStyle(NQTheme.gold)
+                Text("Daily tasks")
+                    .font(NQText.headingL.font)
+                    .foregroundStyle(NQTheme.ink)
+                    .shadow(color: NQTheme.inkDeep, radius: 0, y: 2)
                 Spacer(minLength: 0)
                 if let streak = gameState.streak {
                     NQChip("\(streak.days)d streak", icon: .flame, tint: NQTheme.flame, filled: streak.days > 0)
@@ -62,12 +161,13 @@ struct HomeView: View {
             }
 
             if gameState.dailyTasks.isEmpty {
-                Text("Tasks load once the backend answers — pull to retry if it stays empty.")
+                Text("Pull down to load today's tasks.")
                     .font(NQText.captionS.font)
                     .foregroundStyle(NQTheme.inkMuted)
             } else {
-                ForEach(gameState.dailyTasks) { task in
+                ForEach(Array(gameState.dailyTasks.enumerated()), id: \.element.id) { index, task in
                     taskRow(task)
+                        .nqCascade(index: index)
                 }
             }
 
@@ -78,7 +178,7 @@ struct HomeView: View {
             }
         }
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
+        .nqSurface(.sticker)
     }
 
     private func taskRow(_ task: TaskDTO) -> some View {
@@ -120,9 +220,10 @@ struct HomeView: View {
                         .font(NQText.captionS.font.weight(.heavy))
                         .foregroundStyle(accent.accent.readableTextColor())
                         .nqPadding(.badge)
-                        .background(Capsule().fill(accent.accent))
+                        .background(NQPanelShape(cut: NQTheme.radiusXS).fill(accent.accent))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(NQPressableStyle(scale: 0.94, haptic: false, ledge: 3))
+                .nqInvitePulse()
                 .accessibilityHint("Claims the task reward")
             } else {
                 Text("Open")
@@ -209,90 +310,7 @@ struct HomeView: View {
             }
         }
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
-    }
-
-    // MARK: - Section 2: nutrition card
-
-    /// Combined nutrition card: the calorie gauge on top and the three macro
-    /// allowances below a hairline divider, sharing one sticker card.
-    private var nutritionCard: some View {
-        VStack(alignment: .leading, spacing: NQTheme.spaceM) {
-            calorieSection
-            Rectangle()
-                .fill(NQTheme.hairline)
-                .frame(height: 1.5)
-            macroRow
-        }
-        .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusXL), elevation: .sticker, inkStroke: true)
-    }
-
-    /// Calorie gauge: today's remaining budget as the headline, a rounded
-    /// 0-to-target bar underneath, red once the budget is exceeded.
-    private var calorieSection: some View {
-        let target = max(Double(gameState.dailyPlan.calories), 1)
-        let consumed = gameState.todayCalories
-        let over = consumed > target
-        let fraction = min(consumed / target, 1)
-        let headline = Int(abs(target - consumed).rounded())
-
-        return VStack(alignment: .leading, spacing: NQTheme.spaceM) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("\(headline.formatted())")
-                        .font(NQFont.display.font(34))
-                        .foregroundStyle(over ? overRed : NQTheme.ink)
-                        .monospacedDigit()
-                    Text(over ? "Calories over" : "Calories left")
-                        .font(NQText.caption.font.weight(.bold))
-                        .foregroundStyle(over ? overRed : NQTheme.inkMuted)
-                }
-                Spacer()
-                ZStack {
-                    Circle()
-                        .fill((over ? overRed : accent.accent).opacity(0.14))
-                        .frame(width: 44, height: 44)
-                    NQIcon.flame.view
-                        .frame(width: 20, height: 20)
-                        .foregroundStyle(over ? overRed : accent.accentDark)
-                }
-            }
-
-            GeometryReader { geo in
-                ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(NQTheme.surface)
-                    Capsule()
-                        .strokeBorder(NQTheme.hairline, lineWidth: 1.5)
-                    if fraction > 0 {
-                        Capsule()
-                            .fill(over
-                                  ? AnyShapeStyle(overRed)
-                                  : AnyShapeStyle(LinearGradient(
-                                        colors: [accent.accent, accent.accentDark],
-                                        startPoint: .leading, endPoint: .trailing)))
-                            .frame(width: max(18, geo.size.width * fraction))
-                            .animation(.easeOut(duration: 0.4), value: fraction)
-                    }
-                }
-            }
-            .frame(height: 18)
-
-            HStack {
-                Text("0")
-                Spacer()
-                Text("\(gameState.dailyPlan.calories.formatted()) cal")
-            }
-            .font(NQText.captionS.font.weight(.bold))
-            .foregroundStyle(NQTheme.inkFaint)
-        }
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            over
-            ? "\(headline) calories over today's \(gameState.dailyPlan.calories) calorie budget"
-            : "\(headline) calories left of today's \(gameState.dailyPlan.calories) calorie budget"
-        )
+        .nqSurface(.sticker)
     }
 
     /// The three macro columns — protein, carbs, and fats — sized by the plan
@@ -301,22 +319,19 @@ struct HomeView: View {
     private var macroRow: some View {
         HStack(spacing: NQTheme.spaceM) {
             MacroTile(
-                name: "Protein", icon: "fork.knife", tint: Color(hex: 0xEE7C7C),
+                name: "Protein", icon: "fork.knife", tint: NQTheme.protein,
                 consumed: gameState.todayProtein,
-                target: Double(gameState.dailyPlan.proteinG),
-                overRed: overRed
+                target: Double(gameState.dailyPlan.proteinG)
             )
             MacroTile(
-                name: "Carbs", icon: "leaf.fill", tint: Color(hex: 0xE8A05F),
+                name: "Carbs", icon: "leaf.fill", tint: NQTheme.carbs,
                 consumed: gameState.todayCarbs,
-                target: Double(gameState.dailyPlan.carbsG),
-                overRed: overRed
+                target: Double(gameState.dailyPlan.carbsG)
             )
             MacroTile(
-                name: "Fats", icon: "drop.fill", tint: Color(hex: 0x7CA9EE),
+                name: "Fats", icon: "drop.fill", tint: NQTheme.fat,
                 consumed: gameState.todayFat,
-                target: Double(gameState.dailyPlan.fatsG),
-                overRed: overRed
+                target: Double(gameState.dailyPlan.fatsG)
             )
         }
     }
@@ -374,9 +389,9 @@ private struct DayCoin: View {
                 if achieved {
                     Circle()
                         .fill(tint)
-                        .padding(3)
+                        .padding(NQTheme.spaceXS)
                     Image(systemName: "checkmark")
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.system(size: NQLayout.iconS, weight: .heavy))
                         .foregroundStyle(tint.readableTextColor())
                 } else if progress > 0 {
                     // Liquid fill: the coin fills from the bottom as the
@@ -452,8 +467,6 @@ private struct MacroTile: View {
     let consumed: Double
     /// The plan's daily grams for this macro.
     let target: Double
-    /// Shared over-budget red from the parent screen.
-    let overRed: Color
 
     /// True once today's intake exceeds the plan's allowance.
     private var over: Bool { consumed > target }
@@ -475,7 +488,7 @@ private struct MacroTile: View {
                 .monospacedDigit()
             Text(over ? "\(name) over" : "\(name) left")
                 .font(NQText.captionS.font)
-                .foregroundStyle(over ? overRed : NQTheme.inkMuted)
+                .foregroundStyle(over ? NQTheme.overBudget : NQTheme.inkMuted)
 
             ZStack {
                 Circle()
@@ -483,14 +496,14 @@ private struct MacroTile: View {
                 Circle()
                     .trim(from: 0, to: progress)
                     .stroke(
-                        over ? overRed : tint,
+                        over ? NQTheme.overBudget : tint,
                         style: StrokeStyle(lineWidth: 7, lineCap: .round)
                     )
                     .rotationEffect(.degrees(-90))
                     .animation(.easeOut(duration: 0.4), value: progress)
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(over ? overRed : tint)
+                    .font(.system(size: NQLayout.iconM, weight: .semibold))
+                    .foregroundStyle(over ? NQTheme.overBudget : tint)
             }
             .frame(width: 56, height: 56)
             .padding(.top, 2)
@@ -518,7 +531,7 @@ private struct BurnRingTile: View {
 
     /// Headline text: the burned total, or a dash before the first sync.
     private var valueText: String {
-        caloriesBurned.map { $0.formatted() } ?? "—"
+        caloriesBurned.map { $0.formatted() } ?? "-"
     }
 
     var body: some View {
@@ -555,7 +568,7 @@ private struct BurnRingTile: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .sticker, inkStroke: true)
+        .nqSurface(.sticker)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             caloriesBurned.map { "\($0) calories burned today" }
@@ -579,7 +592,7 @@ private struct StepsTile: View {
 
     /// Headline text: today's step count, or a dash before the first sync.
     private var valueText: String {
-        steps.map { $0.formatted() } ?? "—"
+        steps.map { $0.formatted() } ?? "-"
     }
 
     var body: some View {
@@ -589,7 +602,7 @@ private struct StepsTile: View {
                     .fill(tint.opacity(0.14))
                     .frame(width: 34, height: 34)
                 Image(systemName: "figure.walk")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: NQLayout.iconM, weight: .semibold))
                     .foregroundStyle(tint)
             }
 
@@ -623,7 +636,7 @@ private struct StepsTile: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         .nqPadding(.card)
-        .nqPlate(RoundedRectangle(cornerRadius: NQTheme.radiusL), elevation: .sticker, inkStroke: true)
+        .nqSurface(.sticker)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             steps.map { "\($0) steps today of a \(VitalsActivity.stepGoal) step goal" }

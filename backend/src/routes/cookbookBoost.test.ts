@@ -77,7 +77,9 @@ describe("boostedOdds", () => {
   it("scales Rare+ by 1.15 and renormalizes to 1", async () => {
     const { boostedOdds } = await import("../services/lootboxEngine");
     const { COOKBOOKS } = await import("../data/lootTable");
-    const book = COOKBOOKS[0];
+    // Needs a book with mass on Rare+ tiers — super-simple is all-Common,
+    // so pin the test to the cheapest book that has them.
+    const book = COOKBOOKS.find((b) => b.id === "home-cookbook")!;
     const boosted = boostedOdds(book.odds);
 
     const total = Object.values(boosted).reduce((a, b) => a + b, 0);

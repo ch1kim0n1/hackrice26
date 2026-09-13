@@ -105,12 +105,13 @@ export function pickRarity(odds: Partial<Record<Rarity, number>>, value: number)
 }
 
 /**
- * Uniform pick of a character *design* from the whole catalog. Rarity lives
- * on the instance, not the design — the same roll unit picks the design, and
- * the caller stamps the rolled rarity onto it via asCharacter().
+ * Uniform pick of a character *design* from the rolled rarity's pool.
+ * Rarity lives on the instance, not the design — the same roll unit picks
+ * the design, and the caller stamps the rolled rarity onto it via
+ * asCharacter(). Secret pools are the brainrot set.
  */
-export function pickDesign(value: number): RosterCharacter {
-  const pool = mintPool();
+export function pickDesign(value: number, rarity: Rarity): RosterCharacter {
+  const pool = mintPool(rarity);
   return pool[Math.min(Math.floor(value * pool.length), pool.length - 1)];
 }
 
@@ -152,7 +153,7 @@ function mintMonster(
   const segmentRoll = roll(pair.serverSeed, pair.clientSeed, nonce, CURSOR.mintSegment);
   const positionRoll = roll(pair.serverSeed, pair.clientSeed, nonce, CURSOR.mintPosition);
 
-  const character = asCharacter(pickDesign(characterRoll), rarity);
+  const character = asCharacter(pickDesign(characterRoll, rarity), rarity);
   const baseMintValue = mintValue(rarity, segmentRoll, positionRoll);
 
   return {
@@ -232,18 +233,18 @@ export function buildReel(
     }
     const rarity = pickRarity(odds, roll(serverSeed, clientSeed, nonce, CURSOR.reelBase + slot));
     const filler = roll(serverSeed, clientSeed, nonce, CURSOR.reelBase + slot + REEL_LENGTH);
-    reel.push(asCharacter(pickDesign(filler), rarity));
+    reel.push(asCharacter(pickDesign(filler, rarity), rarity));
   }
   return reel;
 }
 
 /** Per-tier and per-character odds for a Cookbook — real numbers for the UI. */
 export function cookbookOdds(book: Cookbook): CrateOdds[] {
-  const designCount = mintPool().length;
   return RARITY_ORDER
     .filter((rarity) => (book.odds[rarity] ?? 0) > 0)
     .map((rarity) => {
       const tierChance = book.odds[rarity];
+      const designCount = mintPool(rarity).length;
       return {
         rarity,
         label: RARITY_TIERS[rarity].label,

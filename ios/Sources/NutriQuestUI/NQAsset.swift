@@ -80,7 +80,12 @@ public struct NQAssetBanner: View {
                 }
             }
             .clipped()
-            .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusXL))
+            .clipShape(NQPanelShape(cut: NQTheme.radiusL))
+            .overlay {
+                NQPanelShape(cut: NQTheme.radiusL)
+                    .strokeBorder(NQTheme.inkDeep, lineWidth: 3)
+            }
+            .nqElevation(.sticker)
             .accessibilityHidden(true)
     }
 }

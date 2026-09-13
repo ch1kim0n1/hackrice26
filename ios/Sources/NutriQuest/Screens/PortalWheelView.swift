@@ -180,7 +180,7 @@ struct PortalWheelView: View {
                         .foregroundStyle(rarity.badgeText)
                         .nqPadding(.badge)
                         .background(rarity.badgeBackground)
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                     Text(String(repeating: "★", count: max(1, monster.stars)))
                         .font(NQText.microS.font)
                         .foregroundStyle(NQTheme.gold)
@@ -220,13 +220,13 @@ struct PortalWheelView: View {
                             Circle()
                                 .fill(tint)
                                 .frame(width: 7, height: 7)
-                            Text(entry.won ? String(format: "%.2fx", entry.multiplier) : "—")
+                            Text(entry.won ? String(format: "%.2fx", entry.multiplier) : "-")
                                 .font(NQText.captionS.font.weight(.heavy))
                                 .foregroundStyle(entry.won ? NQTheme.success : NQTheme.inkMuted)
                         }
                         .nqPadding(.chip)
                         .background((entry.won ? NQTheme.success : NQTheme.inkFaint).opacity(0.14))
-                        .clipShape(Capsule())
+                        .clipShape(NQTicketShape())
                         .accessibilityLabel(
                             entry.won
                                 ? "Won \(String(format: "%.2f", entry.multiplier)) times on \(entry.pick)"
@@ -346,15 +346,19 @@ struct PortalWheelView: View {
             if colors.isEmpty {
                 NQEmptyState(message: "Couldn't reach the wheel's odds.", icon: .wifiOff)
             } else {
-                ForEach(colors) { option in
-                    colorRow(option, wager: monster.netWorth)
+                // Four square buttons in one row (#18b) — same information as
+                // the old full-width rows, no scrolling past the wheel.
+                HStack(spacing: NQTheme.spaceS) {
+                    ForEach(colors) { option in
+                        colorSquare(option, wager: monster.netWorth)
+                    }
                 }
             }
         }
         .padding(.horizontal, NQTheme.spaceL)
     }
 
-    private func colorRow(_ option: PortalColorDTO, wager: Int) -> some View {
+    private func colorSquare(_ option: PortalColorDTO, wager: Int) -> some View {
         let isPicked = pick == option.color
         let tint = Color(hex: option.colorHex)
         let payout = Int((Double(wager) * option.multiplier).rounded(.down))
@@ -363,41 +367,33 @@ struct PortalWheelView: View {
             NQJuice.tap()
             withAnimation(NQMotion.snappy) { pick = isPicked ? nil : option.color }
         } label: {
-            HStack(spacing: NQTheme.spaceM) {
+            VStack(spacing: NQTheme.spaceXS + 2) {
                 ZStack {
                     Circle()
                         .fill(tint.opacity(0.2))
-                        .frame(width: 44, height: 44)
+                        .frame(width: 34, height: 34)
                     Circle()
                         .strokeBorder(tint, lineWidth: isPicked ? 3 : 1.5)
-                        .frame(width: 44, height: 44)
+                        .frame(width: 34, height: 34)
                     Text("\(option.sections)")
-                        .font(NQText.heading.font.weight(.heavy))
+                        .font(NQText.captionS.font.weight(.heavy))
                         .foregroundStyle(tint)
                 }
-
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(option.label.uppercased())
-                        .font(NQText.heading.font.weight(.heavy))
-                        .tracking(0.8)
-                        .foregroundStyle(NQTheme.ink)
-                    Text("\(option.sections)/\(option.totalSections) sections · \(percent(option.probability))")
-                        .font(NQText.microXS.font)
-                        .foregroundStyle(NQTheme.inkMuted)
-                }
-
-                Spacer(minLength: NQTheme.spaceS)
-
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text(String(format: "%.2fx", option.multiplier))
-                        .font(NQText.headingL.font.weight(.heavy))
-                        .foregroundStyle(tint)
-                    Text("\(payout.formatted()) NW")
-                        .font(NQText.microXS.font)
-                        .foregroundStyle(NQTheme.inkMuted)
-                }
+                Text(option.label.uppercased())
+                    .font(NQText.micro.font.weight(.heavy))
+                    .tracking(0.4)
+                    .foregroundStyle(NQTheme.ink)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                Text(String(format: "%.2fx", option.multiplier))
+                    .font(NQText.captionS.font.weight(.heavy))
+                    .foregroundStyle(tint)
+                Text("\(payout.formatted()) NW")
+                    .font(NQText.microXS.font)
+                    .foregroundStyle(NQTheme.inkMuted)
             }
-            .nqPadding(.card)
+            .padding(.vertical, NQTheme.spaceS)
+            .padding(.horizontal, NQTheme.spaceXS)
             .frame(maxWidth: .infinity)
             .background(NQTheme.background)
             .clipShape(RoundedRectangle(cornerRadius: NQTheme.radiusL))
@@ -469,7 +465,7 @@ struct PortalWheelView: View {
                             .foregroundStyle(Color(hex: band.colorHex))
                             .nqPadding(.chip)
                             .background(Color(hex: band.colorHex).opacity(0.16))
-                            .clipShape(Capsule())
+                            .clipShape(NQTicketShape())
                     }
                 }
                 .accessibilityElement(children: .combine)
@@ -960,7 +956,7 @@ struct PortalWheelResultView: View {
                 .foregroundStyle(rarity.badgeText)
                 .nqPadding(.chip)
                 .background(rarity.badgeBackground)
-                .clipShape(Capsule())
+                .clipShape(NQTicketShape())
 
             Text(reward.character.name)
                 .font(NQText.displayL.font)
@@ -1069,7 +1065,7 @@ struct PortalWheelRulesView: View {
 
                 if let config = gameState.portalWheelConfig {
                     section("The real odds") {
-                        Text("The wheel has \(config.totalSections) equal sections. These are the actual counts, not a sample — the wedges you see are the odds.")
+                        Text("The wheel has \(config.totalSections) equal sections. These are the actual counts, not a sample: the wedges you see are the odds.")
                             .font(NQText.captionS.font)
                             .foregroundStyle(NQTheme.inkMuted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1098,7 +1094,7 @@ struct PortalWheelRulesView: View {
                             .accessibilityElement(children: .combine)
                         }
 
-                        Text("Every payout is (1 − edge) ÷ chance, at a \(String(format: "%.0f", config.houseEdge * 100))% house edge — the same as the other games.")
+                        Text("Every payout is (1 − edge) ÷ chance, at a \(String(format: "%.0f", config.houseEdge * 100))% house edge: the same as the other games.")
                             .font(NQText.microXS.font)
                             .foregroundStyle(NQTheme.inkFaint)
                             .fixedSize(horizontal: false, vertical: true)

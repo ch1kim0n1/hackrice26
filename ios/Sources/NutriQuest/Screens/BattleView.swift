@@ -56,6 +56,12 @@ struct BattleView: View {
     /// What the last ranked match did to the ladder — drives the result card.
     @State private var rankedOutcome: GameState.RankedOutcome?
 
+    /// Autopilot (#10): when on, the bot policy drives the player's side too
+    /// and the choreography runs fast — a deterministic fast-forward, not a
+    /// simulation shortcut: the same engine, same seed, same event stream.
+    @State private var autopilot = false
+    /// Long-press move detail popup (#11).
+    @State private var inspectedMove: BattleMoveSpec?
     /// Live engine handle — every interactive mode (ranked/friendly/practice).
     @State private var battle: Battle?
     /// Replay cursor for LAN animation and the interactive event drain.
@@ -202,6 +208,7 @@ struct BattleView: View {
         .preferredColorScheme(.dark)
         .nqSuccessBurst(on: simulateTrigger)
         .overlay { replacementOverlay }
+        .overlay { moveInfoOverlay }
         .onAppear {
             if orderedSquad.isEmpty { orderedSquad = yourSquad }
             if case .friendly(let ctx) = mode { match = ctx.match }
@@ -229,7 +236,7 @@ struct BattleView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background {
-                Capsule()
+                NQTicketShape()
                     .fill(LinearGradient(colors: [accent.accent, accent.accentDark], startPoint: .top, endPoint: .bottom))
                     .nqElevation(.card)
             }
@@ -242,6 +249,9 @@ struct BattleView: View {
         if let resultText { return resultText.hasPrefix("VICTORY") ? "Victory" : "Defeat" }
         if needsReplacement { return "Choose your next monster" }
         if serverBusy { return match == nil ? "Finding match…" : "Reporting result…" }
+        if autopilot, let battle, !battle.isFinished {
+            return scene.turn > 0 ? "Turn \(scene.turn) · AUTO" : "Auto-battling…"
+        }
         if isInteractive, let battle, !battle.isFinished {
             return battle.currentSide == myEngineSide ? "Your move" : "Rival's turn…"
         }
@@ -325,7 +335,10 @@ struct BattleView: View {
     /// The active unit: large artwork in a rarity-glow ring, HP bar, mana
     /// bar (Epic+), status chips. Faints slump and grey out.
     private func activeCard(unitID: String, unit: BattleScene.Unit, side: Int) -> some View {
+        // Hurt pose: on the hit flash, and persistently while the unit is
+        // low on HP — a battered monster shouldn't look fresh.
         let hurt = (side == 0 && yourHit) || (side == 1 && opponentHit)
+            || (!unit.fainted && unit.hpFraction <= 0.3)
         let rarity = character(for: unitID)?.rarity.kitRarity
         return HStack(spacing: NQTheme.spaceM) {
             ZStack {
@@ -417,7 +430,7 @@ struct BattleView: View {
                     .foregroundStyle(kind.tint)
                     .padding(.horizontal, 5)
                     .padding(.vertical, 2)
-                    .background(Capsule().fill(kind.tint.opacity(0.16)))
+                    .background(NQTicketShape().fill(kind.tint.opacity(0.16)))
             }
         }
     }
@@ -425,7 +438,7 @@ struct BattleView: View {
     /// A benched unit: portrait + HP sliver; dimmed once fainted.
     private func benchChip(unitID: String, unit: BattleScene.Unit) -> some View {
         VStack(spacing: 4) {
-            characterArtwork(unitID: unitID, fainted: unit.fainted)
+            characterArtwork(unitID: unitID, hurt: !unit.fainted && unit.hpFraction <= 0.3, fainted: unit.fainted)
                 .frame(width: 40, height: 52)
                 .opacity(unit.fainted ? 0.35 : 1)
                 .saturation(unit.fainted ? 0 : 1)
@@ -475,7 +488,7 @@ struct BattleView: View {
                 .foregroundStyle(NQTheme.ink)
                 .nqPadding(.badge)
                 .padding(.horizontal, 6)
-                .nqPlate(Capsule(), elevation: .soft)
+                .nqPlate(NQTicketShape(), elevation: .soft)
             Rectangle().fill(NQTheme.hairline).frame(height: 1.5)
         }
         .accessibilityHidden(true)
@@ -506,7 +519,7 @@ struct BattleView: View {
     /// battle exists, the big button starts (or parks) the fight.
     private var actionSection: some View {
         VStack(spacing: NQTheme.spaceS + 2) {
-            if isInteractive, let battle, let actions = availableActions(battle) {
+            if isInteractive, let battle, !autopilot, let actions = availableActions(battle) {
                 moveButtons(actions.moves)
             } else if battle == nil {
                 NQButton(primaryTitle, style: .primary) { startBattle() }
@@ -514,6 +527,28 @@ struct BattleView: View {
                     .accessibilityHint("Starts a deterministic battle")
             } else if serverBusy || running {
                 NQDotsLoader(color: accent.accent)
+            }
+
+            // Fast-forward (#10): the deterministic bot takes over your side.
+            if isInteractive, let b = battle, !b.isFinished, resultText == nil {
+                Button {
+                    NQSound.play(.toggle)
+                    autopilot.toggle()
+                    if autopilot { kickPump(b) }
+                } label: {
+                    Label(autopilot ? "Auto battling…" : "Fast-forward (auto play)",
+                          systemImage: autopilot ? "pause.fill" : "forward.fill")
+                        .font(NQText.captionS.font.weight(.heavy))
+                        .foregroundStyle(NQTheme.battleInk)
+                        .nqPadding(.badge)
+                        .frame(maxWidth: .infinity)
+                        .background(RoundedRectangle(cornerRadius: NQTheme.radiusM).fill(.white.opacity(0.08)))
+                        .overlay {
+                            RoundedRectangle(cornerRadius: NQTheme.radiusM)
+                                .strokeBorder(autopilot ? accent.accent : accent.accent.opacity(0.35), lineWidth: 1)
+                        }
+                }
+                .buttonStyle(.nqPressable(scale: 0.97, haptic: false))
             }
 
             if let resultText {
@@ -612,7 +647,11 @@ struct BattleView: View {
             }
         }
         .buttonStyle(.nqPressable(scale: 0.97, haptic: false))
-        .accessibilityHint("Use \(move.name)")
+        .onLongPressGesture {
+            NQHaptic.light()
+            inspectedMove = move
+        }
+        .accessibilityHint("Use \(move.name). Long-press for details")
     }
 
     private func moveSubtitle(_ move: BattleMoveSpec) -> String {
@@ -690,7 +729,7 @@ struct BattleView: View {
         let parked = await gameState.beginRankedBattle(squad: displayedSquad)
         serverBusy = false
         guard let parked else {
-            logLine("No match — check your connection")
+            logLine("No match: check your connection")
             return
         }
         match = parked
@@ -718,7 +757,7 @@ struct BattleView: View {
     /// One player decision: apply it locally (and onto the commit script),
     /// animate the fallout, then let the rival answer until it's our turn.
     private func playerAct(_ action: BattleAction) {
-        guard let b = battle, !b.isFinished, b.currentSide == myEngineSide else { return }
+        guard !autopilot, let b = battle, !b.isFinished, b.currentSide == myEngineSide else { return }
         b.act(myEngineSide, action: action)
         if match != nil { script.append(action.scriptEntry) }
         running = true
@@ -734,20 +773,43 @@ struct BattleView: View {
         Task { await runInteractive(b) }
     }
 
+    /// Re-start the pump after a player action or an autopilot toggle.
+    private func kickPump(_ b: Battle) {
+        running = true
+        Task { await runInteractive(b) }
+    }
+
+    /// Choreography clock: autopilot compresses every beat so a fast-forward
+    /// plays the same events ~6× faster instead of skipping them.
+    private func pace(_ ns: UInt64) async {
+        let d = autopilot ? ns / 6 : ns
+        guard d > 1_000_000 else { return }
+        try? await Task.sleep(nanoseconds: d)
+    }
+
     /// The turn pump: animate pending events, auto-drive the rival, stop at
     /// a decision point (player turn / faint pick) or the final commit.
+    /// With autopilot on, the bot policy answers our decision points too.
     private func runInteractive(_ b: Battle) async {
         while !b.isFinished {
             await drainAnimated(b)
-            if needsReplacement { running = false; return }
+            if needsReplacement {
+                guard autopilot,
+                      let pick = sideUnitIDs[myEngineSide].indices
+                        .first(where: { !b.unitState(myEngineSide, $0).fainted })
+                else { running = false; return }
+                b.chooseReplacement(myEngineSide, unitIndex: pick)
+                if match != nil { script.append(.choose(pick)) }
+                continue
+            }
             guard let side = b.currentSide else { break }
-            if side == myEngineSide { break }
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            if side == myEngineSide && !autopilot { break }
+            await pace(300_000_000)
             b.act(side, action: Battle.autoPolicy(battle: b, side: side))
         }
         await drainAnimated(b)
         running = false
-        if b.isFinished { await concludeInteractive(b) }
+        if b.isFinished { autopilot = false; await concludeInteractive(b) }
     }
 
     /// Settle the fight: practice reports locally; parked matches submit the
@@ -762,11 +824,11 @@ struct BattleView: View {
                 rankedOutcome = outcome
                 serverOpponent = outcome.opponentSquad
             } else {
-                logLine("Result sync failed — showing local replay")
+                logLine("Result sync failed: showing local replay")
             }
         case .friendly:
             if await gameState.commitFriendlyBattle(match, actions: script) == nil {
-                logLine("Result sync failed — showing local replay")
+                logLine("Result sync failed: showing local replay")
             }
         }
         serverBusy = false
@@ -829,6 +891,62 @@ struct BattleView: View {
             if Task.isCancelled { return }
             await animate(event)
             apply(event)
+        }
+    }
+
+    /// Long-press move detail (#11): name, kind, the full stat line and the
+    /// authored description — so a status move explains itself before you
+    /// spend the turn on it.
+    @ViewBuilder private var moveInfoOverlay: some View {
+        if let move = inspectedMove {
+            ZStack {
+                Color.black.opacity(0.55)
+                    .ignoresSafeArea()
+                    .onTapGesture { inspectedMove = nil }
+                VStack(alignment: .leading, spacing: NQTheme.spaceS) {
+                    HStack {
+                        Image(systemName: move.kind == .special ? "bolt.fill" : "burst.fill")
+                            .foregroundStyle(move.kind == .special ? NQTheme.info : accent.accent)
+                        Text(move.name)
+                            .font(NQText.heading.font.weight(.heavy))
+                            .foregroundStyle(NQTheme.battleInk)
+                        Spacer()
+                        Button { inspectedMove = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: NQText.heading.size))
+                                .foregroundStyle(NQTheme.battleInkMuted)
+                        }
+                        .accessibilityLabel("Close move details")
+                    }
+                    Text(move.kind == .special ? "SPECIAL · SPENDS MANA" : "STANDARD")
+                        .font(NQText.microS.font)
+                        .tracking(0.6)
+                        .foregroundStyle(NQTheme.battleInkMuted)
+                    Text(moveSubtitle(move))
+                        .font(NQText.captionS.font.weight(.bold))
+                        .foregroundStyle(NQTheme.battleInk)
+                    if let effect = move.statusEffect {
+                        Text("Effect: \(effect.displayName)\(move.statusChance.map { " · \(Int($0))% chance" } ?? "")\(move.duration.map { " · \($0) turns" } ?? "")")
+                            .font(NQText.captionS.font)
+                            .foregroundStyle(NQTheme.info)
+                    }
+                    if let description = move.description, !description.isEmpty {
+                        Text(description)
+                            .font(NQText.caption.font)
+                            .foregroundStyle(NQTheme.battleInkMuted)
+                    }
+                }
+                .nqPadding(.card)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: NQTheme.radiusXL).fill(NQTheme.battleBg))
+                .overlay {
+                    RoundedRectangle(cornerRadius: NQTheme.radiusXL)
+                        .strokeBorder(accent.accent.opacity(0.5), lineWidth: 1.5)
+                }
+                .padding(NQTheme.spaceL)
+            }
+            .transition(NQTransition.pop)
+            .zIndex(20)
         }
     }
 
@@ -938,7 +1056,7 @@ struct BattleView: View {
             guard attackerSide != -1, defenderSide != -1 else { return }
 
             setLunge(side: attackerSide, active: true)
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            await pace(300_000_000)
             setLunge(side: attackerSide, active: false)
 
             setHit(side: defenderSide, active: true)
@@ -952,37 +1070,37 @@ struct BattleView: View {
 
             try? await Task.sleep(nanoseconds: crit ? 160_000_000 : 90_000_000)
             setHit(side: defenderSide, active: false)
-            try? await Task.sleep(nanoseconds: 220_000_000)
+            await pace(220_000_000)
 
         case .miss(_, let defender, _, _):
             showPopup("MISS!", color: NQTheme.battleInkMuted, side: side(of: defender))
-            try? await Task.sleep(nanoseconds: 400_000_000)
+            await pace(400_000_000)
 
         case .faint(let unit):
             showPopup("KO!", color: NQTheme.warning, side: side(of: unit))
             NQJuice.hit(heavy: true)
-            try? await Task.sleep(nanoseconds: 450_000_000)
+            await pace(450_000_000)
 
         case .switchEvent(let side, _, let newIn, let forced):
             showPopup(forced ? "\(name(for: newIn)) steps in" : "\(name(for: newIn)) tags in",
                       color: NQTheme.info, side: side)
-            try? await Task.sleep(nanoseconds: 350_000_000)
+            await pace(350_000_000)
 
         case .status(let unit, let kind, _):
             showPopup(kind.displayName, color: kind.tint, side: side(of: unit))
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            await pace(250_000_000)
 
         case .statusTick(let unit, _, let damage):
             showPopup("−\(Int(damage))", color: StatusEffectID.burn.tint, side: side(of: unit))
-            try? await Task.sleep(nanoseconds: 200_000_000)
+            await pace(200_000_000)
 
         case .heal(let unit, let amount, _):
             showPopup("+\(Int(amount))", color: NQTheme.success, side: side(of: unit))
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            await pace(250_000_000)
 
         case .stunned(let unit):
             showPopup("Stunned!", color: NQTheme.battleInkMuted, side: side(of: unit))
-            try? await Task.sleep(nanoseconds: 300_000_000)
+            await pace(300_000_000)
 
         case .victory:
             NQJuice.success()
@@ -1011,10 +1129,10 @@ struct BattleView: View {
                 unit.fainted = unit.hp <= 0
                 scene.units[defender] = unit
             }
-            logLine("\(name(for: attacker)) used \(move) — \(damage) dmg\(crit ? " CRIT" : "")")
+            logLine("\(name(for: attacker)) used \(move): \(damage) dmg\(crit ? " CRIT" : "")")
         case .miss(let attacker, _, let move, let moveID):
             spendMana(attacker: attacker, moveID: moveID)
-            logLine("\(name(for: attacker)) used \(move) — missed")
+            logLine("\(name(for: attacker)) used \(move): missed")
         case .status(let unit, let kind, _):
             scene.units[unit]?.statuses.insert(kind)
             logLine("\(name(for: unit)): \(kind.displayName)")
@@ -1044,7 +1162,7 @@ struct BattleView: View {
             logLine("\(name(for: unit)) fainted")
         case .victory(let winner, _, let reason):
             logLine(reason == .turnLimit
-                ? "Turn limit — \(name(for: sideUnitIDs[winner].first ?? ""))'s side holds the field"
+                ? "Turn limit: \(name(for: sideUnitIDs[winner].first ?? ""))'s side holds the field"
                 : "\(name(for: sideUnitIDs[winner].first ?? ""))'s side wins")
         }
     }
