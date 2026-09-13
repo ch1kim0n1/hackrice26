@@ -89,7 +89,7 @@ struct HomeView: View {
                 Circle()
                     .stroke(NQTheme.hairline, lineWidth: 12)
                 Circle()
-                    .trim(from: 0, to: max(0.02, progress))
+                    .trim(from: 0, to: progress)
                     .stroke(
                         over ? AnyShapeStyle(NQTheme.overBudget)
                              : AnyShapeStyle(LinearGradient(colors: [accent.accent, accent.accentDark],
