@@ -27,6 +27,57 @@ it stops shadowing search results.
 
 ---
 
+## 1b. Status
+
+This plan was written against `main` at `a38230b`. `428166d "Rebuild game
+systems around final-dev-doc spec"` then rewrote several of the audited
+screens — `BattleView` (576 → 982 lines), the crate flow (now coin-bought
+Cookbooks granting rarity **Cases**; keys, pity and multi-open are gone), and
+parts of Scan, Dungeon, Journey, Profile and onboarding. The audit below has
+been corrected where that rebuild invalidated it.
+
+**Landed** (this branch):
+
+| Phase | Item | State |
+|---|---|---|
+| 0 | Stale root `NutriQuestUI/` deleted | done |
+| 0 | `NQConfetti` + `NQCheckmarkDraw` Reduce Motion | done |
+| 1 | Scan summon overlay Reduce Motion (the P0) | done |
+| 1 | Crate/Case opening Reduce Motion | done |
+| 2 | Crit flash + rarity-scaled shake | done |
+| 2 | Faint droop + `ChibiExpression.fainted` | done |
+| 2 | Victory confetti | done |
+| 2 | ★5 leader aura (arena + squad picker) | done |
+| 2 | HP bar `maxHP` correctness | **obsolete** — `428166d` replaced the hardcoded `140` with real per-unit HP |
+| 2 | Expedition scoped as outcome-feed-only | done (decision recorded in `DungeonView`) |
+| 4 | `nqRarityTreatment` + applied to all five reveal surfaces | done |
+| 4 | `NQBracketBanner` extracted | done |
+| 6 | Reduce Motion P2/P3 sweep (carousel, casino hub, onboarding) | done |
+
+**Not started**, and deliberately so:
+
+- **Phase 3 (battle animator extraction).** The plan sequences it after Phase
+  2 and it is a refactor, not a behaviour change. Worth revisiting now that
+  `428166d` has already restructured `BattleView` around a `BattleScene`
+  model — that rebuild did some of the same work from a different angle.
+- **Phase 5 (Collection→Detail hero transition, onboarding migration onto
+  `NQTransition`, Home gauge consistency).** Only the Reduce Motion half of
+  the onboarding item landed.
+- **Phase 6 (quests).** Still gated on the screen existing at all — see §4.4.
+- The `NQCountUpText` standardisation and the `CaseOpeningView` → `NQCapsule`
+  consolidation from §4.2. `CaseOpeningView` got the shared rarity treatment
+  so its reveal no longer looks flat, but it still runs its own roulette-reel
+  mechanic rather than the capsule one.
+
+**Not verified.** None of this has been compiled. It was written on Windows,
+which has a Swift toolchain but no iOS SDK and no SwiftUI, so every changed
+file was checked with `swiftc -parse` (syntax only — no type checking, no
+symbol resolution). The `xcodegen generate` → build → `./scripts/test-ios.sh`
+gate from `CLAUDE.md` still has to run on macOS before this merges, and the
+zero-warnings rule in particular cannot be confirmed from here.
+
+---
+
 ## 2. What already exists — the reuse-first map
 
 `ios/Sources/NutriQuestUI` is **not a stub**. It's a mature, mostly
@@ -144,18 +195,18 @@ the server response and isn't driven by real replay data.
 
 | Doc wishlist (`BATTLE-SYSTEM.md` §10) | Status |
 |---|---|
-| Attack lunge | **Done** — offset+scale squash/stretch, `.spring(response:0.28, dampingFraction:0.6)` |
+| Attack lunge | **Done** — offset+scale squash/stretch, now via `NQMotion.attackLunge` |
 | Damage popup | **Done** — `NQFloatingValue`, color-coded for normal/super-effective/crit/miss |
-| Crit flash | **Partial** — crit gets a gold "CRIT" popup + longer hit-stop (160ms vs 90ms) + `NQJuice.crit()`, but the same hit-tint overlay plays for every hit. No distinct flash. |
-| Faint droop | **Missing.** Only a "KO!" text popup + heavy haptic. No droop/sink/fade on the fainted unit's artwork. |
-| Victory confetti | **Missing.** Victory plays `nqSuccessBurst` only. `NQConfetti` exists, is fully built, and is simply never called from `BattleView`. |
+| Crit flash | **Done** — a gold `plusLighter` frame across the arena (`NQMotion.critFlash`, ~90ms) on top of the per-hit tint, plus shake intensity 12 vs 7 |
+| Faint droop | **Done** — the fainted unit rotates 12°, sinks, desaturates and fades to 45% (`NQMotion.faintDroop`); the chibi fallback also gets `ChibiExpression.fainted` |
+| Victory confetti | **Done** — `NQConfetti` fires from `finish()` alongside the existing `nqSuccessBurst` |
 
 **Plan:**
 
 - **Faint droop** — add a wrapper transform (rotate ~12°, sink offset, desaturate/fade to ~40% opacity over ~500ms) applied to `CharacterArtwork` in the fainted slot, triggered on `.faint`. Per principle 5, this wraps the artwork container — it works identically for real art and the chibi fallback. As a bonus, add a `ChibiExpression.fainted` case (closed ×-eyes) for when the fallback specifically is on screen; it's a nice-to-have layered on top of the transform, not a substitute for it.
 - **Crit flash** — add a genuine full-arena flash distinct from the per-hit tint: a brief white/gold radial flash (~80ms) layered on top of the existing tint for `crit == true` only. `NQCapsule`'s "crack" white-flash is the nearest existing pattern to adapt.
 - **Victory confetti** — call `NQConfetti` from `present(_:mySide:)` alongside the existing `nqSuccessBurst`, gated by `accessibilityReduceMotion` (and note: this is also the fix for `NQConfetti`'s own missing reduce-motion check from §2 — do both in the same PR).
-- **HP bar accuracy** — `damageTaken` normalizes against a hardcoded `140` instead of each unit's real `maxHP` (an acknowledged placeholder in a code comment at the normalization site). Fix once `BattleUnit.maxHP` is threaded through the replay mapper — this is a correctness fix more than an animation one, but it directly affects how "believable" the HP-bar drain reads.
+- ~~**HP bar accuracy**~~ — was normalized against a hardcoded `140`. Obsolete: `428166d` rebuilt the arena around a `BattleScene` model carrying real per-unit `hp`/`maxHP`, so the bars are already accurate.
 - **Extract a shared battle animator.** `animateReplay`/`playChoreography`'s hand-rolled state today lives entirely inside `BattleView`. Mirror `NQCapsule`'s architecture (an explicit stage enum + `.task(id:)` sequencing, cancellation-safe) as a `NQBattleAnimator`-shaped type in `NutriQuestUI` or a UI-adjacent module. This isn't just cleanliness: it's what lets Expedition (below) and any future PvE combat screen get the same juice without copy-pasting `BattleView`'s internals.
 - **Leader aura.** `NET-WORTH.md`: a ★5 character grants a squad-wide "Leader aura" (+5% dominant stat). There is currently no visual marker for this anywhere. Add a subtle `NQBreathingGlow` (tinted to that unit's accent) on the leader's card in the squad row and in `SquadPickerView` — distinct from the existing "ACTIVE" ribbon, so a viewer can tell "this squad has a maxed leader" at a glance.
 - **Sludge variant.** A day where >60% of calories come from sugar produces a "Sludge" character variant (−30% stats, still collectible, per `BATTLE-SYSTEM.md` §3). No visual treatment exists for this anywhere in the four screen audits. Low priority, but worth a small desaturated/grimy tint + a "Sludge" chip wherever `CharacterArtwork` renders one, so it reads as a distinct (if unfortunate) state rather than a rendering bug.
@@ -171,16 +222,18 @@ independently rather than against a shared reveal architecture.
 | Screen | Reveal mechanism | Rarity-scaled? | Shares `NQCapsule`/`NQConfetti`? |
 |---|---|---|---|
 | `CrateOpeningView` | Hold-to-charge → shake → crack → open (`NQCapsuleStage`) | **Yes** — legendary+ gets longer suspense, extra haptics, looped rumble sound, confetti gate | Yes — the reference implementation |
-| `CaseOpeningView` | Horizontal roulette reel (`CaseRouletteStrip`) → plain `NQTransition.pop` | No — flat `NQChip` + "SHINY" chip regardless of tier | No |
-| `CauldronCrashView` | Bespoke vessel bubble/shake/explosion (~190 lines one-off particle code) | No — fixed `CharacterArtwork` + chip; the explosion signals a *loss*, not rarity | No |
-| `KitchenMinesView` | Per-tile scale bump, emoji glyphs as tile sprites | No — same flat template as Cauldron | No |
-| `PlinkoView` | Custom ball physics, peg impact shockwave rings | No — same flat template | No |
-| `PortalWheelView` | Custom deceleration curve (`PortalWheelSpinCurve`), wedge glow | No — glow is tied to the **wheel color**, not the reward's rarity | No |
+| `CaseOpeningView` | Horizontal roulette reel (`CaseRouletteStrip`) → plain `NQTransition.pop` | ~~No~~ → now via `nqRarityTreatment` | Reel mechanic still its own |
+| `CauldronCrashView` | Bespoke vessel bubble/shake/explosion (~190 lines one-off particle code) | ~~No~~ → now via `nqRarityTreatment` | Confetti yes, capsule no |
+| `KitchenMinesView` | Per-tile scale bump, emoji glyphs as tile sprites | ~~No~~ → now via `nqRarityTreatment` | Confetti yes, capsule no |
+| `PlinkoView` | Custom ball physics, peg impact shockwave rings | ~~No~~ → now via `nqRarityTreatment` | Confetti yes, capsule no |
+| `PortalWheelView` | Custom deceleration curve (`PortalWheelSpinCurve`), wedge glow | ~~No — glow keyed to the wheel colour~~ → now via `nqRarityTreatment` | Confetti yes, capsule no |
 
-Concretely: pull a Secret-tier character from a crate and it gets confetti,
-a breathing glow, and a longer, haptically-rich suspense build. Pull the
-same character from Plinko or the Portal Wheel and it looks identical to a
-Common. That's the single biggest consistency gap in the app.
+The gap this closed: pull a Secret-tier character from a crate and it got
+confetti, a glow and a long haptic build; pull the same character from Plinko
+or the Portal Wheel and it looked identical to a Common. One modifier now
+owns that ladder for all five surfaces. What's still per-screen is the
+*mechanic* — reel vs wheel vs capsule — which is intentional variety, unlike
+the reveal, which was accidental inconsistency.
 
 **Plan:**
 
@@ -384,16 +437,16 @@ which is the pattern this whole audit keeps finding.
 
 Ordered by how often a user hits the broken path, not by file:
 
-| Priority | Location | Gap | Fix |
-|---|---|---|---|
-| **P0** | `ScanView` / `SummonRevealOverlay` | `reduceMotion` declared, never read — fires on every scan | Gate all four reveal stages + `NQConfetti` call |
-| P1 | `NQMicroInteractions.NQConfetti` | No reduce-motion check at all (kit-wide primitive) | Add the check once, fixes every call site including the new battle-victory call in §4.1 |
-| P1 | `CrateOpeningView` | Only hold-to-charge gated via raw `UIAccessibility.isReduceMotionEnabled`; drop/shake/crack/open ungated | Switch to `@Environment(\.accessibilityReduceMotion)`, gate the rest to match `NQCapsule`'s own standard |
-| P2 | Onboarding (all 3 files) | Zero reduce-motion handling anywhere | Falls out of the `NQTransition` migration in §4.5 |
-| P2 | `NQCoverFlowCarousel` | Only `rotation3D` zeroed; scale/position still animate | Zero those too under reduce motion |
-| P3 | `NQMicroInteractions.NQCheckmarkDraw` | Draws on appear regardless | Jump to final drawn state |
-| P3 | `CasinoHubView` | Tab-switch `matchedGeometryEffect` ungated | Skip the geometry animation, snap to selected tab |
-| P3 | `CasinoLuckChart` | No handling (Swift Charts default animation) | Low risk; confirm Charts' own defaults are acceptable or disable chart animation under reduce motion |
+| Priority | Location | Gap | Fix | State |
+|---|---|---|---|---|
+| **P0** | `ScanView` / `SummonRevealOverlay` | `reduceMotion` declared, never read — fires on every scan | Sequence jumps straight to `.reveal`; stage transitions cross-fade | done |
+| P1 | `NQMicroInteractions.NQConfetti` | No reduce-motion check at all (kit-wide primitive) | Guarded in `fire()`, so every call site inherits it | done |
+| P1 | `CrateOpeningView` | Only hold-to-charge gated, via raw `UIAccessibility`; drop/shake/crack/open ungated | Environment key + a `playReducedMotionReveal` path that lands on the payoff | done |
+| P2 | Onboarding | Zero reduce-motion handling anywhere | Steps cross-fade instead of sliding | done |
+| P2 | `NQCoverFlowCarousel` | Only `rotation3D` zeroed | Selection travel drops; scale/offset stay (they're layout, not motion — zeroing them collapses the cover flow) | done |
+| P3 | `NQMicroInteractions.NQCheckmarkDraw` | Draws on appear regardless | Jumps to drawn | done |
+| P3 | `CasinoHubView` | Tab-switch `matchedGeometryEffect` ungated | Snaps between halves | done |
+| P3 | `CasinoLuckChart` | No handling (Swift Charts default animation) | Left alone — framework defaults, low risk | open |
 
 Everything else audited (Wheel, Plinko, Mines, Cauldron's shake/explosion,
 `CaseRouletteStrip`, `WatchConnectView`'s radar pulse, every `NQAnimations`
